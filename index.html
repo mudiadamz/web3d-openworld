@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open World Sandbox</title>
+<style>
+  :root {
+    --panel: rgba(14, 18, 24, 0.78);
+    --line: rgba(255, 255, 255, 0.10);
+    --text: #e7ecf2;
+    --muted: #8b97a6;
+    --accent: #7fc4a0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #05070a; }
+  body {
+    font: 12px/1.45 ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---- control panel ---- */
+  #ui {
+    position: fixed; top: 12px; left: 12px; width: 268px;
+    max-height: calc(100vh - 24px); overflow-y: auto;
+    background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+  }
+  #ui.hidden { display: none; }
+  /* The pane announces itself with an icon rather than a title: collapsed, that
+     icon is the whole panel, and there is nothing to read. */
+  #ui header { display: flex; padding: 7px; }
+  #ui.collapsed { width: auto; }
+  #ui.collapsed header { border-bottom: 0; }
+  #ui:not(.collapsed) header { border-bottom: 1px solid var(--line); }
+  #ui header button {
+    background: none; border: 0; color: var(--muted); cursor: pointer;
+    padding: 3px 5px; display: flex; border-radius: 6px;
+  }
+  #ui header button:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+  #ui.collapsed section { display: none; }
+  section { padding: 12px 13px; border-bottom: 1px solid var(--line); }
+  section:last-child { border-bottom: 0; }
+  h2 {
+    margin: 0 0 10px; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted);
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+  .row:last-child { margin-bottom: 0; }
+  .row label { color: var(--muted); white-space: nowrap; }
+  .row output { font-variant-numeric: tabular-nums; color: var(--text); min-width: 46px; text-align: right; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+    background: rgba(255, 255, 255, 0.16); border-radius: 3px; outline: none; margin: 8px 0 12px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 0;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 0;
+  }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+  .grid.two { grid-template-columns: 1fr 1fr; }
+  .grid button, .btn {
+    background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); color: var(--text);
+    border-radius: 7px; padding: 6px 4px; font-size: 11px; cursor: pointer; font-family: inherit;
+  }
+  .grid button:hover, .btn:hover { background: rgba(255, 255, 255, 0.13); }
+  .btn.danger { color: #e2857c; border-color: rgba(226, 133, 124, 0.3); }
+  .btn.danger:hover { background: rgba(226, 133, 124, 0.16); }
+  .btn.armed { color: #ffd9d4; background: rgba(226, 133, 124, 0.28); border-color: #e2857c; }
+  select, input[type=number] {
+    background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); color: var(--text);
+    border-radius: 7px; padding: 4px 6px; font-family: inherit; font-size: 11px;
+  }
+  input[type=number] { width: 100px; }
+  input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; }
+  .hint { color: var(--accent); opacity: 0.85; margin-top: 4px; font-size: 11px; }
+  #stats { margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+  #tribes { font-size: 10px; line-height: 1.6; }
+  #tribes div { display: flex; align-items: baseline; gap: 5px; padding: 1px 0; color: var(--text); }
+  #tribes i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  #tribes b { font-weight: 600; }
+  #tribes span { color: var(--muted); }
+  #tribeChart { display: block; width: 236px; height: 56px; margin-top: 7px; border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04); }
+  #chronicle { font-size: 10px; line-height: 1.65; max-height: 150px; overflow-y: auto; }
+  #chronicle div { color: var(--text); padding: 1px 0; }
+  #chronicle span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 5px; }
+  #tribes .ill { color: #d98a6a; font-style: normal; }
+  #tribes .toll { display: block; color: #b08878; font-size: 9px; margin-top: 1px; }
+  /* Three little gauges of what a band has worked out for itself. */
+  #tribes .skills { display: inline-flex; gap: 2px; margin-left: 5px; vertical-align: middle; }
+  #tribes .sk {
+    display: inline-block; width: 13px; height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, #7fd08a var(--v), rgba(255,255,255,0.13) var(--v));
+  }
+  .rate { display: inline-flex; align-items: center; gap: 4px; }
+  .btn.tiny { width: 20px; padding: 0; line-height: 17px; font-size: 12px; }
+  #rateOut { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+  /* Shown beside the clock while the night is being run through. */
+  #skip { margin-left: 4px; opacity: 0.75; font-size: 10px; letter-spacing: 1px; }
+  #following .meter { opacity: 0.8; margin-left: 2px; letter-spacing: 0.5px; }
+  #following .meter.low { color: #e8746a; opacity: 1; }
+  /* The fathers, back as far as anything is remembered. */
+  #following .line { display: block; margin-top: 1px; color: var(--muted); font-size: 10px; }
+  #years {
+    width: 46px; background: rgba(255,255,255,0.07); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 4px; padding: 1px 4px;
+    font: inherit; font-variant-numeric: tabular-nums;
+  }
+  #ahead {
+    position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+    background: rgba(9,11,15,0.82); backdrop-filter: blur(3px);
+  }
+  /* Without this the overlay is on screen from the moment the page loads and
+     never leaves: `display: grid` on an id outranks the browser's own
+     `[hidden] { display: none }`, so setting the attribute does nothing at all.
+     Every other overlay here carries the same line for the same reason. */
+  #ahead[hidden] { display: none; }
+  #aheadCard {
+    width: min(420px, 84vw); padding: 20px 22px; border-radius: 10px;
+    background: var(--panel); border: 1px solid rgba(255,255,255,0.10);
+  }
+  #aheadCard h2 { margin: 0 0 12px; font-size: 13px; }
+  #aheadTrack {
+    height: 6px; border-radius: 3px; overflow: hidden;
+    background: rgba(255,255,255,0.10);
+  }
+  #aheadBar { display: block; height: 100%; width: 0%; background: #7fd08a; transition: width 0.1s linear; }
+  #aheadNote { margin-top: 9px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #aheadStop { margin-top: 14px; width: 100%; }
+  /* The years are the only thing happening; watching them happen is better than
+     reading a paragraph about how they are not being drawn. */
+  #aheadChart {
+    width: 100%; height: 75px; margin-top: 12px; display: block;
+    background: rgba(255,255,255,0.04); border-radius: 5px;
+  }
+  #aheadLog {
+    margin-top: 9px; height: 132px; overflow: hidden;
+    font-size: 10px; line-height: 1.65; color: var(--muted);
+  }
+  #aheadLog div { padding: 0; }
+  #aheadLog span { font-variant-numeric: tabular-nums; margin-right: 5px; opacity: 0.75; }
+  #aheadLog b.wcode { font-size: 8px; min-width: 15px; }
+  /* Two characters and a colour, derived from the seed, so a chronicle that
+     spans every world can say which one each line came from without spending a
+     whole name on it. The same chip marks the world you are standing in. */
+  .wcode {
+    display: inline-block; min-width: 17px; padding: 0 3px; margin-right: 5px;
+    border-radius: 3px; text-align: center; font-weight: 700; font-size: 9px;
+    letter-spacing: 0.5px; color: #10131a; vertical-align: baseline;
+  }
+  #worldHere .wcode { font-size: 10px; }
+
+  /* ---- hud / help ---- */
+  #hud {
+    position: fixed; top: 12px; right: 12px; padding: 6px 12px;
+    background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 9px;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+    font-size: 15px; font-weight: 500; color: var(--text); text-align: right;
+  }
+  #almanac {
+    font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
+    color: var(--muted); margin-top: 1px;
+  }
+  #following {
+    font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
+    color: var(--accent); margin-top: 2px;
+  }
+  /* The numbers underneath: where they are and whether they are getting
+     anywhere. Tabular so the digits do not dance while you watch them. */
+  #following .where {
+    display: block; margin-top: 1px; color: var(--muted);
+    font-size: 10px; font-variant-numeric: tabular-nums;
+  }
+  /* The key list is a popup rather than a strip along the bottom: it can say
+     everything once instead of the one line that fits. */
+  #keys {
+    position: fixed; inset: 0; z-index: 20; display: grid; place-items: center;
+    background: rgba(4, 6, 10, 0.55); backdrop-filter: blur(3px);
+  }
+  #keys[hidden] { display: none; }
+  #chron {
+    position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+    background: rgba(4, 6, 10, 0.55); backdrop-filter: blur(3px);
+  }
+  /* The rule that stops it being on screen for ever. An id selector setting a
+     display outranks the browser's own [hidden] { display: none }, so hiding it
+     by attribute does nothing without this — which is exactly how the
+     run-ahead overlay came to cover the game from the moment the page loaded. */
+  #chron[hidden] { display: none; }
+  #tribe {
+    position: fixed; inset: 0; z-index: 32; display: grid; place-items: center;
+    background: rgba(4, 6, 10, 0.55); backdrop-filter: blur(3px);
+  }
+  /* Without this it is on screen from the moment the page loads: an id selector
+     setting a display outranks the browser's own [hidden] rule. */
+  #tribe[hidden] { display: none; }
+  #tribeCard {
+    width: min(560px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+    padding: 16px 18px; border-radius: 10px;
+    background: var(--panel); border: 1px solid rgba(255,255,255,0.10);
+  }
+  #tribeCard header { display: flex; align-items: center; justify-content: space-between; }
+  #tribeCard h2 { margin: 0; font-size: 13px; }
+  #tribeClose {
+    background: none; border: 0; color: var(--muted); font-size: 17px; cursor: pointer;
+    line-height: 1; padding: 0 2px;
+  }
+  #tribeHead { margin: 10px 0 8px; font-size: 11px; line-height: 1.7; }
+  #tribeHead b { color: var(--accent); font-weight: 400; }
+  #tribeHead span { color: var(--muted); }
+  #tribeTabs { display: flex; gap: 4px; margin: 0 0 8px; }
+  #tribeTabs button {
+    background: none; border: 0; border-bottom: 1px solid transparent; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 11px; padding: 3px 8px;
+  }
+  #tribeTabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  #tribeList { overflow-y: auto; font-size: 11px; }
+  #tribeList table { width: 100%; border-collapse: collapse; }
+  #tribeList th {
+    text-align: left; font-weight: 400; color: var(--muted); font-size: 10px;
+    padding: 0 6px 4px 0; position: sticky; top: 0; background: var(--panel);
+  }
+  #tribeList td { padding: 2px 6px 2px 0; font-variant-numeric: tabular-nums; }
+  #tribeList td.n { color: var(--text); font-variant-numeric: normal; }
+  #tribeList tr.chief td.n::after { content: ' · chief'; color: var(--accent); font-size: 9px; }
+  #tribeList tr.gone td { opacity: 0.45; }
+  #tribes > div { cursor: pointer; }
+  #chronCard {
+    width: min(680px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+    padding: 16px 18px; border-radius: 10px;
+    background: var(--panel); border: 1px solid rgba(255,255,255,0.10);
+  }
+  #chronCard header { display: flex; align-items: center; justify-content: space-between; }
+  #chronCard h2 { margin: 0; font-size: 13px; }
+  #chronClose {
+    background: none; border: 0; color: var(--muted); font-size: 17px; cursor: pointer;
+    line-height: 1; padding: 0 2px;
+  }
+  #chronFind {
+    margin: 11px 0 9px; padding: 5px 8px; font: inherit; font-size: 11px;
+    color: var(--text); background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 5px;
+  }
+  #chronList { overflow-y: auto; font-size: 11px; line-height: 1.7; flex: 1; min-height: 120px; }
+  #chronList div { padding: 1px 0; }
+  #chronList span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  #chronList em { color: var(--muted); font-style: normal; }
+  #chronList b.hit { background: rgba(127,208,138,0.22); border-radius: 2px; font-weight: 400; }
+  #chronFoot {
+    display: flex; align-items: center; gap: 9px; margin-top: 11px;
+    font-size: 10px; color: var(--muted);
+  }
+  #chronWhere { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .btn.tiny.wide { width: auto; padding: 0 6px; margin-left: 6px; font-size: 9px; }
+  #keysCard {
+    width: min(430px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto;
+    background: var(--panel); backdrop-filter: blur(16px);
+    border: 1px solid var(--line); border-radius: 13px; padding: 4px 16px 14px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  }
+  #keysCard header {
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; background: inherit; padding: 12px 0 8px;
+  }
+  #keysCard h2 {
+    margin: 0; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text);
+  }
+  #keysClose {
+    background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1;
+    cursor: pointer; padding: 0 4px;
+  }
+  #keysClose:hover { color: var(--text); }
+  .keyGroup {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin: 13px 0 5px; font-size: 10px; letter-spacing: 0.13em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .keyGroup b { color: var(--accent); font-weight: 600; letter-spacing: 0.06em; text-transform: none; }
+  .keyRow { display: flex; gap: 10px; padding: 3px 0; align-items: baseline; }
+  .keyRow span { flex: 0 0 96px; color: var(--muted); }
+  .keyRow em { font-style: normal; color: var(--text); }
+  .keyRow i { color: var(--muted); font-style: normal; }
+  .keysNote { margin: 14px 0 0; color: var(--muted); line-height: 1.6; }
+  .keysNote code {
+    color: var(--text); background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px; padding: 1px 4px;
+  }
+  #keys kbd, #help kbd {
+    color: var(--text); background: rgba(255, 255, 255, 0.09);
+    border-radius: 4px; padding: 1px 5px; font: inherit; margin: 0 1px;
+  }
+  #map {
+    position: fixed; right: 12px; bottom: 12px;
+    background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 10px; padding: 7px 7px 5px;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+  }
+  #map[hidden] { display: none; }
+  #mapCanvas {
+    /* Drawn larger than it is shown, so it stays crisp on a retina display.
+       The display size is set from MAP_DISPLAY in one place, not here. */
+    display: block; border-radius: 5px; cursor: crosshair;
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 54px; transform: translateX(-50%);
+    padding: 6px 14px; background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 9px;
+    color: var(--text); font-size: 12px; letter-spacing: 0.04em; white-space: nowrap;
+  }
+  #toast[hidden], #help[hidden] { display: none; }
+  @media (max-width: 720px) { #map { display: none; } }
+  #loading {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: #05070a; color: var(--muted); z-index: 10; letter-spacing: 0.06em;
+  }
+  #loading.done { display: none; }
+  #fallback { max-width: 34em; text-align: center; line-height: 1.7; }
+  @media (max-width: 720px) {
+    #help { display: none; }
+    #ui { width: calc(100vw - 24px); }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="view"></canvas>
+
+<div id="loading"><div id="fallback">building the world…</div></div>
+
+<script>
+  /* three.js comes from a CDN and this page is an ES module, so there are two
+     ordinary ways for it to never start: no network, or a browser that refuses
+     module imports from a file:// page. Say which, instead of sitting on
+     "building the world…" forever. */
+  window.__booted = false;
+  setTimeout(function () {
+    if (window.__booted) return;
+    document.getElementById('fallback').innerHTML =
+      'Could not start.<br><br>' +
+      'three.js loads from a CDN, so this page needs a network connection — and some ' +
+      'browsers refuse ES modules on a <code>file://</code> page.<br><br>' +
+      'Serve the folder instead:<br><code>python3 -m http.server 8000</code><br>' +
+      'then open <code>http://localhost:8000</code>';
+  }, 6000);
+</script>
+
+<div id="ui" class="hidden collapsed">
+  <header>
+    <button id="collapse" title="World (H)" aria-label="World">
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+        <circle cx="10" cy="10" r="7.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <ellipse cx="10" cy="10" rx="3.2" ry="7.6" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M2.6 7.4h14.8M2.6 12.6h14.8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+      </svg>
+    </button>
+    <button id="keysOpen" title="Keys (/)" aria-label="Keys">
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+        <circle cx="10" cy="10" r="7.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M7.7 7.6a2.4 2.4 0 1 1 2.9 2.7v1.5" fill="none" stroke="currentColor"
+              stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="10.4" cy="14.7" r="0.95" fill="currentColor"/>
+      </svg>
+    </button>
+  </header>
+
+  <section>
+    <h2>World</h2>
+    <div class="row">
+      <label for="world">Load</label>
+      <select id="world"><option value="">—</option></select>
+    </div>
+    <div class="row"><label>Here</label><output id="worldHere">—</output></div>
+    <div class="row"><label>Seed</label><output id="seedOut">—</output></div>
+    <div class="row">
+      <label for="years">Ahead</label>
+      <span class="rate">
+        <input id="years" type="number" min="1" max="50" step="1" value="5">
+        <button class="btn" id="runAhead">Run years</button>
+      </span>
+    </div>
+    <div class="row">
+      <label>Clock</label>
+      <span class="rate">
+        <button class="btn tiny" id="slower" title="Slower ([)" aria-label="Slower">−</button>
+        <output id="rateOut">1×</output>
+        <button class="btn tiny" id="faster" title="Faster (])" aria-label="Faster">+</button>
+      </span>
+    </div>
+    <div class="grid two">
+      <button class="btn" id="newWorld">New world</button>
+      <button class="btn danger" id="deleteWorld" title="This world, its saved place and its chronicle">Delete world</button>
+    </div>
+    <button class="btn danger" id="wipeAll" style="margin-top:5px;width:100%"
+            title="Every world, every chronicle, everything remembered — here and on the server">Delete everything</button>
+  </section>
+
+  <section>
+    <h2>Tribes</h2>
+    <div id="tribes"></div>
+    <canvas id="tribeChart" width="472" height="112"></canvas>
+  </section>
+
+  <section>
+    <h2>Chronicle <button class="btn tiny wide" id="chronOpen" title="All of it (L)">all</button></h2>
+    <div id="chronicle"><div><span>—</span> nothing has happened yet</div></div>
+  </section>
+
+  <section>
+    <div id="stats">–</div>
+  </section>
+</div>
+
+<div id="ahead" hidden><div id="aheadCard">
+  <h2>Running the world on</h2>
+  <div id="aheadTrack"><i id="aheadBar"></i></div>
+  <div id="aheadNote">…</div>
+  <canvas id="aheadChart" width="760" height="150"></canvas>
+  <div id="aheadLog"></div>
+  <button class="btn" id="aheadStop">Stop here</button>
+</div></div>
+<div id="hud"><span id="clock">07:30</span><span id="skip" hidden>▶▶</span><div id="almanac">day 0 · spring</div><div id="following" hidden></div></div>
+
+<div id="toast" hidden></div>
+
+<div id="tribe" hidden>
+  <div id="tribeCard" role="dialog" aria-label="Tribe">
+    <header>
+      <h2 id="tribeName">Tribe</h2>
+      <button id="tribeClose" aria-label="Close">×</button>
+    </header>
+    <div id="tribeHead"></div>
+    <div id="tribeTabs">
+      <button id="tribeNow" class="on">who is here</button>
+      <button id="tribeWas">who is gone</button>
+    </div>
+    <div id="tribeList"></div>
+  </div>
+</div>
+
+<div id="chron" hidden>
+  <div id="chronCard" role="dialog" aria-label="Chronicle">
+    <header>
+      <h2>Chronicle</h2>
+      <button id="chronClose" aria-label="Close">×</button>
+    </header>
+    <input id="chronFind" type="search" placeholder="a name, a band, a kind of thing that happened…"
+           autocomplete="off" spellcheck="false">
+    <div id="chronList"></div>
+    <div id="chronFoot">
+      <button class="btn" id="chronPrev">← newer</button>
+      <output id="chronWhere">—</output>
+      <button class="btn" id="chronNext">older →</button>
+    </div>
+  </div>
+</div>
+
+<div id="keys" hidden>
+  <div id="keysCard" role="dialog" aria-label="Keys and shortcuts">
+    <header>
+      <h2>Keys</h2>
+      <button id="keysClose" aria-label="Close">×</button>
+    </header>
+
+    <div class="keyGroup">Moving</div>
+    <div class="keyRow"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><em>move — flies, walks or slides the rig, depending on the view</em></div>
+    <div class="keyRow"><span><kbd>Q</kbd><kbd>E</kbd></span><em>down and up <i>(fly, orbit)</i></em></div>
+    <div class="keyRow"><span><kbd>shift</kbd></span><em>sprint. There is one move speed and it is not adjustable — it is set by <code>DAY_LENGTH</code>, because a short day is a fast one</em></div>
+    <div class="keyRow"><span>drag</span><em>look around — orbits the pivot in Orbit, circles the person in Follow</em></div>
+    <div class="keyRow"><span>scroll</span><em>zoom in Orbit · how far back you stand in Follow</em></div>
+
+    <div class="keyGroup">Views <b id="keysView">Fly</b></div>
+    <div class="keyRow" data-mode="fly"><span><kbd>C</kbd></span><em>next view — Fly, Walk, Orbit, Follow</em></div>
+    <div class="keyRow"><span><kbd>F</kbd></span><em>follow somebody — again for somebody else. Their energy is on the caption, because it is what decides what they take on</em></div>
+
+    <div class="keyGroup">On screen</div>
+    <div class="keyRow"><span><kbd>H</kbd></span><em>the world panel</em></div>
+    <div class="keyRow"><span><kbd>M</kbd></span><em>the map — click it to travel there</em></div>
+    <div class="keyRow"><span><kbd>[</kbd><kbd>]</kbd></span><em>slower and faster — the clock, and everything living on it. The night runs itself through at <code>NIGHT_SKIP_RATE</code> once everybody is in</em></div>
+    <div class="keyRow"><span><kbd>B</kbd></span><em>hide one more layer — press until something stops looking wrong, and the last name shown is the culprit. <kbd>shift</kbd>+<kbd>B</kbd> puts it all back</em></div>
+    <div class="keyRow"><span><kbd>T</kbd></span><em>the band you are watching — who they are, their ages, how many children, what each of them has carried home</em></div>
+    <div class="keyRow"><span><kbd>L</kbd></span><em>the whole chronicle — every line from every world, searchable</em></div>
+    <div class="keyRow"><span><kbd>/</kbd></span><em>this list</em></div>
+    <div class="keyRow"><span><kbd>esc</kbd></span><em>close this</em></div>
+
+    <p class="keysNote">
+      Everything else is configured in <code>.env</code>. Your place is kept
+      across reloads and server restarts; <code>?fresh=1</code> ignores it.
+      From the address bar: <code>?models=off</code> and <code>?quality=low</code>
+      if it runs slow. When something <em>looks</em> wrong, turn one thing off at
+      a time: <code>?shadows=0</code>, <code>?water=0</code>,
+      <code>?streams=0</code>, <code>?grass=0</code>, <code>?flowers=0</code>,
+      <code>?wind=0</code>. Hills shading each other is off because it’s the one thing that speckled — <code>?terrainshadow=1</code> brings it back.
+    </p>
+  </div>
+</div>
+
+<div id="map">
+  <canvas id="mapCanvas" width="384" height="384" title="click to travel"></canvas>
+</div>
+
+<!--CONFIG-->
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module" src="src/main.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,11 @@
+# The chronicle is a record of runs, not source. Delete it to start over — the
+# worlds themselves are rebuilt from their seed, so nothing is lost.
+chronicle.db
+chronicle.db-wal
+chronicle.db-shm
+
+# Your own settings; .env.example is the one that is checked in.
+.env
+
+# three.js for the boot check; fetched, not source
+vendor/

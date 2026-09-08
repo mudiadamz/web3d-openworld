@@ -1,0 +1,17 @@
+{
+  "name": "web3d-openworld",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A standalone three.js open-world sandbox, optionally served with its defaults taken from the environment.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js && node test-boot.js",
+    "boot": "node test-boot.js",
+    "reset": "node reset.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

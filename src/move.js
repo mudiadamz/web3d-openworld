@@ -1,0 +1,1194 @@
+import * as THREE from 'three';
+
+import { P, QUALITY, SEA, WORLD } from './params.js';
+import {
+  buildField, clamp, field, fieldCell, fieldSeg, flatnessAt, mulberry32, sampleHeight
+} from './noise.js';
+import {
+  camera, controls, renderer, starUniforms, streamMaterial, sunLight, waterUniforms,
+  windUniforms
+} from './scene.js';
+import {
+  HIDDEN, _m4, _q, _s, _v, buildGrass, buildRocks, buildTerrain, buildTrees, buildWater,
+  disposeGroup, disposeWorld, fauna, floraGroup, grassGroup, grassTiles, rockGroup,
+  setDirtyTiles, setGrassTiles, stats, terrainGroup, updateTiles, world
+} from './world.js';
+import {
+  PANIC, PERSON_STAMINA, RECOVERY_SECONDS, REFEED, SLEEP_SECONDS, STARVE_DRAIN,
+  STARVE_FROM, _eAnim, _mChain, _mHead, _mLocal, _mLower, _mOff, _mUpper, _pAnim, _qAnim,
+  _sAnim, buildAnimals, clearFauna, energyRate, nearestPredator
+} from './wildlife.js';
+import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
+import {
+  CAMP_CLEARING, buildCamps, buildGraves, buildPeople, campParts, camps, chooseCampSites, inCamp, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
+} from './people.js';
+import {
+  DUSK_AT, FOOD, GROUND, ORCHARD, PLAGUE, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, campIsIll, craftChoice, findPrey, forageRichness, groundOf, nearestFruit, otherCamp, personAge, pickFruit, practise, tryKill
+} from './life.js';
+import { syncLookFromCamera } from './chronicle.js';
+import { renderMapBase } from './map.js';
+import { arm } from './ui.js';
+import { updateHud } from './main.js';
+
+/* -------------------------------------------------------------------------
+   Getting there
+
+   There is no path-finding here and there does not need to be, but there does
+   need to be more than a step test. A person walked straight at their target
+   and, if the next step was too steep, stopped and picked an entirely new
+   errand — which had two consequences, both of them visible:
+
+     - somebody in a steep pocket could never leave it. Every direction failed,
+       so every frame was blocked, re-aim, blocked, and they stood there for
+       the rest of their life;
+     - the new errand was picked around their OWN camp, so anybody walking to
+       the next band was sent home by the first bump in the ground. Camps are at
+       least two hundred and sixty metres apart. Nobody ever arrived.
+
+   So: try the way you are facing, and if it will not go, try further and
+   further off it until something will. Walking round a hill is what a person
+   does; giving up and going home is not.
+   ------------------------------------------------------------------------- */
+
+export const WALKABLE = 0.66;          // flatness a person will put a foot on
+
+/* How far off their heading somebody will step to get round something, and how
+   long they stay committed to the side they picked.
+
+   Both numbers exist because of the same bug. The first version tried deviations
+   up to 149° — which is not a detour, it is walking away — and re-chose one
+   every frame. So somebody blocked took a near-reversal, the turn toward their
+   target pulled them straight back into the same ground, and they reversed
+   again: back and forth, all night, never arriving. Anybody walking to the next
+   band, two hundred and sixty metres off, could never get there.
+
+   Nothing here goes past a hundred degrees, and having picked a side they keep
+   it for a few seconds — which is the difference between bouncing off an
+   obstacle and following it round. */
+export const DETOURS = [0.30, 0.62, 0.98, 1.40, 1.75];
+export const DODGE_HOLD = 3;           // world-seconds committed to one side
+
+export function canStand(x, z, flat = WALKABLE) {
+  return sampleHeight(x, z) > SEA + 0.9
+    && flatnessAt(x, z) > flat
+    && Math.hypot(x, z) < WORLD * 0.46;
+}
+
+/* Moves them if it can, and reports whether it managed. The heading they end up
+   with is kept, so somebody rounding a spur keeps following it instead of
+   turning back into it on the next frame. */
+export function stepPerson(p, step) {
+  const tryAt = (a, flat) => {
+    const nx = p.x + Math.sin(a) * step, nz = p.z + Math.cos(a) * step;
+    if (!canStand(nx, nz, flat)) return false;
+    p.x = nx; p.z = nz; p.yaw = a;
+    p.phase += (step / (PERSON.stride * p.scale)) * Math.PI * 2;
+    return true;
+  };
+
+  // Straight on. If that works, whatever was in the way is behind them.
+  if (tryAt(p.yaw, WALKABLE)) { p.dodgeUntil = 0; return true; }
+
+  /* Round it, on the side already chosen if one is still being held. Trying
+     both sides afresh every frame is how a person ends up zig-zagging along a
+     slope instead of walking along it. */
+  const held = (p.dodgeUntil || 0) > worldClock;
+  const sides = held ? [p.dodgeSide || 1] : [1, -1];
+  for (const off of DETOURS) {
+    for (const side of sides) {
+      if (tryAt(p.yaw + side * off, WALKABLE)) {
+        p.dodgeSide = side;
+        p.dodgeUntil = worldClock + DODGE_HOLD;
+        return true;
+      }
+    }
+  }
+  // The held side has run out of room: the other way, and commit to that.
+  if (held) {
+    for (const off of DETOURS) {
+      if (tryAt(p.yaw - (p.dodgeSide || 1) * off, WALKABLE)) {
+        p.dodgeSide = -(p.dodgeSide || 1);
+        p.dodgeUntil = worldClock + DODGE_HOLD;
+        return true;
+      }
+    }
+  }
+
+  /* Boxed in on every heading. Rather than stand there for ever, take one step
+     onto ground they would not normally choose — this is the way out of a
+     pocket, and it is why nobody gets stuck permanently. */
+  for (const off of [0, ...DETOURS]) {
+    for (const side of [1, -1]) {
+      if (tryAt(p.yaw + side * off, 0.30)) return true;
+    }
+  }
+  return false;
+}
+
+/* How long to allow for the walk. A flat sixty seconds was allowed for every
+   errand whatever its length, and a lot of errands are longer than that: the
+   far half of a foraging trip, most long hunts, and every single visit to the
+   next band, which is two hundred and sixty metres away and therefore three
+   minutes off. They all timed out on the way — and the timeout falls through to
+   the arrival case, so the work got done wherever they happened to be standing.
+
+   Doubled and a bit, because going round a hill is the normal case rather than
+   the exception. */
+export function travelTimeout(p) {
+  const dist = Math.hypot(p.targetX - p.x, p.targetZ - p.z);
+  const pace = (p.job === 'hunt' || p.job === 'play') ? PERSON.jog * 0.8 : PERSON.walk;
+  return clamp((dist / pace) * 2.2, 20, 900);
+}
+
+/* How hard a forager looks before choosing where to go.
+
+   Everything is weighed in the same unit — food — because the first cut of this
+   was not, and it was worse than walking out blindfolded. It sent them to a
+   bearing tree six times out of ten whatever the ground there was like, and a
+   tree is worth about a tenth of a unit against half a unit for good ground. On
+   poor ground a tree is a loss, and preferring it was optimising for the thing
+   that is easy to see rather than the thing that is worth having. */
+export const FORAGE = {
+  tries: 14,           // patches of open ground weighed up
+  fruitTries: 4,       // and bearing trees, weighed the same way
+  farCost: 0.08,       // food per hundred metres, so distance is a tiebreak
+  helpFrom: 8,         // years; old enough to go out with the others
+  childHaul: 0.55,     // what one of them brings back, against an adult's basket
+  childRange: 0.55,    // and how far from the fire they will go
+};
+
+/* Where to forage. It used to be a random point between twenty-six and
+   ninety-five metres from camp, checked only for not being sea or cliff — and
+   since a forager can reach fruit within seven metres, landing on any was pure
+   luck. The ground is not uniform and the fruit is certainly not; a band can
+   starve beside a wood full of food. */
+/* -------------------------------------------------------------------------
+   Knowing where the food is
+
+   Every foraging trip picked fourteen spots at random in a ring round the camp
+   and walked to the best of them. Which means a band that has lived in one
+   valley for forty years is no better at feeding itself than one that arrived
+   this morning — the best of fourteen random guesses, over and over, for ever.
+   That is not how anybody has ever foraged. You go back to where the food was.
+
+   So a camp keeps a short list of the places that paid. A trip weighs those
+   alongside a handful of fresh guesses, so there is always some looking about;
+   what a patch is remembered as being worth decays every time it is picked
+   over and is written up again from what the trip actually brought home, so a
+   place that stops paying stops being remembered.
+
+   The list is deliberately short. A band that remembers thirty patches is a
+   band that never explores, and the whole value of the memory is that it beats
+   guessing — not that it replaces walking around. */
+
+export const MEMORY = {
+  keep: 6,             // patches a band holds on to
+  fresh: 6,            // fresh guesses weighed against them on every trip
+  trust: 1.25,         // how much better a remembered patch looks than a guess
+  forget: 0.82,        // what a patch is worth next time, before it is re-rated
+};
+
+/** Remembered ground, best first, with anything worthless dropped. */
+export function rememberPatch(camp, x, z, worth) {
+  if (!camp.patches) camp.patches = [];
+  const near = camp.patches.find((q) => Math.hypot(q.x - x, q.z - z) < 18);
+  if (near) {
+    // The same place, rated again by what it just gave up.
+    near.worth = near.worth * 0.5 + worth * 0.5;
+    near.x = x; near.z = z;
+  } else {
+    camp.patches.push({ x, z, worth });
+  }
+  camp.patches.sort((a, b) => b.worth - a.worth);
+  if (camp.patches.length > MEMORY.keep) camp.patches.length = MEMORY.keep;
+}
+
+export function pickForage(p, camp, range) {
+  let bx = camp.x, bz = camp.z, best = -Infinity, found = false;
+
+  const consider = (x, z, fruit, known = 1) => {
+    if (sampleHeight(x, z) < SEA + 1.5) return;
+    if (flatnessAt(x, z) < 0.80) return;
+    if (Math.hypot(x, z) > WORLD * 0.44) return;
+    const away = Math.hypot(x - camp.x, z - camp.z);
+    /* What this trip is expected to be worth, less what the walk costs. The
+       fruit term is what they would actually strip off the tree, in the same
+       units as the ground — which is the whole point of doing it this way. */
+    /* Somebody else's ground is worth less than it is — the walk home past
+       their fire is not worth the basket. A hungry band stops caring, which is
+       exactly when the two of them start to be a problem for each other. */
+    const theirs = groundOf(x, z, camp) ? GROUND.shy * (1 - camp.hunger) : 0;
+    const value = (FOOD.gather * forageRichness(x, z) + fruit) * (1 - theirs) * known
+      - (away / 100) * FORAGE.farCost;
+    if (value > best) { best = value; bx = x; bz = z; found = true; }
+  };
+
+  // Trees known to be bearing...
+  const fruitWorth = ORCHARD.takes * ORCHARD.worth;
+  for (let t = 0; t < FORAGE.fruitTries; t++) {
+    const spot = nearestFruit(camp.x, camp.z, range[1]);
+    if (spot) consider(spot.x, spot.z, fruitWorth);
+  }
+  /* Where it paid before. Weighted up a little, because a place somebody has
+     actually come back from with a full basket is worth more than a guess that
+     looks the same on paper. */
+  for (const q of camp.patches || []) {
+    consider(q.x, q.z, 0, MEMORY.trust);
+  }
+  // ...and a look about, so a band never stops finding new ground.
+  for (let t = 0; t < MEMORY.fresh; t++) {
+    const a = luck() * Math.PI * 2;
+    const r = range[0] + luck() * (range[1] - range[0]);
+    consider(camp.x + Math.cos(a) * r, camp.z + Math.sin(a) * r, 0);
+  }
+
+  p.targetX = bx; p.targetZ = bz;
+  return found;
+}
+
+export function pickWork(p) {
+  const camp = p.camp;
+  /* How far somebody is willing to be from the fire. The bold go out to ground
+     nobody has stripped and come back with more; they are also who a tiger
+     finds. Errands round the camp are not stretched — walking further to sit
+     down is nobody's idea of daring. */
+  const far = (p.traits?.bold ?? 1) * (p.child ? FORAGE.childRange : 1);
+  const range = p.job === 'hunt' ? [90 * far, 260 * far]
+    : p.job === 'gather' ? [26 * (p.child ? FORAGE.childRange : 1), 95 * far] : [2, 9];
+  if (p.job === 'gather') return pickForage(p, camp, range);
+  for (let t = 0; t < 14; t++) {
+    const a = luck() * Math.PI * 2;
+    const r = range[0] + luck() * (range[1] - range[0]);
+    const x = camp.x + Math.cos(a) * r, z = camp.z + Math.sin(a) * r;
+    if (sampleHeight(x, z) < SEA + 1.5) continue;
+    if (flatnessAt(x, z) < 0.80) continue;
+    if (Math.hypot(x, z) > WORLD * 0.44) continue;
+    p.targetX = x; p.targetZ = z;
+    return true;
+  }
+  p.targetX = camp.x; p.targetZ = camp.z;
+  return false;
+}
+
+export function chooseJob(p, day) {
+  if (day < 0.25) {
+    // Night: the fire, or a hut.
+    p.job = luck() < 0.55 ? 'sleep' : 'tend';
+    p.targetX = p.job === 'sleep' ? p.hut.x : p.camp.x + (luck() - 0.5) * 4;
+    p.targetZ = p.job === 'sleep' ? p.hut.z : p.camp.z + (luck() - 0.5) * 4;
+    p.hasSpear = false;
+    return;
+  }
+  if (p.sick) {
+    // Nobody ill goes out. They lie up, and the band carries them.
+    p.job = luck() < 0.6 ? 'sleep' : 'tend';
+    p.targetX = p.job === 'sleep' ? p.hut.x : p.camp.x + (luck() - 0.5) * 4;
+    p.targetZ = p.job === 'sleep' ? p.hut.z : p.camp.z + (luck() - 0.5) * 4;
+    p.hasSpear = false;
+    p.prey = null;
+    return;
+  }
+  if (p.child) {
+    /* Old enough to be useful. A band was carried entirely by its adults while
+       every child under fourteen played, which is nobody's childhood and it is
+       most of why a band with a good year of births then starved: it had added
+       mouths and no hands. From FORAGE.helpFrom they go out with the others —
+       not far, and they do not bring back an adult's basket, but they feed
+       themselves and a bit more. And it is the hungrier the band is, the more
+       of them go, which is exactly the way round it should be. */
+    const old = personAge(p) >= FORAGE.helpFrom;
+    const pull = old ? 0.25 + 0.55 * p.camp.hunger : 0;
+    p.job = luck() < pull ? 'gather' : luck() < 0.75 ? 'play' : 'tend';
+    if (p.job === 'gather') {
+      p.hasSpear = false;
+      p.prey = null;
+      return;
+    }
+  } else {
+    /* This is the whole feedback loop. With a full store people knap, tend the
+       fire and rest; as it empties they go out, and by the time it is empty
+       almost everyone is foraging or hunting. */
+    const hunger = p.camp.hunger;
+    /* Energy decides what is even on offer. Going out is the expensive choice
+       and hunting the most expensive of all, so someone who has been running
+       all morning stays in and knaps — and hunger pushes them out anyway, which
+       is how a band ends up sending exhausted people after deer. */
+    const rested = clamp(p.energy, 0, 1);
+    /* Resting is only worth anything if there is something to recover ON. With
+       an empty store the nourishment ceiling is down, so sitting by the fire
+       cannot put energy back — and weighting rest by tiredness alone sent a
+       starving band to sit down and die. Measured before the change: a starving,
+       weak band spent 58% of its time at the fire and 2% of it hunting. */
+    const restWorth = (1 - rested) * (1 - hunger);
+    /* Walking to the next band is a day gone, so it is a thing a camp does
+       when it can spare somebody — or when it is desperate enough to go and
+       ask. Both ends of the range, nothing in the middle. */
+    /* And only with the day left to do it in. The next band is a few hundred
+       metres off — the better part of an hour's walk there and back — and dusk
+       sends everybody home from wherever they have got to. Somebody setting out
+       at four in the afternoon is somebody who will be turned round halfway and
+       never arrive, which is what happened every time. */
+    let ill = 0;
+    for (const q of people) if (q.camp === p.camp && q.sick) ill++;
+    const host = otherCamp(p.camp);
+    const enough = host
+      ? (Math.hypot(host.x - p.camp.x, host.z - p.camp.z) * 2 / PERSON.walk) * 1.4
+      : 0;
+    const daylightLeft = (DUSK_AT - P.time) / 24 * P.dayLength;
+    /* And nobody walks to the neighbours out of a camp that has it. Which is
+       not what stops it travelling — somebody who left before it showed still
+       carries it — but it is what makes that the only way it travels. */
+    const canVisit = host && rested > 0.5 && daylightLeft > enough
+      && !campIsIll(p.camp)
+      && (hunger < 1 - VISIT.needFood || hunger > VISIT.begFrom);
+    const weights = [
+      /* Hunger lifts foraging whatever state they are in. Walking is below the
+         pace that costs anything, so somebody with nothing left can still walk
+         out and pick — it is the one useful thing they can still do, and it was
+         the thing tiredness was suppressing. */
+      ['gather', (0.10 + 0.62 * hunger) * (0.3 + 0.7 * rested + 0.7 * hunger)],
+      /* Hunting still wants a rested body, because it is a jog and a throw —
+         but a starving band will try it anyway rather than not eat. */
+      ['hunt', (0.05 + 0.37 * hunger) * Math.max(rested * rested, 0.25 * hunger)],
+      ['craft', 0.30 * (1 - hunger)],
+      ['tend', 0.06 + 0.22 * (1 - hunger) + 0.5 * restWorth],
+      /* Sitting with whoever is ill. Weighted by how many of them there are
+         and how much is in the store — a band with nothing to eat cannot spare
+         anybody to nurse, which is the same band the sickness is worst in. */
+      ['nurse', ill > 0 && !p.child
+        ? (0.35 + 0.40 * Math.min(ill / 3, 1)) * (1 - hunger) * rested
+          * (p.traits?.sociable ?? 1) : 0],
+      ['visit', canVisit ? VISIT.chance * rested * (p.traits?.sociable ?? 1) : 0],
+    ];
+    let roll = luck() * weights.reduce((a, w) => a + w[1], 0);
+    p.job = weights.find(([, w]) => (roll -= w) <= 0)?.[0] || 'gather';
+  }
+  p.hasSpear = p.job === 'hunt';
+  p.prey = null;
+  if (p.job === 'visit') {
+    const host = otherCamp(p.camp);
+    if (host) {
+      p.visiting = host;
+      p.targetX = host.x + (luck() - 0.5) * 8;
+      p.targetZ = host.z + (luck() - 0.5) * 8;
+      return;
+    }
+    p.job = 'tend';
+  }
+  if (p.job === 'hunt') {
+    // Set off after something real, not toward a random point on the map.
+    const prey = findPrey(p.x, p.z);
+    if (prey) {
+      p.prey = prey;
+      p.targetX = prey.animal.x;
+      p.targetZ = prey.animal.z;
+      return;
+    }
+  }
+  pickWork(p);
+}
+
+/* -------------------------------------------------------------------------
+   Indoors
+
+   A camp of a hundred and forty was a hundred and forty figures standing in a
+   clearing seventeen metres across. Everybody who was not walking somewhere was
+   drawn, whatever they were doing — sitting by the fire, knapping, sitting with
+   the ill, and every toddler in the band underfoot among them. From any
+   distance it read as a crowd scene rather than as a camp.
+
+   So a camp is tents with people in them. Anybody whose errand is inside the
+   camp is inside a tent and is not drawn; the people you see are the ones out
+   doing something — foraging, hunting, walking to the neighbours, and the
+   children old enough to be running about outside. Toddlers stay in.
+
+   Not drawn is all it is. They are still there, still eating, still catching
+   things off each other, still counted by everything that counts people. A
+   tiger already treats the ground round a fire as somewhere it will not go, so
+   nothing that hunts them is fooled either.
+   ------------------------------------------------------------------------- */
+
+/* Errands that take somebody out of the camp. Everything else — tending the
+   fire, knapping, sitting with the ill, sleeping — happens under a roof. */
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play']);
+export const TODDLER_UNTIL = 4;       // years; too small to be underfoot
+
+export function indoorsNow(p) {
+  // Small enough to be in the tent whatever else is going on.
+  if (p.child && personAge(p) < TODDLER_UNTIL) return true;
+  if (OUTDOOR_JOBS.has(p.job)) return false;
+  // Otherwise: indoors if they are actually at the camp rather than walking to it.
+  return inCamp(p.x, p.z, 0);
+}
+
+export function updatePeople(dt, day) {
+  if (!personParts) return;
+  /* The same turn-taking as the herds, and it starts later: twenty-odd people
+     is under the threshold, so nothing changes until a world grows past it.
+     Then they go in pairs, then in fours, and a band of a hundred costs what a
+     band of twenty-five does. */
+  const stride = lodStride(people.length);
+  const slice = dt * stride;
+  for (let i = turnStart(stride); i < people.length; i += stride) {
+    const p = people[i];
+
+    /* A tiger in sight, and the errand is over. They run for the fire, and
+       keep running for a while after losing sight of it — somebody who stops
+       the instant the tiger is out of view stops directly in front of it. */
+    p.panic = Math.max(0, (p.panic || 0) - slice);
+    /* A cautious person looks up sooner. The bold notice the same tiger from
+       closer in, which costs them metres they cannot spare — the whole margin
+       between getting home and not is four of them. */
+    const notice = PANIC.sees / (p.traits?.bold ?? 1);
+    if (!p.asleep && p.panic <= 0 && nearestPredator(p.x, p.z, notice)) {
+      p.panic = PANIC.runs;
+      p.state = 'return';
+      p.prey = null;
+      p.visiting = null;
+      p.targetX = p.camp.x + (luck() - 0.5) * 4;
+      p.targetZ = p.camp.z + (luck() - 0.5) * 4;
+      p.timer = travelTimeout(p);
+    }
+
+    p.timer -= slice;
+    if (p.timer <= 0) {
+      switch (p.state) {
+        case 'idle':
+          chooseJob(p, day);
+          p.state = 'goto';
+          p.timer = travelTimeout(p);
+          break;
+        case 'goto':                       // gave up getting there, or lost it
+          p.prey = null;
+        case 'work':
+          if (p.job === 'gather') {
+            /* What the ground gave up. Lush ground gives more, which puts the
+               good foraging exactly where the flowers are — and if they
+               finished under a bearing tree, what they stripped off it too.
+               Baskets are the difference between carrying it and dropping it. */
+            const baskets = 1 + SKILL.basketHaul * p.camp.skill.baskets;
+            const got = (FOOD.gather * forageRichness(p.x, p.z) + pickFruit(p.x, p.z))
+              * baskets * (p.child ? FORAGE.childHaul : 1);
+            p.haul += got;
+            p.carry = 1;
+            /* Written up from what it actually gave, not from what it looked
+               like on the way out — and faded a little first, so a patch that
+               is being picked over slides down the list on its own. */
+            rememberPatch(p.camp, p.x, p.z, got * MEMORY.forget);
+          }
+          if (p.job === 'craft') {
+            /* An afternoon's work, and the band is fractionally better at
+               something for the rest of its existence — and so is the person
+               who did it.
+
+               That second half is what makes the whole mechanism go anywhere.
+               Without it the only people who ever learned were children growing
+               up, once, from whatever the camp knew that day; nobody's memory
+               ever rose, so the cap of "best living memory plus a step" never
+               rose either, and every band in every world stalled at exactly 14%
+               for ever. Practice has to teach the hands doing it. */
+            const key = craftChoice(p.camp);
+            practise(p.camp, key, SKILL.perCraft * (p.traits?.quick ?? 1));
+            p.knows[key] = Math.max(p.knows[key] || 0, p.camp.skill[key]);
+          }
+          /* Only if they actually arrived. This case is reached both by
+             arriving and by giving up on the way, which is right for foraging —
+             you pick what is around you wherever you stopped — and wrong for
+             this: you cannot hand over food you never carried anywhere, or
+             teach a band you never reached. */
+          if (p.job === 'visit' && p.visiting) {
+            const host = p.visiting;
+            p.visiting = null;
+            if (Math.hypot(p.x - host.x, p.z - host.z) < CAMP_CLEARING * 1.6) {
+              arriveAtCamp(p, host);
+            }
+          }
+          p.state = 'return';
+          p.targetX = p.camp.x + (luck() - 0.5) * 6;
+          p.targetZ = p.camp.z + (luck() - 0.5) * 6;
+          // The walk back from the next band is the same walk, in reverse.
+          p.timer = travelTimeout(p);
+          break;
+        default:
+          p.state = 'idle';
+          p.carry = 0;
+          p.timer = 2 + luck() * 5;
+      }
+    }
+
+    // Light wakes people, whatever the sleep timer says.
+    if (day >= 0.25 && p.job === 'sleep') {
+      p.state = 'idle';
+      p.timer = luck() * 4;
+    }
+
+    /* Dusk overrides whatever anyone was doing: everybody comes back.
+
+       The distance test is what makes this terminate. Without it the rule fires
+       again the moment someone arrives — their job is still a daytime one, so
+       they are sent straight back out to a fresh point beside the fire they are
+       already standing at, and nobody ever idles long enough to choose a night
+       job. A whole band walked in circles round its own camp all night. */
+    if (day < 0.25 && p.job !== 'sleep' && p.job !== 'tend' && p.state !== 'return') {
+      if (Math.hypot(p.x - p.camp.x, p.z - p.camp.z) > 12) {
+        p.state = 'return';
+        p.targetX = p.camp.x + (luck() - 0.5) * 5;
+        p.targetZ = p.camp.z + (luck() - 0.5) * 5;
+        p.timer = travelTimeout(p);
+      } else {
+        p.state = 'idle';                    // already home: pick a night job now
+        p.carry = 0;
+        p.timer = Math.min(p.timer, 0.4);
+      }
+    }
+
+    // A hunter's target moves. Re-aim at it, and take a shot when close enough.
+    if (p.prey && p.state === 'goto') {
+      if (tryKill(p, slice) || !p.prey) {
+        p.state = 'return';
+        p.targetX = p.camp.x + (luck() - 0.5) * 6;
+        p.targetZ = p.camp.z + (luck() - 0.5) * 6;
+        p.timer = travelTimeout(p);
+      } else if (Math.hypot(p.prey.animal.x - p.x, p.prey.animal.z - p.z) > FOOD.searchRadius) {
+        p.prey = null;                     // it outran us
+      }
+    }
+
+    const tdx = p.targetX - p.x, tdz = p.targetZ - p.z;
+    const dist = Math.hypot(tdx, tdz);
+    const arrived = dist < 1.1;
+
+    let want = 0;
+    if (p.state === 'goto' || p.state === 'return') {
+      if (arrived) {
+        if (p.state === 'goto') {
+          p.state = 'work';
+          // Sleep has to outlast the night. Give it the same 10-30 seconds as
+          // every other task and people shuttle in and out of the huts until
+          // dawn instead of sleeping in them.
+          p.timer = p.job === 'hunt' ? 8 + luck() * 14
+                  : p.job === 'gather' ? 6 + luck() * 10
+                  : p.job === 'sleep' ? 600
+                  : 10 + luck() * 20;
+        } else {
+          if (p.haul > 0) {
+            p.camp.food += p.haul;
+            /* Kept per person as well as added to the store. The store is what
+               the band has; this is what each of them put into it, which is a
+               different and more interesting number — it is the difference
+               between a good hunter and somebody who mostly tends the fire. */
+            p.brought = (p.brought || 0) + p.haul;
+            p.haul = 0;
+          }
+          p.state = 'idle';
+          p.carry = 0;
+          p.timer = 2 + luck() * 6;
+        }
+      } else {
+        // Hunters and children move at a jog; everyone else walks.
+        want = (p.job === 'hunt' || p.job === 'play') ? PERSON.jog * (p.child ? 0.75 : 1) : PERSON.walk;
+        if (p.carry) want *= 0.8;
+        /* Spent, they walk. The jog is what energy buys, and it is the first
+           thing to go — which is why a long hunt ends in a trudge home. */
+        if (want > PERSON.walk) {
+          want = PERSON.walk + (want - PERSON.walk) * clamp(p.energy * 1.4, 0, 1);
+        }
+        if (p.sick) want *= PLAGUE.drag;
+        // Frightened, and whatever is left in them goes into running.
+        if (p.panic > 0) want = Math.max(want, PERSON.jog * (p.child ? 0.8 : 1));
+      }
+    }
+    p.speed += (want - p.speed) * Math.min(1, slice * 3.2);
+
+    /* A walk is under SUSTAIN and so costs nothing; a jog is over it and does.
+       Sleep pays back several times faster than sitting by the fire, and a camp
+       with nothing in the store pays back slowly — which is the loop closing:
+       hunger makes people tired, tired people hunt worse, and hunting worse is
+       what made them hungry. */
+    const effort = p.speed / PERSON.jog;
+    const fed = 1 - 0.55 * p.camp.hunger;
+    const rate = energyRate(effort, PERSON_STAMINA, p.asleep ? SLEEP_SECONDS : RECOVERY_SECONDS);
+    // Rest does a sick person much less good than it does a well one.
+    const heal = p.sick ? PLAGUE.drag : 1;
+    p.energy = clamp(p.energy + (rate > 0 ? rate * fed * heal : rate) * slice, 0, 1);
+
+    /* Starvation is a ceiling coming down, not a drain.
+
+       Draining energy directly cannot work, and the arithmetic says so plainly:
+       resting recovers 0.006 a second, which is twenty full tanks over a
+       sim-day, so any drain slow enough to take days is lost in the noise and
+       any drain fast enough to compete empties somebody in minutes. What an
+       empty store actually does is put a lid on how much you can have — a
+       starving person can rest all they like and still not get up.
+
+       `nourish` is that lid. It falls while the store is empty and comes back
+       when there is food, on the calendar rather than the frame clock, and
+       energy simply cannot exceed it. When the lid reaches nought, so do they. */
+    const days = slice / P.dayLength;
+    p.nourish = clamp(p.nourish + (p.camp.hunger > STARVE_FROM
+      ? -(p.camp.hunger - STARVE_FROM) / (1 - STARVE_FROM) * STARVE_DRAIN
+      : REFEED) * days, 0, 1);
+    if (p.energy > p.nourish) p.energy = p.nourish;
+
+    if (!arrived && want > 0) {
+      let diff = Math.atan2(tdx, tdz) - p.yaw;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      p.yaw += clamp(diff, -PERSON.turn * slice, PERSON.turn * slice);
+    }
+
+    const step = p.speed * slice;
+    if (step > 0 && !stepPerson(p, step)) {
+      /* Nothing worked, not even the relaxed try — which means they are stood
+         somewhere there is genuinely no way out of. Only then is the errand
+         given up, and a visit is never given up this way: being sent home by a
+         hillside is how nobody ever reached the next band. */
+      p.speed = 0;
+      if (p.job !== 'visit') pickWork(p);
+    }
+
+    // Posture. Foraging bends at the waist, knapping hunches over a lap, sitting
+    // by the fire folds the legs, and sleeping puts them inside a hut.
+    let wantCrouch = 0, wantBend = 0;
+    const working = p.state === 'work';
+    if (working && p.job === 'gather') { wantCrouch = 0.55; wantBend = 0.85; }
+    else if (working && p.job === 'craft') { wantCrouch = 0.95; wantBend = 0.45; }
+    else if (working && p.job === 'tend') { wantCrouch = 0.9; wantBend = 0.18; }
+    else if (p.job === 'sleep' && p.state !== 'goto') { wantCrouch = 1; wantBend = 0.1; }
+    p.crouch += (wantCrouch - p.crouch) * Math.min(1, slice * 3);
+    p.bend += (wantBend - p.bend) * Math.min(1, slice * 3);
+    p.work += slice * (working ? 3.4 : 0);
+
+    /* Asleep is not the same as indoors, and the difference matters: asleep
+       recovers energy several times faster and is what the rest of the
+       simulation means by out of reach. Somebody knapping under a roof is
+       neither. */
+    p.asleep = p.job === 'sleep' && p.state !== 'goto' && arrived;
+    const hidden = p.asleep || indoorsNow(p);
+    if (hidden) {
+      for (const key in personParts) {
+        const per = partsPer(key);
+        for (let k = 0; k < per; k++) personParts[key].setMatrixAt(i * per + k, HIDDEN);
+      }
+      continue;
+    }
+
+    if (drawingWorld) writePerson(p, i);
+  }
+  for (const key in personParts) personParts[key].instanceMatrix.needsUpdate = true;
+}
+
+export function writePerson(p, i) {
+  const S = PERSON;
+  const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+  const probe = 0.5;
+  const hF = sampleHeight(p.x + fx * probe, p.z + fz * probe);
+  const hB = sampleHeight(p.x - fx * probe, p.z - fz * probe);
+  const pitch = -Math.atan2(hF - hB, probe * 2) * 0.5;   // people stay upright-ish
+
+  const gaitF = Math.min(p.speed / PERSON.walk, 1.6);
+  const bounce = Math.sin(p.phase * 2) * 0.018 * Math.min(gaitF, 1);
+  const drop = S.legLen * p.scale * 0.44 * p.crouch;
+
+  _eAnim.set(pitch, p.yaw, 0, 'YXZ');
+  _qAnim.setFromEuler(_eAnim);
+  _pAnim.set(p.x, sampleHeight(p.x, p.z) + S.legLen * p.scale - drop + bounce, p.z);
+  _sAnim.setScalar(p.scale);
+  _mBody.compose(_pAnim, _qAnim, _sAnim);
+
+  // The torso pivots at the waist and the head and arms ride on it, so bending
+  // to forage takes the whole upper body with it.
+  _mLocal.makeRotationX(p.bend);
+  _mLocal.setPosition(0, 0, 0);
+  _mTorso.multiplyMatrices(_mBody, _mLocal);
+  _mLocal.makeScale(p.shoulder, 1, 1);
+  _mChain.multiplyMatrices(_mTorso, _mLocal);
+  personParts.torso.setMatrixAt(i, _mChain);
+
+  // A neck. Short, and mostly it stops the head sitting straight on the chest.
+  _mLocal.makeTranslation(0, S.neckY + S.neck[1], 0);
+  _mChain.multiplyMatrices(_mTorso, _mLocal);
+  personParts.neck.setMatrixAt(i, _mChain);
+
+  _mOff.makeScale(p.headScale, p.headScale, p.headScale);
+  _mOff.setPosition(0, S.headY, 0);
+  _mHead.multiplyMatrices(_mTorso, _mOff);
+  personParts.head.setMatrixAt(i, _mHead);
+  /* Scaled down the head and back, so long hair falls behind rather than
+     ballooning: the box grows in Y and Z from a pivot that stays on the skull.
+     This is the male/female indicator, and it is the only one — no icon, no
+     colour code, just a silhouette you can tell apart across a valley. */
+  const hl = p.hairLen || 1;
+  _mLocal.makeScale(1, hl, 1 + (hl - 1) * 0.35);
+  _mOff.makeTranslation(0, S.head[1] * 0.5 + S.hair[1] * 0.4 * hl, -S.hair[2] * 0.16 * (hl - 1));
+  _mChain.multiplyMatrices(_mHead, _mOff);
+  personParts.hair.setMatrixAt(i, _mChain.multiply(_mLocal));
+
+  const swing = Math.min(p.speed * 0.32, 0.62);
+  const busy = Math.sin(p.work) * 0.5 * (p.crouch > 0.2 || p.bend > 0.2 ? 1 : 0);
+  for (let side = 0; side < 2; side++) {
+    const dir = side === 0 ? 1 : -1;
+    const phase = p.phase + (side === 0 ? Math.PI : 0);
+
+    /* Arm: shoulder, then elbow, then a hand on the end. Arms counter-swing
+       against the leg on the same side; when carrying, they come up and hold
+       instead. The elbow keeps a little bend even at rest — a perfectly
+       straight arm is the thing that reads as a mannequin. */
+    let arm = Math.sin(phase) * swing * 0.8 + busy;
+    if (p.carry) arm = -1.15 + Math.sin(p.phase) * 0.05;
+    let elbow = 0.22 + Math.max(0, Math.sin(phase + 0.9)) * swing * 0.9;
+    if (p.carry) elbow = 1.30;
+    else if (p.hasSpear && side === 0) elbow = 0.75;
+
+    _mLocal.makeRotationX(arm);
+    _mLocal.setPosition(dir * S.armX * p.shoulder, S.shoulderY, 0);
+    _mUpper.multiplyMatrices(_mTorso, _mLocal);
+    personParts.upperArm.setMatrixAt(i * 2 + side, _mUpper);
+
+    _mOff.makeRotationX(elbow);
+    _mOff.setPosition(0, -S.upperArm[1], 0);
+    _mLower.multiplyMatrices(_mUpper, _mOff);
+    personParts.foreArm.setMatrixAt(i * 2 + side, _mLower);
+
+    _mOff.makeTranslation(0, -S.foreArm[1], 0);
+    _mChain.multiplyMatrices(_mLower, _mOff);
+    personParts.hand.setMatrixAt(i * 2 + side, _mChain);
+
+    /* Leg: hip, then knee, then a foot kept level with the ground. A knee bends
+       through the swing and not through the stance, which is what stops a walk
+       looking like a pair of scissors. */
+    const legPhase = p.phase + (side === 0 ? 0 : Math.PI);
+    /* Crouching takes the knee FORWARD and folds the shin back underneath, so
+       the two rotations partly cancel and the body comes down between them.
+       Adding the crouch to both — which is what this did while a leg was one
+       straight piece — tips the whole leg backwards instead, and once there is
+       a knee in it the shin swings past horizontal and the foot ends up higher
+       than the knee. */
+    const leg = Math.sin(legPhase) * swing - p.crouch * 0.9;
+    let knee = Math.max(0, Math.sin(legPhase + 1.1)) * swing * 1.5 + p.crouch * 1.3;
+    /* Whatever the pose, the shin may not pass the horizontal: beyond that the
+       ankle is rising rather than falling. Bounding the sum rather than the
+       knee alone is the point — the shin's angle in the world is the hip's plus
+       the knee's, and capping only one of them leaves the other free. */
+    knee = clamp(knee, 0, Math.max(0, SHIN_MAX - leg));
+
+    _mLocal.makeRotationX(leg);
+    _mLocal.setPosition(dir * S.hipX * p.hip, 0, 0);
+    _mUpper.multiplyMatrices(_mBody, _mLocal);
+    personParts.thigh.setMatrixAt(i * 2 + side, _mUpper);
+
+    _mOff.makeRotationX(knee);
+    _mOff.setPosition(0, -S.thigh[1], 0);
+    _mLower.multiplyMatrices(_mUpper, _mOff);
+    personParts.shin.setMatrixAt(i * 2 + side, _mLower);
+
+    // Undo both joints so the sole stays parallel to the ground it is on.
+    _mOff.makeRotationX(-(leg + knee));
+    _mOff.setPosition(0, -S.shin[1], 0);
+    _mChain.multiplyMatrices(_mLower, _mOff);
+    personParts.foot.setMatrixAt(i * 2 + side, _mChain);
+  }
+
+  if (p.hasSpear) {
+    _mLocal.makeRotationX(-0.30);
+    _mLocal.setPosition(S.armX * p.shoulder + 0.09, S.shoulderY - 0.35, 0.10);
+    _mChain.multiplyMatrices(_mTorso, _mLocal);
+    personParts.spear.setMatrixAt(i, _mChain);
+  } else {
+    personParts.spear.setMatrixAt(i, HIDDEN);
+  }
+
+  if (p.carry) {
+    _mLocal.makeTranslation(0, S.shoulderY - 0.24, 0.30);
+    _mChain.multiplyMatrices(_mTorso, _mLocal);
+    personParts.load.setMatrixAt(i, _mChain);
+  } else {
+    personParts.load.setMatrixAt(i, HIDDEN);
+  }
+}
+
+/* The fire, its light, and its smoke. */
+export function updateCamps(dt, t, day) {
+  if (!campParts) return;
+  const night = 1 - day;
+  for (let i = 0; i < camps.length; i++) {
+    const camp = camps[i];
+    // Two incommensurate sines: a flame that never repeats on a countable beat.
+    const flick = 0.78 + 0.22 * Math.sin(t * 11 + camp.flicker) + 0.12 * Math.sin(t * 27.3 + camp.flicker * 2);
+    // Barely there in daylight, the only light in the world after dark.
+    camp.light.intensity = (4 + night * 62) * flick;
+    _v.set(camp.x, camp.y + 0.05, camp.z);
+    _q.identity();
+    _s.set(0.85 + flick * 0.25, 0.8 + flick * 0.45, 0.85 + flick * 0.25);
+    _m4.compose(_v, _q, _s);
+    campParts.fire.setMatrixAt(i, _m4);
+  }
+  campParts.fire.instanceMatrix.needsUpdate = true;
+
+  if (!smoke) return;
+  smokeUniforms.uViewportH.value = renderer.domElement.height;
+  smokeUniforms.uTanHalfFov.value = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const pos = smoke.geometry.attributes.position.array;
+  const life = smoke.geometry.attributes.aLife.array;
+  const wind = windUniforms.uWindDir.value;
+  const drift = 0.7 + P.wind * 7.5;
+  for (let i = 0; i < life.length; i++) {
+    life[i] += dt * 0.12;
+    if (life[i] >= 1) { resetSmoke(i, 0); continue; }
+    pos[i * 3] += (wind.x * drift + (Math.random() - 0.5) * 0.4) * dt;
+    pos[i * 3 + 1] += (1.9 - life[i] * 0.9) * dt;
+    pos[i * 3 + 2] += (wind.y * drift + (Math.random() - 0.5) * 0.4) * dt;
+  }
+  smoke.geometry.attributes.position.needsUpdate = true;
+  smoke.geometry.attributes.aLife.needsUpdate = true;
+}
+
+/* -------------------------------------------------------------------------
+   Creeks
+
+   Water that runs downhill and cuts the ground on its way, rather than a blue
+   ribbon laid on top of a landscape that never knew it was there.
+
+   Three passes, in this order and no other:
+     1. trace  — from a high source, step downhill across the height field
+     2. carve  — sink a channel along that path, before the mesh is built
+     3. build  — lay the water in the channel the carve just made
+
+   Doing it before the terrain mesh is what makes the valleys real: the trees,
+   the grass, the animals' cliff tests and the camp sites all read the carved
+   field, so the whole world knows where the creeks are without being told.
+   ------------------------------------------------------------------------- */
+
+export const streams = [];               // each an array of { x, z, level, width }
+export let wet = null;                   // per-field-cell flag: is this a creek bed?
+
+export const STREAM_STEP = 6;            // metres between path samples
+export const STREAM_DROP = 0.02;         // forced descent per step, so a creek never stalls
+export const CHANNEL_DEPTH = 1.7;
+export const CHANNEL_BANK = 0.5;
+export const MAX_CUT = 4;                // a creek cuts through a bump, not through a hill
+export const MAX_STEPS = 240;            // 1.4 km, longer than the island is wide
+export const MAX_BANK_CUT = 4;           // a hillside gets a notch, not a gorge
+
+export function traceStreams(count) {
+  const rng = mulberry32(P.seed ^ 0x57ea3f11);
+  for (let n = 0; n < count; n++) {
+    let src = null;
+    for (let t = 0; t < 400; t++) {
+      const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * WORLD * 0.40;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (sampleHeight(x, z) < 32) continue;                 // springs come from high ground
+      if (streams.some((s) => Math.hypot(s[0].x - x, s[0].z - z) < 130)) continue;
+      src = { x, z };
+      break;
+    }
+    if (!src) continue;
+
+    const path = [];
+    let x = src.x, z = src.z;
+    let level = sampleHeight(x, z);
+    let dirX = 0, dirZ = 0;
+
+    for (let i = 0; i < MAX_STEPS; i++) {
+      path.push({ x, z, level, width: 0 });
+      if (level <= SEA + 0.3) break;
+
+      // Steepest descent on a ring around the current point.
+      let bestX = x, bestZ = z, bestH = Infinity;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        const nx = x + Math.cos(a) * STREAM_STEP, nz = z + Math.sin(a) * STREAM_STEP;
+        const nh = sampleHeight(nx, nz);
+        if (nh < bestH) { bestH = nh; bestX = nx; bestZ = nz; }
+      }
+
+      /* Momentum. Pure steepest descent rattles from side to side down a noisy
+         slope and reads as a zigzag; carrying the previous direction gives the
+         meander a creek actually has. */
+      dirX = dirX * 0.55 + (bestX - x) * 0.45;
+      dirZ = dirZ * 0.55 + (bestZ - z) * 0.45;
+      const len = Math.hypot(dirX, dirZ);
+      if (len < 1e-4) break;
+      const nx = x + (dirX / len) * STREAM_STEP;
+      const nz = z + (dirZ / len) * STREAM_STEP;
+      if (Math.hypot(nx, nz) > WORLD * 0.47) break;
+
+      const ground = sampleHeight(nx, nz);
+      /* The level only ever falls. Water does not run uphill, and forcing the
+         drop is what lets a creek cut through a small rise instead of pooling
+         behind it — but a rise it would have to trench four metres through is a
+         hill, not a rise, so the creek ends there. Without that limit a creek
+         on gently rolling ground will meander for kilometres, digging the whole
+         way: one of these ran 2670 m across a 1600 m island. */
+      const next = Math.min(level - STREAM_DROP, ground);
+      if (ground - next > MAX_CUT) break;
+
+      /* On ground flat enough that the forced descent is doing the work,
+         momentum plus steepest descent will happily circle: one creek spent 85%
+         of its length within twelve metres of itself, a scribble rather than a
+         stream. So a creek that arrives back on its own course is finished —
+         but only against ground it left a while ago, since the last hundred
+         metres are just the meander it is supposed to have. */
+      let looped = false;
+      for (let k = 0; k < path.length - 20; k++) {
+        if (Math.hypot(path[k].x - nx, path[k].z - nz) < 10) { looped = true; break; }
+      }
+      if (looped) break;
+
+      x = nx; z = nz; level = next;
+    }
+
+    if (path.length > 14) {
+      // Creeks widen downstream, the way they do.
+      for (let i = 0; i < path.length; i++) {
+        path[i].width = 4.5 + 5.5 * (i / path.length);
+      }
+      streams.push(path);
+    }
+  }
+}
+
+export function carveStreams() {
+  const w = fieldSeg + 1;
+  wet = new Uint8Array(w * w);
+  for (const path of streams) {
+    for (const p of path) {
+      const r = p.width;
+      const i0 = Math.max(0, Math.floor((p.x - r + WORLD / 2) / fieldCell));
+      const i1 = Math.min(fieldSeg, Math.ceil((p.x + r + WORLD / 2) / fieldCell));
+      const j0 = Math.max(0, Math.floor((p.z - r + WORLD / 2) / fieldCell));
+      const j1 = Math.min(fieldSeg, Math.ceil((p.z + r + WORLD / 2) / fieldCell));
+      for (let j = j0; j <= j1; j++) {
+        const cz = -WORLD / 2 + j * fieldCell;
+        for (let i = i0; i <= i1; i++) {
+          const cx = -WORLD / 2 + i * fieldCell;
+          const d = Math.hypot(cx - p.x, cz - p.z);
+          if (d > r) continue;
+          const t = d / r;
+          // A parabolic channel: deepest in the middle, back to the original
+          // ground by the rim, so the banks are cut rather than stepped.
+          const target = p.level - CHANNEL_DEPTH + t * t * (CHANNEL_DEPTH + CHANNEL_BANK);
+          const idx = j * w + i;
+          if (field[idx] > target) {
+            /* The channel core is cut to whatever depth it takes — the water has
+               to have a bed under it. The banks are only allowed to come down so
+               far, so a creek crossing a steep hillside notches into it instead
+               of opening a gorge down the slope. */
+            const limit = t < 0.5 ? Infinity : MAX_BANK_CUT;
+            field[idx] = Math.max(target, field[idx] - limit);
+          }
+          if (t < 0.8) wet[idx] = 1;
+        }
+      }
+    }
+  }
+}
+
+// One lookup instead of a distance test against every point of every creek.
+export function isWet(x, z) {
+  if (!wet) return false;
+  const i = Math.round(clamp((x + WORLD / 2) / fieldCell, 0, fieldSeg));
+  const j = Math.round(clamp((z + WORLD / 2) / fieldCell, 0, fieldSeg));
+  return wet[j * (fieldSeg + 1) + i] === 1;
+}
+
+/* The water itself: a ribbon of triangles following the path, with uv.y running
+   downstream so the ripples can be made to flow along it. */
+export function buildStreamWater() {
+  for (const path of streams) {
+    const n = path.length;
+    const pos = new Float32Array(n * 2 * 3);
+    const uv = new Float32Array(n * 2 * 2);
+    const idx = [];
+    let along = 0;
+
+    for (let i = 0; i < n; i++) {
+      const p = path[i];
+      const a = path[Math.max(0, i - 1)], b = path[Math.min(n - 1, i + 1)];
+      let dx = b.x - a.x, dz = b.z - a.z;
+      const len = Math.hypot(dx, dz) || 1;
+      dx /= len; dz /= len;
+      if (i > 0) along += Math.hypot(p.x - path[i - 1].x, p.z - path[i - 1].z);
+
+      /* A ribbon folds over itself on the inside of a bend as soon as it is
+         wider than the bend is tight, and the fold lays two water triangles on
+         top of each other at exactly the same height. No polygon offset can
+         separate those — both faces get the same offset — so the fix has to be
+         geometric: narrow the stream into tight corners instead. */
+      const inLen = Math.hypot(p.x - a.x, p.z - a.z);
+      const outLen = Math.hypot(b.x - p.x, b.z - p.z);
+      let room = Infinity;
+      if (inLen > 1e-6 && outLen > 1e-6) {
+        const cosT = clamp(((p.x - a.x) * (b.x - p.x) + (p.z - a.z) * (b.z - p.z))
+          / (inLen * outLen), -1, 1);
+        const turn = Math.acos(cosT);
+        if (turn > 1e-3) room = 0.8 * Math.min(inLen, outLen) / Math.tan(turn / 2);
+      }
+      const half = Math.min(p.width * 0.5, room);
+      for (const side of [-1, 1]) {
+        const k = (i * 2 + (side > 0 ? 1 : 0));
+        // Perpendicular to the direction of travel.
+        pos[k * 3] = p.x + -dz * half * side;
+        pos[k * 3 + 1] = p.level + 0.22;
+        pos[k * 3 + 2] = p.z + dx * half * side;
+        uv[k * 2] = side > 0 ? 1 : 0;
+        uv[k * 2 + 1] = along / 12;          // one ripple period every 12 m
+      }
+      if (i < n - 1) {
+        const a0 = i * 2, b0 = a0 + 1, c0 = a0 + 2, d0 = a0 + 3;
+        idx.push(a0, c0, b0, b0, c0, d0);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, streamMaterial);
+    mesh.receiveShadow = true;
+    mesh.name = 'stream';
+    terrainGroup.add(mesh);
+  }
+}
+
+export function buildWorld() {
+  const q = QUALITY[P.quality];
+  /* Back to the start of the stream. Rebuilding a world has to replay it, not
+     carry on from wherever the last one had got to — otherwise loading the same
+     seed twice in one session gives two different histories, which is the bug
+     this whole thing exists to remove. */
+  seedSim(P.seed);
+  disposeWorld();
+  buildField(q.seg);
+  // Before the mesh: the creeks cut the field the terrain is then built from,
+  // so their valleys are real ground that everything else can read.
+  traceStreams(P.counts.streams | 0);
+  carveStreams();
+  buildTerrain(q.seg);
+  buildWater();
+  buildStreamWater();
+  // Camp sites are picked before anything is scattered, so the trees and the
+  // grass can leave a clearing instead of being cut down afterwards.
+  chooseCampSites(P.counts.camps | 0);
+  buildTrees(P.counts.trees | 0);
+  buildRocks(P.counts.rocks | 0);
+  buildCamps();
+  buildGraves();
+  buildPeople(P.counts.people | 0);
+  buildAnimals();
+  buildGrass(q.grid, P.counts.grass | 0);
+
+  renderMapBase();
+  applyShadowSettings(q);
+  const ratio = Math.min(devicePixelRatio || 1, q.pixelRatio);
+  renderer.setPixelRatio(ratio);
+  starUniforms.uPixelRatio.value = ratio;
+  waterUniforms.uWaves.value = P.waves;
+  waterUniforms.uRipple.value = P.waves;
+}
+
+/* Rebuilds narrow enough that a slider can drive them. Changing the rabbit
+   count has no business regenerating the terrain — the height field alone is
+   most of the build time — nor teleporting the camera back to spawn. */
+export function rebuildPeople() {
+  // The camps stay; only the band is rebuilt.
+  if (personParts) {
+    for (const key in personParts) {
+      tribeGroup.remove(personParts[key]);
+      personParts[key].geometry.dispose();
+    }
+  }
+  people.length = 0;
+  setPersonParts(null);
+  buildPeople(P.counts.people | 0);
+  updateHud();
+}
+export function rebuildFauna() {
+  disposeGroup(fauna);
+  clearFauna();
+  buildAnimals();
+  updateHud();
+}
+export function rebuildTrees() {
+  disposeGroup(floraGroup);
+  buildTrees(P.counts.trees | 0);
+  updateHud();
+}
+export function rebuildRocks() {
+  disposeGroup(rockGroup);
+  buildRocks(P.counts.rocks | 0);
+  updateHud();
+}
+export function rebuildGrass() {
+  disposeGroup(grassGroup);
+  setGrassTiles([]);
+  setDirtyTiles([]);
+  buildGrass(QUALITY[P.quality].grid, P.counts.grass | 0);
+  updateTiles(true);
+  recountBlades();
+}
+export function recountBlades() {
+  stats.blades = grassTiles.reduce((n, t) => n + (t.mesh.userData.live || 0), 0);
+  updateHud();
+}
+
+export function applyShadowSettings(q = QUALITY[P.quality]) {
+  const on = P.shadows && q.shadowMap > 0;
+  renderer.shadowMap.enabled = on;
+  sunLight.castShadow = on;
+  /* One number for every caster in the scene, so it is set by the largest
+     surface casting. With the hills out of it, the tallest thing throwing a
+     shadow is a tree, and six centimetres is plenty. */
+  sunLight.shadow.normalBias = P.terrainShadow ? 1.6 : 0.06;
+  terrainGroup.traverse((o) => { if (o.name === 'terrain') o.castShadow = Boolean(P.terrainShadow); });
+  if (q.shadowMap > 0) {
+    // A shadow map already uploaded keeps its old size until the map is
+    // disposed, so drop it and let three allocate the new one.
+    sunLight.shadow.map?.dispose();
+    sunLight.shadow.map = null;
+    sunLight.shadow.mapSize.set(q.shadowMap, q.shadowMap);
+  }
+  // Whether a material samples a shadow map is baked into its program.
+  world.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+}
+
+/* Where the camera goes when a world is built. It used to be a button as
+   well; it is not any more, and only the world-building calls it. */
+export function placeCamera() {
+  const y = sampleHeight(0, 0);
+  camera.position.set(0, y + (P.view === 'walk' ? 1.7 : 13), P.view === 'walk' ? 0 : 46);
+  controls.target.set(0, y + 2.5, 0);
+  camera.lookAt(controls.target.x, controls.target.y, controls.target.z);
+  syncLookFromCamera();
+  if (P.view === 'orbit') controls.update();
+  updateTiles(true);
+  recountBlades();
+}
+
+/* -------------------------------------------------------------------------
+   Camera
+
+   Three ways to be in the world, because one rig cannot do all three jobs.
+
+   Orbit was the only mode, and it is the reason every view looked like a person
+   standing in a field: the rig orbits a point a couple of metres above the
+   ground and drags that point along as you walk, so the ground clamp is always
+   in the frame and you can never really leave head height. It is still the best
+   mode for circling a thing and looking at it, so it stays — as one option.
+
+   Fly is the default now: no target, no orbit, no clamp beyond not burrowing
+   into the hill. Yaw and pitch live on the camera itself, W follows wherever
+   you are looking, and you can climb until the island is a shape below you.
+
+   Walk is the locked-to-a-person view made deliberate rather than accidental —
+   eye height, no vertical, feet on the terrain.
+   ------------------------------------------------------------------------- */
+
+export const VIEW_MODES = ['fly', 'walk', 'orbit', 'follow'];
+
+/* The key list. It lives in the markup and only needs showing, hiding, and
+   telling which view is current. */
+
+/* wet lives here and is written from elsewhere. An imported binding is
+   read-only, so the write has to come back to the module that owns it. */
+export function setWet(v) { wet = v; }
