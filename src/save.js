@@ -9,8 +9,8 @@ import {
   setGraves
 } from './people.js';
 import {
-  SKILLS, applyAge, bornCount, diedCount, hidePeopleFrom, logEvent, peopleCapacity,
-  renderTribes, runId, setBornCount, setDiedCount, setSimDay, simDay
+  SKILLS, applyAge, bornCount, diedCount, hidePeopleFrom, knowsFrom, logEvent, peopleCapacity,
+  renderTribes, runId, setBornCount, setDiedCount, setSimDay, simDay, skillTier, updateEconomy
 } from './life.js';
 import { setLastClock, updateHud } from './main.js';
 
@@ -45,7 +45,7 @@ export function snapshot() {
     born: bornCount,
     died: diedCount,
     camps: camps.map((c) => ({ name: c.name, food: r2(c.food), history: c.history,
-      skill: { spears: r2(c.skill.spears), baskets: r2(c.skill.baskets), drying: r2(c.skill.drying) },
+      skill: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, r2(c.skill[k] || 0)])),
       toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0 })),
     /* Short keys: this is written every ten seconds and eighty people with
        long field names is a surprising amount of JSON for what it says. */
@@ -56,7 +56,10 @@ export function snapshot() {
       h: p.camp.huts.indexOf(p.hut), j: p.job, s: p.state, hl: r2(p.haul), ki: p.kills,
       id: p.id, mo: p.mother || 0, fa: p.father || 0, mn: p.motherName || '', fn: p.fatherName || '',
       ln: p.line || '', gn: p.gen || 1,
-      kn: [r2(p.knows?.spears || 0), r2(p.knows?.baskets || 0), r2(p.knows?.drying || 0)],
+      /* Keyed rather than ordered. It was a three-element array, which is
+         smaller and which quietly turns everybody's knapping into weaving the
+         day a skill is inserted anywhere but the end. */
+      kn: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, r2(p.knows?.[k] || 0)])),
       tt: p.taught ? 1 : 0, mv: p.moved ? 1 : 0,
       // Who they are, which no seed can reproduce once they have been born.
       tr: [r2(p.traits?.bold ?? 1), r2(p.traits?.sociable ?? 1), r2(p.traits?.quick ?? 1)],
@@ -160,7 +163,7 @@ export function personFromRecord(r) {
     traits: Array.isArray(r.tr)
       ? { bold: r.tr[0], sociable: r.tr[1], quick: r.tr[2] }
       : { bold: 1, sociable: 1, quick: 1 },
-    knows: { spears: r.kn?.[0] || 0, baskets: r.kn?.[1] || 0, drying: r.kn?.[2] || 0 },
+    knows: knowsFrom(r.kn),
     visiting: null,
     immuneUntil: Number.isFinite(r.im) ? r.im : 0,
     /* A save from before people carried their own colouring has none, so they
@@ -171,7 +174,8 @@ export function personFromRecord(r) {
     garmentShade: Number.isFinite(r.gh) ? r.gh : 1,
     hairColor: r.hc ?? HAIR[(Math.random() * HAIR.length) | 0],
     targetX: camp.x, targetZ: camp.z,
-    crouch: 0, bend: 0, carry: r.hl > 0 ? 1 : 0, hasSpear: r.j === 'hunt', asleep: false,
+    crouch: 0, bend: 0, carry: r.hl > 0 ? 1 : 0, hasSpear: r.j === 'hunt', asleep: false, led: false, orders: null,
+    hidden: false,
     haul: r.hl || 0, prey: null, attempt: 0, kills: r.ki | 0,
     hut: camp.huts[r.h] || camp.huts[0],
     work: Math.random() * Math.PI * 2,
@@ -192,7 +196,20 @@ export function applySavedLife(st) {
     usedNames.add(c.name);
     camps[i].food = c.food;
     // A save from before a band could learn anything has no skills in it.
-    for (const key in SKILLS) camps[i].skill[key] = Number(c.skill?.[key]) || 0;
+    for (const key in SKILLS) {
+      camps[i].skill[key] = Number(c.skill?.[key]) || 0;
+      /* And what the band has already been told about itself, worked out from
+         the mastery rather than read back — `told` is derived, so saving it
+         would be storing the same fact twice and risking the two disagreeing.
+
+         Leaving it at the zero a fresh camp is built with meant every reload
+         re-announced the whole ladder: a band that had known how to cure meat
+         for eighty years learnt it again, in four steps, every time the page
+         came back. It is the single loudest thing in the record — 236 of one
+         world's 655 lines were a band relearning what it already knew, against
+         at most four rungs on three skills that could honestly be climbed. */
+      camps[i].told[key] = skillTier(camps[i].skill[key]);
+    }
     for (const key in camps[i].toll) camps[i].toll[key] = Number(c.toll?.[key]) || 0;
     camps[i].born = c.born | 0;
     camps[i].peak = c.peak | 0;
@@ -229,6 +246,13 @@ export function applySavedLife(st) {
   });
 
   recountAnimals();
+  /* The store is restored above; hunger is not stored and has to be worked out
+     from it. Without this a reloaded band carried the hunger its camp was
+     *built* with — zero — however empty the store it just came back to, and
+     spent the first eighth of a day sitting round the fire on the strength of
+     it. Same reason as the call in buildWorld: nothing may read hunger before
+     the books have been opened once.  */
+  updateEconomy(0);
   updateHud();
   renderTribes();
   logEvent('resume', `back at [${camps[0].code}] ${camps[0].name}, day ${Math.floor(simDay)}`, 0, 0);

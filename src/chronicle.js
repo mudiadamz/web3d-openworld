@@ -1,18 +1,20 @@
 import * as THREE from 'three';
 
-import { P } from './params.js';
-import { clamp, sampleHeight } from './noise.js';
-import { camera, canvas, controls, renderer, sky, sunDir, sunLight } from './scene.js';
+import { P, SEA, WORLD } from './params.js';
+import { clamp, flatnessAt, sampleHeight } from './noise.js';
+import { camera, canvas, controls, renderer, scene, sky, sunDir, sunLight } from './scene.js';
 import { fauna, grassGroup, rockGroup, world } from './world.js';
 import { ancestry, lineage, pick } from './wildlife.js';
 import { PERSON, rateIndex, worldClock } from './clock.js';
 import { camps, people, tribeGroup } from './people.js';
 import {
-  chiefOf, childrenOf, chronicle, daysOfFood, energyOutOfTen, ordinal, personAge, runId, tollOf, traitWord, who
+  SKILLS, SKILL_RUNGS, TOLL_WORDS, chiefOf, childrenOf, chronicle, daysOfFood, energyOutOfTen, isMilestone, milestonesOnly, ordinal, personAge, skillTier,
+  runId, tollOf, traitWord, who
 } from './life.js';
 import { VIEW_MODES, applyShadowSettings } from './move.js';
 import { $, ui } from './save.js';
-import { VIEW_NAMES, codeChip, setRate, toast, tribeChips } from './ui.js';
+import { stepMapSize } from './map.js';
+import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, tribeChips } from './ui.js';
 import { stopAhead } from './main.js';
 
 /* -------------------------------------------------------------------------
@@ -67,7 +69,8 @@ export function chronMatch(e, needle) {
 
 export function chronFiltered() {
   const needle = chronFind.trim().toLowerCase();
-  return needle ? chronRows.filter((e) => chronMatch(e, needle)) : chronRows;
+  const rows = milestonesOnly ? chronRows.filter(isMilestone) : chronRows;
+  return needle ? rows.filter((e) => chronMatch(e, needle)) : rows;
 }
 
 /* The needle picked out of the line, without letting what was typed become
@@ -94,9 +97,10 @@ export function renderChronPage() {
     + `${tribeChips(markHits(e.text, needle))} <em>${e.kind}</em></div>`).join('')
     || `<div><em>${chronRows.length ? 'nothing matches that' : 'nothing has happened yet'}</em></div>`;
 
+  const kept = milestonesOnly ? ' worth telling' : '';
   $('chronWhere').textContent = rows.length
-    ? `${from + 1}–${Math.min(from + CHRON_PAGE, rows.length)} of ${rows.length}`
-      + (needle ? ` matching · ${chronRows.length} in all` : '')
+    ? `${from + 1}–${Math.min(from + CHRON_PAGE, rows.length)} of ${rows.length}${kept}`
+      + (needle || milestonesOnly ? ` · ${chronRows.length} in all` : '')
     : `0 of ${chronRows.length}`;
   $('chronPrev').disabled = chronPage === 0;
   $('chronNext').disabled = chronPage >= pages - 1;
@@ -171,7 +175,7 @@ export function formerTable(camp) {
       const years = Math.max(0, (when - r.b) / P.yearLength);
       return `<tr class="${how === 'left' ? '' : 'gone'}">`
         + `<td class="n">${r.n}</td>`
-        + `<td>${Math.floor(years)}${r.s === 'f' ? '♀' : '♂'}</td>`
+        + `<td>${Math.floor(years)}${sexMarks(r.s === 'f' ? '♀' : '♂')}</td>`
         + `<td class="n">${why}</td>`
         + `<td>${Math.floor(when)}</td></tr>`;
     }).join('')
@@ -191,15 +195,42 @@ export function renderTribeCard() {
   $('tribeName').innerHTML = `<b class="wcode" style="background:${camp.color}">${camp.code}</b>`
     + ` ${camp.name}`;
 
+  /* Everything the panel row used to carry, now that the row carries a name
+     and a number. A list you scan and a card you read are different jobs, and
+     this is the one with room to do the second. */
+  let women = 0, men = 0, kids = 0, ill = 0;
+  for (const p of folk) {
+    if (p.sex === 'f') women++; else men++;
+    if (p.child) kids++;
+    if (p.sick) ill++;
+  }
+  /* A row each, rather than three anonymous bars. The bars said a band knew
+     *something*; which of the three, and how much, was a thing you could only
+     get at by hovering — and the whole reason skills are interesting is
+     watching one of them climb while the others do not. */
+  const skills = Object.keys(SKILLS).map((k) => {
+    const v = camp.skill[k] || 0;
+    const pct = Math.round(v * 100);
+    return `<div class="skillRow"><span>${SKILLS[k].of}</span>`
+      + `<i class="sk" style="--v:${pct}%"></i>`
+      + `<b>${pct}%</b><em>${SKILL_RUNGS[skillTier(v)]}</em></div>`;
+  }).join('');
+
   $('tribeHead').innerHTML =
     `<div>Chief <b>${chief ? chief.name : 'nobody'}</b>`
-    + `${chief ? ` <span>${Math.floor(personAge(chief))}${chief.sex === 'f' ? '♀' : '♂'}</span>` : ''}</div>`
+    + `${chief ? ` <span>${Math.floor(personAge(chief))}${sexMarks(chief.sex === 'f' ? '♀' : '♂')}</span>` : ''}</div>`
+    + `<div><b>${folk.length}</b> <span>here</span>`
+    + `${folk.length ? ` · ${sexMarks(`${women}♀ ${men}♂`)}` : ''}`
+    + `${kids ? ` · ${kids} ${kids === 1 ? 'child' : 'children'}` : ''}`
+    + `${ill ? ` · <em class="ill">${ill} ill</em>` : ''}</div>`
     + `<div><span>store</span> ${camp.food.toFixed(1)} `
     + `<span>(${daysOfFood(camp).toFixed(1)} days)</span> · `
     + `<span>carried home between them</span> ${brought.toFixed(0)}</div>`
+    + `<div class="skills">${skills}</div>`
     + `<div><span>founded day ${Math.floor(camp.founded)} · ${camp.born} born · `
     + `most they were was ${camp.peak}${toll.length
-        ? ` · lost ${toll.reduce((n, [, k]) => n + k, 0)}` : ''}</span></div>`;
+        ? ` · lost ${toll.reduce((n, [, k]) => n + k, 0)}: `
+          + toll.map(([k, n]) => `${n} ${TOLL_WORDS[k]}`).join(', ') : ''}</span></div>`;
 
   $('tribeNow').className = tribeTab === 'now' ? 'on' : '';
   $('tribeWas').className = tribeTab === 'was' ? 'on' : '';
@@ -212,12 +243,13 @@ export function renderTribeCard() {
     ? `<table><thead><tr><th>who</th><th>age</th><th>children</th><th>carried</th><th>doing</th></tr></thead><tbody>`
       + folk.map((p) => {
         const kids = childrenOf(p);
-        return `<tr class="${p === chief ? 'chief' : ''}${p.sick ? ' gone' : ''}">`
+        return `<tr class="${p === chief ? 'chief' : ''}${p.sick ? ' gone' : ''}"`
+          + ` data-p="${p.id}" title="follow ${p.name}">`
           + `<td class="n">${p.name}</td>`
-          + `<td>${Math.floor(personAge(p))}${p.sex === 'f' ? '♀' : '♂'}${p.child ? ' ·' : ''}</td>`
+          + `<td>${Math.floor(personAge(p))}${sexMarks(p.sex === 'f' ? '♀' : '♂')}${p.child ? ' ·' : ''}</td>`
           + `<td>${kids || (p.child ? '' : '—')}</td>`
           + `<td class="got">${(p.brought || 0).toFixed(0)}</td>`
-          + `<td class="n">${p.sick ? 'ill' : (JOB_WORDS[p.job] || p.job)}</td></tr>`;
+          + `<td class="n">${p.sick ? 'ill' : doingWords(p)}</td></tr>`;
       }).join('')
       + '</tbody></table>'
     : '<div>nobody is left</div>';
@@ -237,19 +269,43 @@ export const PITCH_LIMIT = 1.5;              // just short of straight up or dow
 
 export const cam = { yaw: 0, pitch: 0, dragging: false, lastX: 0, lastY: 0 };
 
+/* Where the button went down, in every view. A click and a look-around begin
+   identically and stay indistinguishable until the button comes up again. */
+export const press = { x: 0, y: 0, live: false };
+
 /* Following one person. The whole reason the band exists is to be watched, and
    watching it from a hundred metres up is not the same as walking a day with
    somebody. */
 export let followIdx = -1;
+/* Whether the person being followed was asked for by name or by click, rather
+   than found by `F`. It is the difference between a suggestion and a choice,
+   and the handover below is allowed to overrule only the first of them. */
+export let followChosen = false;
 export const _follow = new THREE.Vector3();
 export const _want = new THREE.Vector3();
 
 export function pickFollow(announce = true) {
   if (!people.length) { followIdx = -1; return; }
-  // Prefer somebody awake and out doing something; fall back to anyone.
-  const awake = people.map((p, i) => i).filter((i) => !people[i].asleep);
-  const pool = awake.length ? awake : people.map((_, i) => i);
+  /* Somebody you can actually see.
+
+     This asked for `!asleep`, which is a narrower thing than being visible and
+     let F land on a person who was perfectly awake and inside a tent: knapping,
+     sitting with the ill, or a toddler kept in. The caption said "knapping" and
+     the screen showed a hut, which reads as the mode being broken.
+
+     `p.hidden` is the answer the draw loop already worked out, so asking it
+     cannot disagree with what is on screen — the same rule the caption follows.
+
+     Two fallbacks, because refusing to pick anybody is worse than picking
+     badly: anyone awake, then anyone at all. A camp can genuinely be all
+     indoors — a wet afternoon, or three in the morning — and F still has to do
+     something. */
+  const pool = [];
+  for (let i = 0; i < people.length; i++) if (!people[i].hidden) pool.push(i);
+  if (!pool.length) for (let i = 0; i < people.length; i++) if (!people[i].asleep) pool.push(i);
+  if (!pool.length) for (let i = 0; i < people.length; i++) pool.push(i);
   followIdx = pool[(Math.random() * pool.length) | 0];
+  followChosen = false;
   const p = people[followIdx];
   /* Behind them, not in front. The camera sits at `target − forward × distance`,
      so adding π here put it out ahead walking backwards, staring at their face. */
@@ -258,9 +314,277 @@ export function pickFollow(announce = true) {
   if (announce) updateFollowCaption();
 }
 
+/* Follow this exact person. F finds you somebody, which is the right answer
+   when you have nobody in mind and the wrong one the moment you do — usually
+   you are already watching one of them carry something home. */
+export function followPerson(idx, announce = true) {
+  if (idx < 0 || idx >= people.length) return false;
+  /* Entering Follow picks somebody at random on the way in, so the choice has
+     to be made after the switch rather than before it. */
+  if (P.view !== 'follow') setViewMode('follow');
+  followIdx = idx;
+  followChosen = true;
+  const p = people[idx];
+  cam.yaw = p.yaw;                 // behind them, the way pickFollow leaves it
+  cam.pitch = -0.12;
+  updateFollowCaption();
+  if (announce) toast(who(p));
+  return true;
+}
+
+/* By who they are, not where they are in the array — the band card is built
+   from a filtered, re-sorted copy of `people`, and a death renumbers the lot. */
+export function followPersonById(id) {
+  const idx = people.findIndex((p) => p.id === id);
+  return idx < 0 ? false : followPerson(idx);
+}
+
+/* -------------------------------------------------------------------------
+   Somewhere else on the island
+
+   `F` answers "show me somebody". In Orbit the question is "show me somewhere",
+   and there was no answer to it but flying there yourself — which on a 3200m
+   island is a long way to go to find out there is nothing at the other end.
+
+   Dry land, not a cliff, and inside the island rather than out in the water.
+   The same three tests camp siting uses, for the same reason: a spot that fails
+   any of them is a spot there is nothing to look at.
+   ------------------------------------------------------------------------- */
+export const ROAM_TRIES = 60;         // give up and take the best of these
+export const ROAM_HIGH = 26;          // metres above the ground it settles at
+export const ROAM_BACK = 52;          // ...and how far back from what it looks at
+
+export function pickRoam(announce = true) {
+  let best = null, bestFlat = -1;
+  for (let t = 0; t < ROAM_TRIES; t++) {
+    const a = Math.random() * Math.PI * 2;
+    /* sqrt so the points spread evenly over the disc rather than crowding the
+       middle, and the same 0.44 of the map everything else stays inside. */
+    const r = Math.sqrt(Math.random()) * WORLD * 0.42;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const h = sampleHeight(x, z);
+    if (h < SEA + 2) continue;                    // not out at sea
+    const flat = flatnessAt(x, z);
+    if (flat > bestFlat) { bestFlat = flat; best = { x, z, y: h }; }
+    if (flat > 0.9) break;                        // good enough, stop looking
+  }
+  if (!best) return false;
+
+  controls.target.set(best.x, best.y + 2.5, best.z);
+  /* Behind and above, on a random bearing, so pressing it twice at the same
+     spot is still a different picture. */
+  const look = Math.random() * Math.PI * 2;
+  camera.position.set(
+    best.x + Math.sin(look) * ROAM_BACK,
+    best.y + ROAM_HIGH,
+    best.z + Math.cos(look) * ROAM_BACK,
+  );
+  camera.lookAt(controls.target.x, controls.target.y, controls.target.z);
+  syncLookFromCamera();
+  if (P.view === 'orbit') controls.update();
+  if (announce) {
+    const away = Math.round(Math.hypot(best.x, best.z));
+    toast(`${away}m from the middle · ${Math.round(best.y)}m up`);
+  }
+  return true;
+}
+
 export function followedPerson() {
   if (followIdx < 0 || followIdx >= people.length) return null;
   return people[followIdx];
+}
+
+/* -------------------------------------------------------------------------
+   Where on the ground you pointed
+
+   Clicking a person used to pick them to follow. It does not any more: the
+   click means "go there" now, which is a thing you say about a place rather
+   than about a person, and the two readings of one gesture cannot both be
+   right. Choosing who to follow is F, or a name on the band card.
+
+   Against the height field rather than against any mesh. March the ray out
+   until it is under the ground, then bisect — a heightfield has exactly one
+   crossing along a downward ray, so twenty-four halvings put it within a
+   millimetre and it cannot miss a hill the way a plane test does.
+   ------------------------------------------------------------------------- */
+export const CLICK_SLOP_PX = 5;      // travel further than this and it was a drag
+export const GROUND_MAX = 6000;      // metres out before it gives up
+export const GROUND_STEP = 2;        // ...and how coarsely it looks on the way
+
+export const _pickNdc = new THREE.Vector2();
+export const _pickRay = new THREE.Raycaster();
+export const _pickAt = new THREE.Vector3();
+
+/** Where a screen point lands on the island, or null for sky and sea. */
+export function pickGroundAt(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  _pickNdc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  _pickRay.setFromCamera(_pickNdc, camera);
+  const ray = _pickRay.ray;
+  if (ray.direction.y >= -0.0001) return null;          // pointed at the sky
+
+  let above = 0, below = -1, t = 0, step = GROUND_STEP;
+  for (let n = 0; n < 600 && t < GROUND_MAX; n++) {
+    t += step;
+    _pickAt.copy(ray.origin).addScaledVector(ray.direction, t);
+    if (_pickAt.y <= sampleHeight(_pickAt.x, _pickAt.z)) { below = t; break; }
+    above = t;
+    step = Math.min(step * 1.08, 24);                   // coarser the further out
+  }
+  if (below < 0) return null;                           // never came down to it
+
+  for (let n = 0; n < 24; n++) {
+    const mid = (above + below) / 2;
+    _pickAt.copy(ray.origin).addScaledVector(ray.direction, mid);
+    if (_pickAt.y <= sampleHeight(_pickAt.x, _pickAt.z)) below = mid; else above = mid;
+  }
+  _pickAt.copy(ray.origin).addScaledVector(ray.direction, below);
+  /* Out past the shelf is not somewhere anybody can be sent. */
+  if (sampleHeight(_pickAt.x, _pickAt.z) < SEA + 0.5) return null;
+  if (Math.hypot(_pickAt.x, _pickAt.z) > WORLD * 0.46) return null;
+  return { x: _pickAt.x, z: _pickAt.z };
+}
+
+/* -------------------------------------------------------------------------
+   Taking somebody by the hand
+
+   Following is watching. This is the other half of it: the person you are
+   behind does what you say instead of what they were going to do.
+
+   Click the ground and they walk there. Click somewhere else and they turn
+   and walk there instead; shift+W hands them back. Holding a key to make them
+   move was one instruction too many for what is really a single idea — you
+   pointed, so go — and it meant a walk across the island was a key held down
+   for a minute.
+
+   While they are led, nothing else gets to steer them — not dusk, not a job
+   timer, not a tiger — because a person who ignores you half the time is worse
+   than one you cannot steer at all. Everything that is not steering still runs:
+   they get tired, they get hungry, they can be caught.
+   ------------------------------------------------------------------------- */
+export function leadTo(x, z) {
+  const p = followedPerson();
+  if (!p) return false;
+  p.led = true;
+  p.leadX = x;
+  p.leadZ = z;
+  updateFollowCaption();
+  return true;
+}
+
+/** Hands them back to themselves, wherever they happen to be standing. */
+export function releaseLead(announce = true) {
+  const p = followedPerson();
+  if (!p || !p.led) return false;
+  p.led = false;
+  p.state = 'idle';
+  p.timer = 0;                     // pick something to do on the next step
+  p.speed = 0;
+  if (announce) toast(`${p.name} goes back to it`);
+  updateFollowCaption();
+  return true;
+}
+
+/* -------------------------------------------------------------------------
+   Telling them what to do
+
+   Clicking the ground says where. These say what: go and find food, go and
+   hunt, sit down and knap. Six buttons across the bottom while you are behind
+   somebody, and nothing at all when you are not.
+
+   An order is one instruction taken up once, not a leash. They go and do the
+   thing, and afterwards they are choosing for themselves again — which is the
+   difference between telling somebody to go hunting and standing over them.
+
+   Left on the person rather than acted on here. Everything that points somebody
+   at a patch of ground draws from `luck()`, and the rule that keeps a world
+   reproducible is that only what the step calls may draw from it: a click
+   happens on a frame, not on a step, so it queues and the next turn spends it.
+   ------------------------------------------------------------------------- */
+export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit'];
+
+export function orderJob(job) {
+  const p = followedPerson();
+  if (!p || !ORDERS.includes(job)) return false;
+  /* An order is not a leash, and holding both would be two things steering one
+     person. Being told to go hunting ends being walked about by hand. */
+  if (p.led) releaseLead(false);
+  p.orders = job;
+  p.state = 'idle';
+  p.timer = 0;                     // taken up on their next turn
+  toast(`${p.name}: ${JOB_WORDS[job] || job}`);
+  updateFollowCaption();
+  return true;
+}
+
+/** Shows the row while you are behind somebody, and marks what they are at. */
+export function updateOrders() {
+  const box = $('orders');
+  if (!box) return;
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (box.hidden !== !p) box.hidden = !p;
+  if (!p) return;
+  for (const b of box.children) {
+    const mine = b.dataset && b.dataset.order === (p.orders || p.job);
+    if (b.classList.contains('on') !== !!mine) b.classList.toggle('on', !!mine);
+  }
+}
+
+/** True while the run key is down. Walking there is automatic; this is the
+    extra — and the energy clamp downstream charges for it, so a band you run
+    everywhere arrives tired and hunts worse. */
+export function leadRunning() { return keys.has('KeyW'); }
+
+/* -------------------------------------------------------------------------
+   Where you sent them
+
+   A ring on the ground at the point they are walking to, because otherwise the
+   only evidence that a click landed is a person setting off — and from behind
+   their shoulder, at three metres, that reads the same whichever way they were
+   going to go anyway.
+
+   On `scene` rather than on `world`: disposeWorld empties the world's groups
+   when a new island is built, and a marker that belongs to the camera rather
+   than to the island should not be one of the things thrown away with it. */
+export const LEAD_MARK_INNER = 0.55;
+export const LEAD_MARK_OUTER = 0.9;
+export let leadMark = null;
+
+export function leadMarker() {
+  if (!leadMark) {
+    const geo = new THREE.RingGeometry(LEAD_MARK_INNER, LEAD_MARK_OUTER, 28);
+    geo.rotateX(-Math.PI / 2);              // flat on the ground, not facing the sky
+    leadMark = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0x9fe0ff, transparent: true, opacity: 0.8, depthWrite: false,
+    }));
+    leadMark.frustumCulled = false;
+    leadMark.renderOrder = 3;
+    leadMark.visible = false;
+    scene.add(leadMark);
+  }
+  return leadMark;
+}
+
+/** Puts the ring where they are headed, or takes it away. Called every frame. */
+export function updateLeadMark() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  /* Nothing is built until there is something to mark. Making the mesh on the
+     first frame regardless looks harmless and is not: three.js gives every
+     geometry, material and object a UUID out of Math.random, so a feature
+     nobody had used yet was still spending draws — which in the boot harness,
+     where Math.random is pinned so a seed replays, quietly built a different
+     island. A ring for a click that never happened is not worth a world. */
+  if (!p || !p.led) { if (leadMark) leadMark.visible = false; return; }
+  const mark = leadMarker();
+  mark.visible = true;
+  /* Just clear of the ground. Sitting exactly on it z-fights with the terrain,
+     which reads as the marker flickering rather than as a marker. */
+  mark.position.set(p.leadX, sampleHeight(p.leadX, p.leadZ) + 0.08, p.leadZ);
+  /* A slow pulse, on world time so it stops with the world. It is the
+     difference between a marker and a scorch mark on the grass. */
+  const beat = 1 + Math.sin(worldClock * 2.4) * 0.14;
+  mark.scale.set(beat, 1, beat);
 }
 
 export const JOB_WORDS = {
@@ -268,7 +592,33 @@ export const JOB_WORDS = {
   tend: 'at the fire', play: 'playing', sleep: 'asleep',
   nurse: 'sitting with the ill',
   visit: 'walking to the next band',
+  led: 'going where you point',
 };
+
+/* The same jobs, for somebody who is under a roof doing them. A job says what
+   the hands are busy with; it does not say where the person is, and the two
+   came apart the moment anything was hidden — "at the fire" read off a tent. */
+export const INDOOR_WORDS = {
+  craft: 'knapping in a tent',
+  nurse: 'sitting with the ill',
+  tend: 'resting',
+  play: 'resting',
+  gather: 'resting',
+  hunt: 'resting',
+};
+
+/* What to say they are doing.
+
+   Keyed off `p.hidden` — the flag the draw loop sets — rather than off the job,
+   so the words cannot disagree with the figure. If they are not on screen the
+   caption says why, and if they are it says what they are up to. That is the
+   same rule the click-picker follows, and for the same reason: one answer to
+   "is this person visible", written in one place and read everywhere else. */
+export function doingWords(p) {
+  if (p.asleep) return 'asleep in a hut';
+  if (p.hidden) return INDOOR_WORDS[p.job] || 'resting';
+  return JOB_WORDS[p.job] || p.job;
+}
 
 export function updateFollowCaption() {
   const el = $('following');
@@ -277,7 +627,7 @@ export function updateFollowCaption() {
   if (P.view !== 'follow' || !p) { el.hidden = true; return; }
   el.hidden = false;
   const age = Math.floor(personAge(p));
-  const doing = p.asleep ? 'asleep in a hut' : JOB_WORDS[p.job] || p.job;
+  const doing = doingWords(p);
   /* A tenth of a unit of berries is still something in their arms; rounded to
      nothing it read "carrying 0", which says the opposite of what is true. */
   const carrying = p.haul > 0
@@ -305,9 +655,10 @@ export function updateFollowCaption() {
     ? ` <span class="line">${p.name} ${fathers.map((r) => `← ${r.n}`).join(' ')}`
       + `${fathers.length === 4 && fathers[3].f ? ' ←…' : ''}</span>`
     : '';
-  const house = (p.gen || 1) > 1
-    ? ` · ${ordinal(p.gen)} of the ${p.line} line`
-    : ` · of the founding band`;
+  /* Said only when there is a line to say. "Of the founding band" was on
+     every first-generation person in the world, which at the start is all of
+     them — a phrase that is on everybody tells you nothing about anybody. */
+  const house = (p.gen || 1) > 1 ? ` · ${ordinal(p.gen)} of the ${p.line} line` : '';
   /* Named only when it is worth naming — most people are unremarkable and the
      card should say so by not saying anything. */
   const word = traitWord(p);
@@ -342,7 +693,7 @@ export function updateFollowCaption() {
   }
   p.lastSeen = [p.x, p.z, worldClock];
 
-  el.innerHTML = tribeChips(el.textContent)
+  el.innerHTML = sexMarks(tribeChips(el.textContent))
     + ` <span class="meter${ten <= 2 ? ' low' : ''}" title="energy">${meter} ${ten}/10</span>`
     + chain
     + `<span class="where">`
@@ -439,7 +790,11 @@ export function wireInput() {
   addEventListener('keydown', (ev) => {
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
     if (ev.code === 'KeyH') ui.classList.toggle('hidden');
-    if (ev.code === 'KeyM') $('map').hidden = !$('map').hidden;
+    /* M used to be a single toggle, so a map you wanted smaller rather than
+       gone was a map you turned off. It walks the sizes now and "hidden" is the
+       last of them, so the old gesture still gets there — it just takes the
+       scenic route, and says where it got to. */
+    if (ev.code === 'KeyM') toast(`map: ${stepMapSize(ev.shiftKey ? -1 : 1)}`);
     if (ev.code === 'Slash') toggleKeys();
     if (ev.code === 'Escape') { stopAhead(); showKeys(false); closeChronicle(); closeTribe(); }
     /* One key rather than two. It used to take C to cycle into Follow and then
@@ -447,6 +802,19 @@ export function wireInput() {
     if (ev.code === 'KeyF') {
       if (P.view !== 'follow') setViewMode('follow');
       else pickFollow();
+    }
+    /* The same shape as F, for the other question. F is "show me somebody";
+       this is "show me somewhere", and like F it puts you in the mode it needs
+       rather than making you cycle to it first. */
+    /* Shift and W together, before `keys` sees the W — otherwise letting go
+       of somebody also tells them to walk on the way out. */
+    if (ev.code === 'KeyW' && ev.shiftKey && P.view === 'follow') {
+      if (!releaseLead()) toast('nobody is being led');
+      return;
+    }
+    if (ev.code === 'KeyR') {
+      if (P.view !== 'orbit') setViewMode('orbit');
+      pickRoam();
     }
     /* Whichever band you are already looking at: the one you are following, or
        the first if you are not following anybody. A row on the panel opens it
@@ -469,18 +837,42 @@ export function wireInput() {
     keys.add(ev.code);
   });
   addEventListener('keyup', (ev) => keys.delete(ev.code));
-  addEventListener('blur', () => { keys.clear(); cam.dragging = false; });
+  addEventListener('blur', () => { keys.clear(); cam.dragging = false; press.live = false; });
+
+  /* A name on the band card is the other way of saying "that one" — and the
+     better way when the person you want is asleep in a hut, or a hundred metres
+     off behind a hill, and so is not on screen to be clicked. The card is what
+     is covering the world, so choosing from it closes it.
+
+     Bound to the box, not the rows: the rows are rewritten every time somebody
+     is born, dies, falls ill or changes job. Only the living carry `data-p` —
+     the "who is gone" tab is a list of people there is nothing to follow. */
+  $('tribeList')?.addEventListener('click', (ev) => {
+    const row = ev.target?.closest?.('tr[data-p]');
+    if (!row) return;
+    if (followPersonById(Number(row.dataset.p))) closeTribe();
+  });
 
   /* Look. In fly and walk the drag turns the camera directly; in orbit the same
      drag belongs to OrbitControls, which is listening on this canvas already. */
   canvas.addEventListener('pointerdown', (ev) => {
-    if (P.view === 'orbit' || ev.button !== 0) return;
+    if (ev.button !== 0) return;
+    /* Recorded in every view, Orbit included: OrbitControls owns the drag there
+       but not the click, and clicking somebody has to work in all four. */
+    press.x = ev.clientX;
+    press.y = ev.clientY;
+    press.live = true;
+    if (P.view === 'orbit') return;
     cam.dragging = true;
     cam.lastX = ev.clientX;
     cam.lastY = ev.clientY;
     canvas.setPointerCapture?.(ev.pointerId);
   });
   canvas.addEventListener('pointermove', (ev) => {
+    /* A crosshair while you are behind somebody, because that is the one view
+       where a click on the ground means something. Cheap: no raycast, just the
+       mode. */
+    canvas.style.cursor = P.view === 'follow' && followedPerson() ? 'crosshair' : '';
     if (!cam.dragging || P.view === 'orbit') return;
     cam.yaw -= (ev.clientX - cam.lastX) * LOOK_SENSITIVITY;    // drag right, turn right
     cam.pitch -= (ev.clientY - cam.lastY) * LOOK_SENSITIVITY;  // drag down, look down
@@ -488,8 +880,23 @@ export function wireInput() {
     cam.lastX = ev.clientX;
     cam.lastY = ev.clientY;
   });
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointerup', (ev) => {
+    /* A press that did not travel is a click. Anything further was a look
+       around, and looking round at the ground must not also send anybody to it. */
+    if (press.live && ev.button === 0
+      && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) <= CLICK_SLOP_PX
+      && P.view === 'follow') {
+      const spot = pickGroundAt(ev.clientX, ev.clientY);
+      const p = spot && followedPerson();
+      if (p && leadTo(spot.x, spot.z)) {
+        const away = Math.round(Math.hypot(spot.x - p.x, spot.z - p.z));
+        toast(`${p.name} sets off · ${away}m`);
+      }
+    }
+    press.live = false;
+    endDrag(ev);
+  });
+  canvas.addEventListener('pointercancel', (ev) => { press.live = false; endDrag(ev); });
 
   /* There is no move speed to adjust any more — one speed, set by how long a day
      takes, and shift for a sprint. In Follow the wheel still sets how far back you
@@ -523,6 +930,10 @@ export function syncLookFromCamera() {
 }
 
 export function setViewMode(mode) {
+  /* Leaving Follow lets go of anybody being led. Any road out counts — the map,
+     C, R — because a person still walking to a point you cannot see any more is
+     a person with nothing steering them and no way to stop them. */
+  if (mode !== 'follow') releaseLead(false);
   P.view = mode;
   if (mode === 'orbit') {
     // Give the orbit something to orbit: a point out in front of where you are
@@ -542,6 +953,8 @@ export function setViewMode(mode) {
 }
 
 export function moveCamera(dt) {
+  updateLeadMark();
+  updateOrders();
   if (P.view === 'orbit') return moveOrbit(dt);
   if (P.view === 'follow') return moveFollow(dt);
 
@@ -594,8 +1007,15 @@ export function moveFollow(dt) {
   /* Somebody asleep is hidden inside a hut, so following them is following an
      empty patch of ground — which looks exactly like the mode being broken.
      Hand over to somebody who is up, unless the whole camp is asleep, in which
-     case the caption says so and the camera keeps its vigil over the hut. */
-  if (p && p.asleep && people.some((o) => !o.asleep)) {
+     case the caption says so and the camera keeps its vigil over the hut.
+
+     Not if you asked for this one. `F` offers you somebody and the handover is
+     it offering you somebody better; picking a name off the band card is you
+     saying which, and quietly swapping the person out from under that is the
+     same bug the handover exists to fix, pointed the other way — you chose the
+     one who is asleep, most likely because they were the one who was asleep.
+     The caption says "asleep in a hut" and they get up in the morning. */
+  if (p && !followChosen && p.asleep && people.some((o) => !o.asleep)) {
     pickFollow(false);
     p = followedPerson();
   }

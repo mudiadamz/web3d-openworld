@@ -48,6 +48,11 @@ export const SCHEMA = {
   MODELS: { path: 'models', type: 'enum', values: ['off', 'birds', 'all'] },
   NIGHT_SKIP: { path: 'nightSkip', type: 'bool' },
   NIGHT_SKIP_RATE: { path: 'nightSkipRate', type: 'float', min: 1, max: 60 },
+  /* Sun height, not hours: everything that asks whether it is night asks the
+     sun, so the window is set in the same units it is measured in. 0 is the
+     horizon; more negative is further into the night. */
+  NIGHT_FROM: { path: 'nightFrom', type: 'float', min: -0.9, max: 0.3 },
+  NIGHT_DEEP: { path: 'nightDeep', type: 'float', min: -0.9, max: 0.3 },
   SHADOWS: { path: 'shadows', type: 'bool' },
   TERRAIN_SHADOW: { path: 'terrainShadow', type: 'bool' },
   WATER: { path: 'water', type: 'bool' },

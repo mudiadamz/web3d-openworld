@@ -3,13 +3,13 @@ import { clamp, mulberry32 } from './noise.js';
 import { NAME_CODA, NAME_VOWEL, setLineage, tribeVoice } from './wildlife.js';
 import { RATES, rateIndex, setRateIndex } from './clock.js';
 import {
-  CHRONICLE_STORE, chronicle, pendingEvents, renderChronicle, renderTribes, runId,
-  saveChronicle, setBornCount, setChronicle, setDiedCount, setPendingEvents, setRunId,
+  CHRONICLE_STORE, chronicle, milestonesOnly, pendingEvents, renderChronicle, renderTribes, runId,
+  saveChronicle, setBornCount, setChronicle, setDiedCount, setMilestonesOnly, setPendingEvents, setRunId,
   startRun
 } from './life.js';
 import { buildWorld, placeCamera } from './move.js';
 import {
-  chronPage, closeChronicle, closeTribe, openChronicle, openTribe, renderChronPage,
+  chronPage, closeChronicle, closeTribe, openChronicle, openTribe, orderJob, renderChronPage,
   renderTribeCard, setChronFind, setChronPage, setTribeTab, showKeys, toggleKeys
 } from './chronicle.js';
 import { $, STATE_STORE, clearSavedState, ui } from './save.js';
@@ -105,6 +105,16 @@ export function codeColor(code) {
 export function tribeChips(text) {
   return text.replace(/\[([A-Z0-9]{2})\]/g,
     (_, code) => `<b class="wcode" style="background:${codeColor(code)}">${code}</b>`);
+}
+
+/* Which one somebody is, in colour. The glyph still carries the meaning on its
+   own — this is a second channel, not the only one — and it goes on at the
+   markup stage rather than in the text, so nothing has to remember to escape a
+   name that now has a tag in it. */
+export function sexMarks(html) {
+  return String(html)
+    .replace(/♀/g, '<i class="sx f">♀</i>')
+    .replace(/♂/g, '<i class="sx m">♂</i>');
 }
 
 export function codeChip(seed) {
@@ -310,6 +320,46 @@ $('tribeNow').addEventListener('click', () => { setTribeTab('now'); renderTribeC
 $('tribeWas').addEventListener('click', () => { setTribeTab('was'); renderTribeCard(); });
 $('tribeClose').addEventListener('click', closeTribe);
 $('tribe').addEventListener('click', (ev) => { if (ev.target === $('tribe')) closeTribe(); });
+
+/* One idea of what is worth reading, two buttons that say it. Both write the
+   same flag and then redraw both places, so the panel and the window can never
+   be showing different answers to the same question. */
+export function renderChronKind() {
+  for (const id of ['chronKind', 'chronKind2']) {
+    const b = $(id);
+    if (!b) continue;
+    /* The funnel is the label. Its state lives in the class, which fills it in,
+       and in the title, which says the same thing in words for anybody hovering
+       or using a screen reader — the icon is never the only channel. Writing
+       textContent here would throw the svg away on the first press. */
+    b.classList.toggle('on', milestonesOnly);
+    b.setAttribute('aria-pressed', String(milestonesOnly));
+    b.setAttribute('title', milestonesOnly
+      ? 'Showing what is worth telling — click for every line'
+      : 'Showing every line — click for what is worth telling');
+  }
+}
+for (const id of ['chronKind', 'chronKind2']) {
+  $(id)?.addEventListener('click', () => {
+    setMilestonesOnly(!milestonesOnly);
+    setChronPage(0);            // a different list starts at the top of it
+    renderChronKind();
+    renderChronicle();
+    renderChronPage();
+  });
+}
+/* Not called here. `milestonesOnly` is an imported binding and life.js and this
+   file are in a cycle, so reading it while this module is still loading gets a
+   ReferenceError rather than a value — which is the whole reason the page's
+   wiring is deferred, and this slipped straight back into it. The button's
+   starting state is in the markup instead, and this runs when something
+   actually changes it. */
+
+/* One listener on the row rather than six on the buttons. */
+$('orders')?.addEventListener('click', (ev) => {
+  const b = ev.target?.closest?.('button[data-order]');
+  if (b) orderJob(b.dataset.order);
+});
 
 $('chronOpen').addEventListener('click', openChronicle);
 $('chronClose').addEventListener('click', closeChronicle);

@@ -8,10 +8,26 @@
  * that rots quietly, so they are asserted rather than remembered.
  */
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync as rawRead, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SCHEMA, SERVER_SCHEMA, parseEnvFile, resolveConfig, resolveServer } from './config.js';
+
+/* Every check below reads source as text and matches it with regexes written
+   with \n in them. Git is normally set to check out CRLF on Windows, and under
+   that setting twenty-nine of them failed against a working tree that was
+   correct — the files in the repository are LF, the ones on disk were not, and
+   nothing was wrong with the code at all.
+
+   Line endings are not what any check here is about, so they are taken out at
+   the door: everything is read through this and arrives as LF. A checkout is
+   then the same to the harness whatever core.autocrlf is set to, which it has
+   to be, because the setting belongs to whoever cloned it and not to the
+   project. */
+const readFileSync = (path, enc) => {
+  const text = rawRead(path, enc);
+  return typeof text === 'string' ? text.split('\r\n').join('\n') : text;
+};
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 /* INDEX_HTML points this at a copy. Mutation testing — flipping one line and
@@ -1075,8 +1091,78 @@ check('a cause is drawn in proportion to its hazard', worst < 0.05,
    ------------------------------------------------------------------------- */
 group('a camp is tents, not a crowd');
 
+/* -------------------------------------------------------------------------
+   Keeping a matrix that is actually yours
+
+   `_m4` is one scratch Matrix4, declared in world.js and shared by everything
+   that scatters instances. Anything that wants to *keep* a transform has to
+   compose into it first and clone second; cloning first keeps whatever the last
+   thing to touch it left behind. Two adjacent lines in the wrong order, and it
+   parses perfectly — which is how the camps ended up storing the drying rack's
+   crossbar as a tent and standing it on its side at the next birth.
+
+   test-boot.js decomposes the stored matrices and catches this properly, but it
+   skips politely when three.js is not on disk, which on a fresh clone is always.
+   This is the version that always runs. */
+group('what a camp keeps');
+
+const composeFirst = (src, keptInto) => {
+  const lines = src.split('\n');
+  const bad = [];
+  lines.forEach((line, i) => {
+    const kept = new RegExp(`${keptInto}[^=]*=\\s*_m4\\.clone\\(\\)\\s*;`).test(line);
+    if (!kept) return;
+    // Composed on some earlier line, and not merely on a later one.
+    const before = lines.slice(Math.max(0, i - 4), i).join('\n');
+    if (!/_m4\.compose\(/.test(before)) bad.push(`line ${i + 1}: ${line.trim().slice(0, 52)}`);
+  });
+  return bad;
+};
+const peopleSrc = rawSources[srcFiles.indexOf('people.js')] || '';
+check('a hut keeps the matrix that was composed for it',
+  composeFirst(peopleSrc, 'hutAt').length === 0,
+  composeFirst(peopleSrc, 'hutAt').join(' · '));
+check('and so does every pole of the drying rack',
+  composeFirst(peopleSrc, 'rackAt').length === 0,
+  composeFirst(peopleSrc, 'rackAt').join(' · '));
+/* Nothing else in the file keeps one, but if something starts to, it has the
+   same trap waiting for it. */
+check('and nothing else clones the scratch matrix before filling it', (() => {
+  const lines = peopleSrc.split('\n');
+  const bad = [];
+  lines.forEach((line, i) => {
+    if (!/=\s*_m4\.clone\(\)\s*;/.test(line)) return;
+    const before = lines.slice(Math.max(0, i - 4), i).join('\n');
+    if (!/_m4\.compose\(/.test(before)) bad.push(`line ${i + 1}`);
+  });
+  return bad.length ? bad.join(', ') : true;
+})() === true);
+
 check('an errand either takes you out or it does not',
-  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'play'\]\);/.test(html));
+  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'play', 'tend', 'led'\]\);/.test(html));
+/* The one job whose name says where it happens. It was on the indoor side, so
+   somebody "at the fire" was hidden inside a tent — the caption said one thing
+   and the camp showed another — and with a full store it is better than a third
+   of a band, which is most of the people who were never drawn. */
+check('and sitting at the fire is not one of them',
+  /'play', 'tend', 'led'\]\);/.test(html));
+/* Nor is somebody you are walking about by hand, or they wink out the moment
+   you lead them into their own camp. */
+check('and neither is somebody you are leading',
+  /'tend', 'led'\]\);/.test(html));
+/* Between the stones and the tents: the huts stand 6.5m out and are about two
+   metres across, so their inner edge is near 4.1m, and the fire ring is 1.15m. */
+check('somebody at the fire sits between the stones and the tents', (() => {
+  const m = html.match(/FIRESIDE = \[([\d.]+), ([\d.]+)\]/);
+  if (!m) return 'no FIRESIDE';
+  const [, lo, hi] = m.map(Number);
+  const hutRing = Number((html.match(/const r = 6\.5 \+ rng\(\) \* ([\d.]+);/) || [, 2.6])[1]);
+  return lo > 1.15 && hi < 6.5 - 2.4
+    ? true
+    : `fireside ${lo}-${hi}m against a hut ring from 6.5m (spread ${hutRing})`;
+})() === true);
+check('and it is a range of its own, not the one knapping uses',
+  /: p\.job === 'tend' \? FIRESIDE : \[2, 9\];/.test(html));
 check('and everything else happens under a roof',
   /function indoorsNow\(p\)/.test(html)
   && /if \(OUTDOOR_JOBS\.has\(p\.job\)\) return false;/.test(html)
@@ -1094,6 +1180,28 @@ check('and being indoors is what stops them being drawn',
    well-rested. */
 check('but it is not the same as being asleep',
   /p\.asleep = p\.job === 'sleep' && p\.state !== 'goto' && arrived;/.test(html));
+/* -------------------------------------------------------------------------
+   Saying where somebody is, not just what their hands are doing
+
+   A job says what somebody is busy with. It does not say whether you can see
+   them, and the two came apart the moment anything was hidden: the card read
+   "at the fire" off a person inside a tent. So the words key off `p.hidden` —
+   the flag the draw loop sets — and never off the job alone. Same rule as the
+   click-picker: one answer to "is this person visible", written once.
+   ------------------------------------------------------------------------- */
+check('what somebody is doing is read off whether they are drawn',
+  /export function doingWords\(p\)/.test(html.replace(/^export /gm, 'export '))
+  || /function doingWords\(p\)/.test(html));
+check('and it asks the draw loop, not the job list',
+  /if \(p\.hidden\) return INDOOR_WORDS\[p\.job\] \|\| 'resting';/.test(html));
+check('somebody under a roof is resting, not at the fire',
+  /tend: 'resting',/.test(html) && /INDOOR_WORDS = \{/.test(html));
+check('and asleep still says asleep',
+  /if \(p\.asleep\) return 'asleep in a hut';/.test(html));
+/* Both places a person's doing is shown, or one of them keeps the old lie. */
+check('the follow caption uses it', /const doing = doingWords\(p\);/.test(html));
+check('and so does the band card', /\$\{p\.sick \? 'ill' : doingWords\(p\)\}/.test(html));
+
 check('and nothing that counts people stops counting them', (() => {
   // indoorsNow is read where people are drawn, and nowhere that decides anything.
   const i = html.indexOf('function indoorsNow');
@@ -1125,6 +1233,48 @@ check('whoever goes is decided by the step, not the clock',
   || /let worldStep = 0;/.test(html));
 check('and the step moves exactly once per step of the world',
   /tickWorldStep\(\);/.test(html) && /function tickWorldStep\(\) \{ worldStep\+\+; \}/.test(html));
+/* -------------------------------------------------------------------------
+   ...on both paths, which is the point
+
+   `turnStart` is `worldStep % stride`, so if the step does not move, the same
+   slice of the band is walked every frame and nobody else is walked at all.
+   It was ticked only in stepWorld — the unwatched fast-forward — so while
+   somebody was actually looking, worldStep was frozen.
+
+   Everyone outside that one slice was not merely undrawn: they were never
+   stepped. No job, no movement, no ageing, and a build-time zero matrix that
+   nothing ever overwrote. It hid while a band was small, because lodStride
+   returns 1 below LOD.from and every index gets visited regardless, and it
+   arrived the moment a world grew past two dozen — as most of a crowd standing
+   perfectly still and never being drawn.
+
+   Measured on a fresh world of 121 people: 95 who should have been on screen,
+   24 with a matrix. After: 88 of 88.
+
+   This is the same shape as the books below it, which is why it sits here: two
+   paths through the world, and anything either of them owes has to be paid by
+   both. `bookDue += simDays` appears twice for exactly that reason.
+   ------------------------------------------------------------------------- */
+check('on both paths, watched and not',
+  (html.match(/tickWorldStep\(\);/g) || []).length === 2,
+  `${(html.match(/tickWorldStep\(\);/g) || []).length} call sites`);
+check('the unwatched one steps it', (() => {
+  const body = bodyOf('stepWorld');
+  return body && /tickWorldStep\(\);/.test(body) ? true : 'stepWorld does not';
+})() === true);
+check('and so does the watched one', (() => {
+  const body = bodyOf('tick');
+  return body && /tickWorldStep\(\);/.test(body) ? true : 'tick does not';
+})() === true);
+/* And it has to happen before anything reads whose turn it is, or the frame
+   that ticks it walks the slice belonging to the frame before. */
+check('before anybody takes their turn', (() => {
+  const body = bodyOf('tick');
+  if (!body) return 'no tick';
+  const tickAt = body.indexOf('tickWorldStep();');
+  const useAt = body.indexOf('updatePeople(');
+  return tickAt >= 0 && useAt > tickAt ? true : 'the turn is read before it moves';
+})() === true);
 /* They get the whole wait when their turn comes, or the world runs slow. */
 check('a turn is worth the time it waited for', /const slice = dt \* stride;/.test(html));
 check('and the loop steps over the rest rather than asking each one',
@@ -1190,15 +1340,50 @@ check('and a band squeezed long enough moves rather than starves',
 check('the smaller band is the one that goes',
   /if \(adults\(camp\) > adults\(rival\)\) continue;/.test(html));
 check('it goes somewhere with room',
-  /if \(nearest < GROUND\.apart \* MAP_SCALE\) continue;/.test(html));
-/* Every distance here was a number of metres tuned on a 1600 m island. On a
+  /if \(nearest < GROUND\.apart\) continue;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Two kinds of distance, and only one of them is about the island
+
+   Every distance here was a number of metres tuned on a 1600 m island. On a
    4800 m one they all still meant 1600 m: six bands sited inside a 410 m circle
    in the middle of an island nine times the size, fighting over the same
-   ground. Sixty people down to nine, and not one founder alive at the end. */
-check('and every camp distance scales with the island', (() => {
+   ground. Sixty people down to nine, and not one founder alive at the end. So
+   they were all multiplied by MAP_SCALE — and that overshot, because it scaled
+   two different things that are not the same thing.
+
+   Where a camp may be *placed* is about the island: on a bigger one the sites
+   have to be spread further out, or you get the huddle above. How far two fires
+   have to be *apart* is about camps — 260 metres is 260 metres whatever the
+   island measures. Scaling both cancels: a disc 2.5× wider than the spacing
+   holds the same handful of camps however you multiply the pair, so a 6400 m
+   island held exactly as many bands as a 1600 m one and merely spread them
+   thinner. Asking for forty camps got seven on every map in the game.
+
+   GROUND.range, the ground a band treats as its own, was already in plain
+   metres and sits three lines above GROUND.apart, which was not.
+   ------------------------------------------------------------------------- */
+check('where a camp may be placed scales with the island', (() => {
   const code = blankNoise(sources.join('\n'));
-  const spread = (code.match(/MAP_SCALE/g) || []).length;
-  return spread >= 6 ? true : `${spread} places scale with it`;
+  const radii = (code.match(/Math\.sqrt\(rng\(\)\) \* \d+\) \* MAP_SCALE/g) || []).length;
+  return radii >= 3 ? true : `${radii} of the three placement radii scale`;
+})() === true);
+check('but how far apart two fires must be does not', (() => {
+  const code = blankNoise(sources.join('\n'));
+  const scaled = code.match(/(?:CAMPS_APART|GROUND\.apart|SPLIT\.minAway)\s*\*\s*MAP_SCALE/g);
+  return scaled ? scaled.join(', ') : true;
+})() === true);
+/* Which is the whole point: a bigger island is more bands, not the same bands
+   further apart. The three spacings are plain metres and stay comparable to
+   GROUND.range, which is the ground one band works. */
+check('and the spacings are still real distances', (() => {
+  const apart = Number((html.match(/CAMPS_APART = (\d+);/) || [, 0])[1]);
+  const away = Number((html.match(/minAway: (\d+),/) || [, 0])[1]);
+  const room = Number((html.match(/apart: (\d+),/) || [, 0])[1]);
+  const range = Number((html.match(/range: (\d+),/) || [, 0])[1]);
+  return apart > range && away > range && room > range
+    ? true
+    : `apart ${apart}, minAway ${away}, room ${room} vs a band's own ground ${range}`;
 })() === true);
 /* A reference to the old hut is a person walking to where their house was. */
 check('and everybody gets a hut in the new camp',
@@ -1452,8 +1637,30 @@ check('a tiger kill recounts them too',
   /a\.dead = true;[\s\S]{0,200}?recountAnimals\(\);/.test(html));
 check('and one growing back recounts them',
   /born\.fed = [^;]+;\n    recountAnimals\(\);/.test(html));
+/* The point is that the readout is refreshed on its own timer rather than only
+   when something happens to somebody. It was pinned as two adjacent lines,
+   which made it a check about where a line sits — one statement between them
+   and it failed on code that does exactly what it says. */
 check('the readout redraws on its own, not only when somebody dies',
-  /updateHud\(\);\n    const el = \$\('fps'\);/.test(html));
+  /updateHud\(\);[\s\S]{0,220}?\$\('fps'\)/.test(html));
+
+/* -------------------------------------------------------------------------
+   The two numbers that outlive the panel
+
+   H hides the world panel, and the frame rate and the head count were both in
+   it — which are the two numbers you actually want while looking at something
+   else. They are beside the clock as well now, written in the same half-second
+   the frame rate is measured over.
+   ------------------------------------------------------------------------- */
+check('the frame rate is beside the clock too',
+  /const hf = \$\('hudFps'\);/.test(html) && html.includes('id="hudFps"'));
+check('and so is the head count',
+  /hp\.textContent = people\.length;/.test(html) && html.includes('id="hudPop"'));
+check('and they sit in the hud, which H does not hide', (() => {
+  const hud = html.slice(html.indexOf('<div id="hud">'), html.indexOf('<div id="hud">') + 400);
+  return /id="hudFps"/.test(hud) && /id="hudPop"/.test(hud)
+    ? true : 'they are not inside #hud';
+})() === true);
 check('fruit is on the readout', html.includes('${stats.fruit} fruit'));
 
 group('the orchard');
@@ -1610,8 +1817,12 @@ check('and so are the bracket keys',
 /* The invariant that matters: one scaled dt feeds the clock, the calendar, the
    seasons, the economy and the movement, and the unscaled one feeds only the
    things that belong to the room rather than the world. */
-const tickBody = html.slice(html.indexOf('function tick() {'), html.indexOf('function tick() {') + 3000);
-check('the rate is applied once, to dt', /const dt = real \* clockRate\(\);/.test(tickBody));
+/* The whole of tick(), not the first 3000 characters of it. A fixed slice put
+   the last line it looks for near the edge, so a comment added inside the
+   function was enough to drop the simDays line off the end and fail a check
+   about code that had not changed. bodyOf runs to the next top-level declaration. */
+const tickBody = bodyOf('tick');
+check('the rate is applied once, to dt', /const dt = ranNight \? 0 : real \* rate;/.test(tickBody));
 check('the clock reads the scaled one', /P\.time = \(P\.time \+ \(dt \* 24\)/.test(tickBody));
 check('the calendar reads the scaled one', /const simDays = dt \/ P\.dayLength;/.test(tickBody));
 check('the walking reads the scaled one', /const paced = Math\.min\(dt \* pace\(\), PACE_MAX_STEP\);/.test(tickBody));
@@ -1624,15 +1835,88 @@ group('the night');
 check('it is on by default', /nightSkip: true,/.test(html));
 check('and how fast is a setting', /nightSkipRate: \d+,/.test(html)
   && /NIGHT_SKIP_RATE: \{ path: 'nightSkipRate'/.test(readFileSync(join(ROOT, 'config.js'), 'utf8')));
-check('nothing is skipped in daylight', /sunDir\.y > -0\.02\) return false;/.test(html));
+check('nothing is skipped in daylight', /sunDir\.y > P\.nightFrom\) return false;/.test(html));
 check('deep night runs whatever anyone is doing',
-  /const DEEP_NIGHT = -0\.25;/.test(html) && /if \(sunDir\.y < DEEP_NIGHT\) return true;/.test(html));
+  /if \(sunDir\.y < deepNight\(\)\) return true;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Both ends of the night window are settings
+
+   How much of the night you want to sit through is taste rather than physics.
+   In sun height, not hours, because everything that asks whether it is night
+   asks the sun and the window should be set in the units it is measured in.
+   ------------------------------------------------------------------------- */
+check('where the window opens is a setting',
+  /nightFrom: -0\.02,/.test(html)
+  && /NIGHT_FROM: \{ path: 'nightFrom'/.test(readFileSync(join(ROOT, 'config.js'), 'utf8')));
+check('and where it stops waiting for stragglers',
+  /nightDeep: -0\.25,/.test(html)
+  && /NIGHT_DEEP: \{ path: 'nightDeep'/.test(readFileSync(join(ROOT, 'config.js'), 'utf8')));
+/* Set the two the wrong way round and the deep test would fire before the night
+   had started — running the world on through a sunset with everybody still out
+   in it. Clamped rather than validated, because a rule nobody reads is not a
+   rule. */
+check('and the far end is never above the near one',
+  /export function deepNight\(\) \{ return Math\.min\(P\.nightDeep, P\.nightFrom\); \}/.test(
+    rawSources[srcFiles.indexOf('clock.js')] || ''));
+check('the defaults are the numbers that were hard-coded', (() => {
+  const from = Number((html.match(/nightFrom: (-?[\d.]+),/) || [, NaN])[1]);
+  const deep = Number((html.match(/nightDeep: (-?[\d.]+),/) || [, NaN])[1]);
+  return from === -0.02 && deep === -0.25
+    ? true : `from ${from}, deep ${deep}`;
+})() === true);
 check('before that, anybody still out keeps the clock honest',
   /if \(p\.asleep\) continue;/.test(html)
   && /Math\.hypot\(p\.x - p\.camp\.x, p\.z - p\.camp\.z\) > CAMP_CLEARING\) return false;/.test(html));
 check('an empty world does not wait for nobody', /if \(!people\.length\) return true;/.test(html));
-check('the two multipliers compose rather than compete',
-  /return RATES\[rateIndex\] \* \(skipping \? P\.nightSkipRate : 1\);/.test(html));
+/* -------------------------------------------------------------------------
+   The night is run, not stretched
+
+   It used to be one enormous frame: clockRate multiplied dt by nightSkipRate
+   and everything carried on as normal. That holds to about 15x and then comes
+   apart, because `paced` is clamped by PACE_MAX_STEP and dt is not — past there
+   the books (eating, ageing, births, deaths, the store spoiling) run at the
+   full rate while movement and sleep run at the clamped one. At 60x a band took
+   a whole night's hunger and got a quarter of a night's rest; at 600x, a
+   fortieth. Which is why the rate was capped at 60 and a night still took half
+   a minute: it could not be raised without the clock leaving the sleeping
+   behind.
+
+   So the night goes through stepWorld instead, which does the deciding and
+   skips the drawing, as many times as fit in a slice of the frame. ffStep() is
+   FF_STEP / pace(), so dt * pace() is exactly FF_STEP and the clamp inside
+   stepWorld never bites — the clock and the sleeping cannot come apart however
+   fast it runs.
+   ------------------------------------------------------------------------- */
+check('the clock rate is what you asked for and nothing else',
+  /return RATES\[rateIndex\];/.test(html)
+  && !/RATES\[rateIndex\] \* \(skipping/.test(html));
+check('and the night is run in world-steps',
+  /while \(nightIdle\(\) && Date\.now\(\) < until\) \{ stepWorld\(step\); ranNight = true; \}/.test(html));
+check('at the step size that keeps movement tied to the clock',
+  /const step = ffStep\(\);/.test(tickBody)
+  && /return FF_STEP \/ Math\.max\(pace\(\), 0\.001\);/.test(html));
+/* Bounded, or one slow frame becomes a hung tab. */
+check('inside a budget, so a frame still ends',
+  /const until = Date\.now\(\) \+ NIGHT_BUDGET \* \(P\.nightSkipRate \/ NIGHT_SKIP_BASE\);/.test(html));
+/* And the world must not be moved twice in the same frame. */
+check('and the frame does not move the world again after running it',
+  /const dt = ranNight \? 0 : real \* rate;/.test(html));
+/* `skipping` is written by clockRate. Reading it before calling clockRate gets
+   last frame's answer — and at the end of the night a stale true takes the
+   branch that skips the call, so it would never clear itself and the world
+   would stop. It has to be asked first. */
+check('the flag is asked for before it is read', (() => {
+  const body = bodyOf('tick');
+  if (!body) return 'no tick';
+  const asked = body.indexOf('const rate = clockRate();');
+  const read = body.indexOf('if (skipping) {');
+  return asked >= 0 && read > asked ? true : 'skipping is read before clockRate sets it';
+})() === true);
+/* The setting keeps its sense — bigger is a quicker night — it is a share of
+   the frame now rather than a multiplier on the clock. */
+check('NIGHT_SKIP_RATE still means a quicker night',
+  /const NIGHT_SKIP_BASE = 6;/.test(html) && /const NIGHT_BUDGET = 10;/.test(html));
 check('and the screen says when it is running', /\$\('skip'\)/.test(html)
   && html.includes('id="skip"'));
 
@@ -1655,6 +1939,65 @@ check('entering follow picks somebody', /if \(mode === 'follow'\) pickFollow\(fa
 check('N is gone', !/KeyN/.test(html) && !/<kbd>N<\/kbd>/.test(html));
 check('and the key list says F', /<kbd>F<\/kbd>/.test(html));
 
+/* -------------------------------------------------------------------------
+   Somewhere, as against somebody
+
+   F answers "show me somebody". In Orbit the question is "show me somewhere",
+   and on a 3200m island flying there to find out there was nothing at the other
+   end is a long way to go. R is the same shape as F: it puts you in the mode it
+   needs rather than making you cycle to it first.
+   ------------------------------------------------------------------------- */
+check('R both enters orbit and finds somewhere',
+  /if \(ev\.code === 'KeyR'\) \{\s*if \(P\.view !== 'orbit'\) setViewMode\('orbit'\);\s*pickRoam\(\);/.test(html));
+/* Dry land, not a cliff, and inside the island — the same three tests camp
+   siting uses, because a spot that fails them is a spot with nothing to see. */
+check('and it lands on dry land',
+  /if \(h < SEA \+ 2\) continue;/.test(html));
+check('picking the flattest it found rather than the first',
+  /if \(flat > bestFlat\) \{ bestFlat = flat; best = \{ x, z, y: h \}; \}/.test(html));
+check('inside the island, not out in the water',
+  /Math\.sqrt\(Math\.random\(\)\) \* WORLD \* 0\.42/.test(html));
+/* Twice in the same place should still be a different picture. */
+check('and it looks from a new bearing each time',
+  /const look = Math\.random\(\) \* Math\.PI \* 2;/.test(html));
+check('the orbit pivot goes with it, or the next drag spins the world',
+  /controls\.target\.set\(best\.x, best\.y \+ 2\.5, best\.z\);/.test(html)
+  && /if \(P\.view === 'orbit'\) controls\.update\(\);/.test(html));
+/* It picks a spot, so it must not draw from the simulation's stream — same rule
+   as pickFollow, which is in NOT_STEPPED for exactly this reason. */
+check('and it does not draw from the world stream', (() => {
+  const body = bodyOf('pickRoam');
+  return body && !/\bluck\(\)/.test(body) ? true : 'pickRoam draws from luck()';
+})() === true);
+check('the key list says R', /<kbd>R<\/kbd>/.test(html));
+
+/* -------------------------------------------------------------------------
+   The one figure you are actually looking at
+
+   Turn-taking is invisible at the distance a crowd is seen from and very
+   visible at three metres. In Follow the one figure on screen is the one being
+   grouped, so it stepped four times as far four times as often — a judder that
+   only appeared once worldStep started moving while watching, because before
+   that the followed person was either permanently in the group and smooth, or
+   permanently outside it and frozen.
+   ------------------------------------------------------------------------- */
+check('whoever the camera is locked to is not dealt into a group',
+  /const watched = P\.view === 'follow' && followIdx >= 0 && followIdx < people\.length/.test(html)
+  && /if \(i !== watched\) _turns\.push\(i\);/.test(html)
+  && /if \(watched >= 0\) _turns\.push\(watched\);/.test(html));
+/* And they get one frame of time, not the whole group's wait, or they walk at
+   `stride` times everybody else's pace. */
+check('and they get one frame of time, not a group\'s worth',
+  /const slice = i === watched \? dt : dt \* stride;/.test(html));
+/* One extra person a frame against a saving in the hundreds. */
+check('which costs one person a frame', (() => {
+  const body = bodyOf('updatePeople');
+  if (!body) return 'no updatePeople';
+  // The watched index is appended once, so nobody is stepped twice.
+  return (body.match(/_turns\.push\(watched\)/g) || []).length === 1
+    ? true : 'the watched person is queued more than once';
+})() === true);
+
 check('the caption carries an energy meter',
   /const bars = Math\.max\(0, Math\.min\(5, Math\.round\(p\.energy \* 5\)\)\)/.test(html)
   && /'▮'\.repeat\(bars\) \+ '▯'\.repeat\(5 - bars\)/.test(html));
@@ -1670,14 +2013,329 @@ check('and nothing in between reads 0',
 check('it never goes over ten', energyOutOfTen({ energy: 1.5 }) === 10);
 check('the meter turns red on the last of it', /ten <= 2 \? ' low' : ''/.test(html));
 
+/* -------------------------------------------------------------------------
+   Where you pointed, and who goes there
+
+   Clicking a person used to pick them to follow. It does not any more: a click
+   means "go there" now, which is a thing you say about a place rather than
+   about a person, and one gesture cannot carry both readings. Choosing who to
+   follow is F, or a name on the band card.
+   ------------------------------------------------------------------------- */
+check('clicking somebody no longer follows them',
+  !/pickPersonAt/.test(html) && !/PICK_RADIUS/.test(html));
+check('a click on the ground says where, and only in Follow',
+  /const spot = pickGroundAt\(ev\.clientX, ev\.clientY\);/.test(html)
+  && /&& P\.view === 'follow'\) \{/.test(html));
+/* Looking round at the ground must not also send anybody to it. */
+check('and a drag is still not a click',
+  /Math\.hypot\(ev\.clientX - press\.x, ev\.clientY - press\.y\) <= CLICK_SLOP_PX/.test(html));
+
+/* A height field has exactly one crossing along a downward ray, so marching to
+   it and halving is exact — where a flat plane test misses hills entirely. */
+check('the ground is found by marching the ray and halving',
+  /if \(_pickAt\.y <= sampleHeight\(_pickAt\.x, _pickAt\.z\)\) \{ below = t; break; \}/.test(html)
+  && /const mid = \(above \+ below\) \/ 2;/.test(html));
+check('and the sky is not the ground',
+  /if \(ray\.direction\.y >= -0\.0001\) return null;/.test(html));
+check('nor is the sea, nor off the edge of the island',
+  /if \(sampleHeight\(_pickAt\.x, _pickAt\.z\) < SEA \+ 0\.5\) return null;/.test(html)
+  && /if \(Math\.hypot\(_pickAt\.x, _pickAt\.z\) > WORLD \* 0\.46\) return null;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Taking somebody by the hand
+
+   Following is watching. This is the other half: the person you are behind does
+   what you say instead of what they were going to do. Click for where, hold W
+   to walk them, shift+W to let go.
+   ------------------------------------------------------------------------- */
+check('a click hands them their destination',
+  /export function leadTo\(x, z\)/.test(html.replace(/^export /gm, 'export ')) || /function leadTo\(x, z\)/.test(html));
+/* Pointing is the whole instruction. Holding a key as well was one step too
+   many for a single idea — you pointed, so go — and a walk across the island
+   was a key held down for a minute. `goto` already means walk until you
+   arrive, so being led needs nothing added to the movement at all. */
+check('they walk there on their own',
+  !/leadWalking/.test(html));
+/* And W is the extra rather than the whole instruction: hold it and they run. */
+check('and holding W makes them run',
+  /if \(p\.led && leadRunning\(\)\) want = PERSON\.jog \* \(p\.child \? 0\.75 : 1\);/.test(html)
+  && /function leadRunning\(\) \{ return keys\.has\('KeyW'\); \}/.test(html));
+/* Charged for like any other jog. Set before the clamps rather than after, so a
+   run costs energy, is cut short when there is none left, and slows with a full
+   basket — a run you can hold for ever for nothing makes walking pointless. */
+check('and running is charged for like any other jog', (() => {
+  const body = bodyOf('updatePeople');
+  if (!body) return 'no updatePeople';
+  const at = body.indexOf('if (p.led && leadRunning())');
+  const clamp = body.indexOf('want = PERSON.walk + (want - PERSON.walk) * clamp(p.energy');
+  const carry = body.indexOf('if (p.carry) want *= 0.8;');
+  return at > 0 && at < clamp && at < carry
+    ? true : 'the run is set after the clamps that would charge for it';
+})() === true);
+check('and the state they are put in is the one that walks',
+  /if \(p\.led\) \{[\s\S]{0,200}?p\.state = 'goto';/.test(html));
+/* Point somewhere else and they turn round: the lead point is copied to the
+   target on every turn, so a new click is picked up without anything else. */
+check('a new click turns them round',
+  /p\.targetX = p\.leadX;\s*p\.targetZ = p\.leadZ;/.test(html));
+/* And arriving is standing still, not finishing an errand they never had. */
+check('and arriving just stops them',
+  /if \(p\.led\) \{ \/\* nothing to finish \*\/ \}/.test(html));
+
+/* -------------------------------------------------------------------------
+   Telling them what to do
+
+   Clicking the ground says where; these say what. Six icons across the bottom
+   while you are behind somebody, and nothing at all when you are not.
+   ------------------------------------------------------------------------- */
+check('there is a button for each job you can give',
+  /export const ORDERS = \['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit'\];/.test(
+    rawSources[srcFiles.indexOf('chronicle.js')] || ''));
+check('and one in the markup for each of them', (() => {
+  const list = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit'];
+  const missing = list.filter((j) => !html.includes(`data-order="${j}"`));
+  return missing.length ? `no button for ${missing.join(', ')}` : true;
+})() === true);
+/* Icons only, which means the words have to be somewhere a pointer and a reader
+   can still find them. */
+check('each says what it is without being read',
+  (html.match(/data-order="\w+" aria-label="[^"]+" title="[^"]+"/g) || []).length === 6);
+/* Only while you are behind somebody: a menu bar over an empty world is a menu
+   bar over an empty world. */
+check('the row is only there in Follow',
+  /const p = P\.view === 'follow' \? followedPerson\(\) : null;\s*if \(box\.hidden !== !p\) box\.hidden = !p;/.test(html));
+/* And something has to call it, or the row is correct and never drawn. It
+   shipped that way: the wiring was written and dropped, every check about the
+   orders passed, and the buttons were invisible. */
+check('and something actually draws it',
+  /export function moveCamera\(dt\) \{\s*updateLeadMark\(\);\s*updateOrders\(\);/.test(
+    rawSources[srcFiles.indexOf('chronicle.js')] || ''));
+
+/* An order is one instruction taken up once, not a leash: they go and do it and
+   then they are choosing for themselves again. */
+check('an order is taken up once and then let go of',
+  /if \(p\.orders\) \{\s*p\.job = p\.orders;\s*p\.orders = null;\s*setOut\(p\);\s*\} else chooseJob\(p, day\);/.test(html));
+/* Two things steering one person is one too many. */
+check('and being told what to do ends being walked by hand',
+  /if \(p\.led\) releaseLead\(false\);\s*p\.orders = job;/.test(html));
+
+/* The rule that keeps a world reproducible: only what the step calls may draw
+   from the stream. A click happens on a frame, not on a step — so the order is
+   left on the person and the next turn spends it. */
+check('an order draws nothing from the world stream', (() => {
+  const body = bodyOf('orderJob');
+  if (!body) return 'no orderJob';
+  return !/\bluck\(\)/.test(body) && !/setOut\(/.test(body) && !/pickWork\(/.test(body)
+    ? true : 'orderJob points them at something itself';
+})() === true);
+check('and the thing that does is only called from the step', (() => {
+  // setOut draws from luck(); it must not be reachable from a click.
+  const ui = rawSources[srcFiles.indexOf('ui.js')] || '';
+  const chron = rawSources[srcFiles.indexOf('chronicle.js')] || '';
+  return !/setOut\(/.test(ui) && !/setOut\(/.test(chron)
+    ? true : 'setOut is called outside move.js';
+})() === true);
+
+/* -------------------------------------------------------------------------
+   A ring where you pointed
+
+   From behind somebody's shoulder at three metres, a person setting off looks
+   the same whichever way they were going to go anyway — so the only evidence a
+   click landed was that something moved.
+   ------------------------------------------------------------------------- */
+check('the point they are walking to is marked',
+  /export function updateLeadMark\(\)/.test(html.replace(/^export /gm, 'export '))
+  || /function updateLeadMark\(\)/.test(html));
+check('and it is only there while somebody is being led',
+  /if \(!p \|\| !p\.led\) \{ if \(leadMark\) leadMark\.visible = false; return; \}/.test(html));
+/* And nothing is built until there is something to mark. three.js gives every
+   geometry, material and object a UUID out of Math.random, so a mesh made on
+   the first frame regardless is a feature nobody has used yet spending draws —
+   which in the boot harness, where Math.random is pinned so a seed replays,
+   built a different island. */
+check('and nothing is built for a click that never happened', (() => {
+  const body = bodyOf('updateLeadMark');
+  if (!body) return 'no updateLeadMark';
+  return body.indexOf('if (!p || !p.led)') < body.indexOf('leadMarker()')
+    ? true : 'the mesh is made before it is known to be wanted';
+})() === true);
+/* Sitting exactly on the ground z-fights with the terrain, which reads as the
+   marker flickering rather than as a marker. */
+check('it sits just clear of the ground',
+  /sampleHeight\(p\.leadX, p\.leadZ\) \+ 0\.08/.test(html));
+/* On the scene, not the world: disposeWorld empties the world's groups when a
+   new island is built, and this belongs to the camera rather than the island. */
+check('and it survives a new world being built', (() => {
+  const body = bodyOf('leadMarker');
+  return body && /scene\.add\(leadMark\);/.test(body) && !/world\.add\(leadMark\)/.test(html)
+    ? true : 'the marker is added to the world, which is disposed';
+})() === true);
+check('and it is drawn every frame, from the one thing that runs every frame',
+  /export function moveCamera\(dt\) \{\s*updateLeadMark\(\);/.test(html.replace(/^export /gm, 'export '))
+  || /function moveCamera\(dt\) \{\s*updateLeadMark\(\);/.test(html));
+check('shift and W give them back',
+  /if \(ev\.code === 'KeyW' && ev\.shiftKey && P\.view === 'follow'\)/.test(html)
+  && /function releaseLead\(announce = true\)/.test(html));
+/* Read before `keys` sees the W, or letting go of somebody also tells them to
+   walk on the way out. */
+check('and letting go does not also tell them to walk', (() => {
+  const i = html.indexOf("if (ev.code === 'KeyW' && ev.shiftKey");
+  const k = html.indexOf('keys.add(ev.code);');
+  return i > 0 && k > i ? true : 'the release is handled after keys.add';
+})() === true);
+check('and they pick up their own life again',
+  /p\.led = false;\s*p\.state = 'idle';\s*p\.timer = 0;/.test(html));
+
+/* Nothing else may steer somebody who is being led. A person who obeys most of
+   the time is worse than one who cannot be steered at all — you never know
+   which of your instructions took. */
+check('nothing else steers them while they are led', (() => {
+  const want = [
+    ["the tiger they'd run from", /if \(!p\.led && !p\.asleep && p\.panic <= 0 && nearestPredator/],
+    ['dusk sending them home', /if \(!p\.led && day < 0\.25 && p\.job !== 'sleep'/],
+    ['the errand timer', /if \(p\.timer <= 0 && !p\.led\) \{/],
+    ['waking them for the day', /if \(day >= 0\.25 && p\.job === 'sleep' && !p\.led\)/],
+  ];
+  const missing = want.filter(([, re]) => !re.test(html)).map(([n]) => n);
+  return missing.length ? `still steered by: ${missing.join(', ')}` : true;
+})() === true);
+/* But everything that is not steering still runs: led is a hand on the
+   shoulder, not a shield. The books do not know about it at all. */
+check('but being led is not a shield', (() => {
+  const lives = bodyOf('updateLives');
+  const econ = bodyOf('updateEconomy');
+  return !/\.led/.test(lives || '') && !/\.led/.test(econ || '')
+    ? true : 'the books check for it';
+})() === true);
+check('and a tiger does not know about it either', (() => {
+  const body = bodyOf('nearestQuarry');
+  return body && !/\.led/.test(body) ? true : 'nearestQuarry checks for it';
+})() === true);
+
+/* The other half of the same question. A figure on screen can be clicked; the
+   person you want is often the one who is *not* on screen — indoors, asleep, or
+   over a hill — and the band card is the list of exactly those. */
+check('a name on the band card follows that person',
+  /\$\('tribeList'\)\?\.addEventListener\('click'/.test(html)
+  && /if \(followPersonById\(Number\(row\.dataset\.p\)\)\) closeTribe\(\);/.test(html));
+/* The card is built from a filtered, re-sorted copy of `people`, and a death
+   renumbers the array under it. A row index would follow the wrong person. */
+check('and it goes by who they are, not where they are',
+  /data-p="\$\{p\.id\}"/.test(html)
+  && /const idx = people\.findIndex\(\(p\) => p\.id === id\);/.test(html));
+check('the rows are the living ones only', (() => {
+  // formerTable is the "who is gone" tab. Nothing there is followable.
+  const i = html.indexOf('function formerTable');
+  const body = html.slice(i, html.indexOf('function renderTribeCard'));
+  return i > 0 && !/data-p=/.test(body);
+})());
+/* The listener cannot live on the rows: they are rewritten every time somebody
+   is born, dies, falls ill or changes job. */
+check('and it survives the list being rewritten',
+  /\$\('tribeList'\)\?\.addEventListener/.test(html)
+  && /row = ev\.target\?\.closest\?\.\('tr\[data-p\]'\)/.test(html));
+
+/* A suggestion and a choice are different things, and only one of them may be
+   overruled. Follow hands you off a sleeper because staring at a hut looks like
+   the mode is broken — but if you picked the sleeper by name, it is not. */
+check('F offers you somebody; a click or a name chooses one',
+  /followChosen = false;/.test(html) && /followChosen = true;/.test(html));
+check('and somebody you chose is not handed away while they are indoors',
+  /if \(p && !followChosen && p\.asleep && people\.some\(\(o\) => !o\.asleep\)\)/.test(html));
+
+/* -------------------------------------------------------------------------
+   F does not hand you an empty tent
+
+   It asked for `!asleep`, which is narrower than being visible: a person can be
+   wide awake and inside a hut — knapping, sitting with the ill, or a toddler
+   kept in — and F would land on them. The caption read "knapping" and the
+   screen showed a hut, which is what the mode being broken looks like.
+   ------------------------------------------------------------------------- */
+check('F picks from the people who are on screen',
+  /for \(let i = 0; i < people\.length; i\+\+\) if \(!people\[i\]\.hidden\) pool\.push\(i\);/.test(html));
+check('and asks the draw loop rather than guessing again', (() => {
+  const body = bodyOf('pickFollow');
+  if (!body) return 'no pickFollow';
+  // asleep may only appear as the fallback, never as the first test.
+  return body.indexOf('.hidden') < body.indexOf('.asleep') ? true : 'asleep is still the test';
+})() === true);
+/* Refusing to pick anybody is worse than picking badly: a camp can genuinely be
+   all indoors — a wet afternoon, or three in the morning — and F still has to
+   do something. */
+check('but it always picks somebody', (() => {
+  const body = bodyOf('pickFollow');
+  if (!body) return 'no pickFollow';
+  const falls = (body.match(/if \(!pool\.length\)/g) || []).length;
+  return falls === 2 ? true : `${falls} fallbacks, wanted 2`;
+})() === true);
+check('and the last fallback takes anyone at all',
+  /if \(!pool\.length\) for \(let i = 0; i < people\.length; i\+\+\) pool\.push\(i\);/.test(html));
+
 group('a tiger with a stomach');
 
-const hunt = html.slice(html.indexOf("key: 'tiger'"), html.indexOf("key: 'tiger'") + 2800);
+/* To the end of the species list, rather than a fixed number of characters.
+   It was 2800, which left the last number it reads sitting 28 characters from
+   falling off the end — and the moment the tiger grew two more hunting
+   numbers, three checks started reading NaN instead of failing honestly. The
+   tiger is the last species, so the list's own closing bracket is the edge. */
+const tigerAt = html.indexOf("key: 'tiger'");
+const hunt = html.slice(tigerAt, html.indexOf('];', tigerAt));
 const num = (k) => Number((hunt.match(new RegExp(k + ': ([\\d.]+)')) || [, NaN])[1]);
 check('a meal is worth more than the threshold to start hunting',
   num('meal') > num('hunts'), `meal ${num('meal')} vs hunts ${num('hunts')}`);
 check('a person is a smaller meal than an animal',
   num('person') < num('meal'), `person ${num('person')} vs ${num('meal')}`);
+
+/* -------------------------------------------------------------------------
+   ...and hunts them a good deal less than it hunts a deer
+
+   Preferring four legs only helps when four legs are in sight, and on an island
+   this size they usually are not: a couple of hundred animals over 900 metres
+   is under one animal inside the 62-metre circle a tiger sees a deer in. So a
+   person alone in an empty stretch was simply the best thing on offer, from as
+   far off as a deer, and 11 of 14 deaths on seed 20260906 were tigers.
+   ------------------------------------------------------------------------- */
+check('a tiger picks a deer out of the landscape further off than a person',
+  num('seesPeople') < num('sees'), `sees ${num('sees')} vs seesPeople ${num('seesPeople')}`);
+/* And people have to notice it before it notices them, or running is a thing
+   they start doing too late for it to be worth anything. */
+check('and people notice it before it notices them', (() => {
+  const sees = Number((html.match(/sees: (\d+),\s+\/\/ metres at which somebody notices a tiger/) || [, 0])[1]);
+  return sees > num('seesPeople');
+})(), `PANIC.sees vs seesPeople ${num('seesPeople')}`);
+/* The rule this file always claimed and never implemented. */
+check('it will not take somebody who has company',
+  /if \(hasCompany\(p, h\.company\)\) continue;/.test(html)
+  && num('company') > 0, `within ${num('company')}m`);
+check('and company means somebody awake and out there with them',
+  /function hasCompany\(p, within\)/.test(html)
+  && /if \(q === p \|\| q\.asleep\) continue;/.test(html));
+/* None of which makes anyone safe: the bold go furthest, get there first, and
+   are alone when they do. */
+check('the range it hunts people in is still a real distance',
+  num('seesPeople') > num('reach'), `${num('seesPeople')}m vs a reach of ${num('reach')}m`);
+
+/* The one that did most of the work. Hungry enough to hunt and hungry enough to
+   take a person are different states, and there has to be a stretch between
+   them — otherwise "prefers animals" only ever means "prefers an animal that
+   happens to be standing there", and most of the time none is. */
+check('hunting and being desperate are not the same hunger',
+  num('desperate') < num('hunts'),
+  `starts hunting at ${num('hunts')}, counts people at ${num('desperate')}`);
+check('and a tiger that is merely hungry does not consider people at all',
+  /if \(d\.fed > h\.desperate\) return best;/.test(html));
+/* It has to be reachable, or the tiger is scenery. A stomach empties over
+   `lasts` days, so anything above zero is a state it gets to by hunting badly. */
+check('but it is a state a bad hunter reaches',
+  num('desperate') > 0, `${num('desperate')} of a full stomach`);
+/* The order matters: animals are scored before the early return, so a desperate
+   tiger with a deer in sight still takes the deer. */
+check('and even then four legs still win', (() => {
+  const i = html.indexOf('function nearestQuarry');
+  const body = html.slice(i, i + 1600);
+  return i > 0
+    && body.indexOf("kind: 'animal'") < body.indexOf('if (d.fed > h.desperate) return best;');
+})());
 check('a full stomach lasts more than a day', num('lasts') > 1, String(num('lasts')));
 /* The point of the whole thing: a tiger that has just eaten spends most of its
    time not hunting. Anything less and it is a timer wearing a stomach. */
@@ -1922,6 +2580,97 @@ function starve(hunger, days, step = 0.01) {
 }
 const YEAR = Number((html.match(/yearLength: (\d+)/) || [, 24])[1]);
 check('a comfortable camp never starves anybody', starve(0.4, 200) === null);
+
+/* -------------------------------------------------------------------------
+   Breeding is not planning
+
+   A band used to have children in proportion to how full its store was, which
+   is a population regulating itself and is not a thing any species does. It
+   also produced a flat line: bands found a level and held it for thirty years,
+   because the birth rate backed off long before the store got low enough to
+   kill anybody, so the starvation machinery below never fired.
+
+   Now they breed flat out and stop when the food is gone — by which point the
+   deaths have already started. Overshoot, crash, recovery. The regulator is
+   the crash.
+   ------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------
+   A band that has not been counted yet
+
+   Everything a person decides to do next comes off `camp.hunger`. It was a
+   literal on the camp object — 0, meaning comfortable — sitting on the same
+   line as `food: 0`, which says the opposite: an empty store is `1 - 0/6` = 1,
+   maximum hunger. The literal stood until the first book-keeping pass an eighth
+   of a day later, and every person picks their first job within six seconds of
+   the world existing, so the whole band chose against a number nobody had
+   worked out. At hunger 0 the weights send 21% outside; at hunger 1, 96%. A new
+   band sat down round a fire it had nothing to cook on.
+
+   Restoring was worse, because it never corrected: the save carries `food` and
+   not `hunger`, so a reloaded band reported the hunger its camp was *built*
+   with whatever it came back to.
+   ------------------------------------------------------------------------- */
+group('opening the books');
+
+check('a camp with an empty store is a hungry camp', (() => {
+  const bad = [];
+  for (const m of html.matchAll(/food: 0, pop: 0, need: 0, hunger: ([\d.]+),/g)) {
+    if (Number(m[1]) !== 1) bad.push(`hunger ${m[1]} beside food 0`);
+  }
+  return bad.length ? bad.join(' · ') : true;
+})() === true);
+/* Both places a camp is made: at world build and when a band splits off. */
+check('in both places a camp is made',
+  (html.match(/food: 0, pop: 0, need: 0, hunger: 1,/g) || []).length === 2,
+  `${(html.match(/food: 0, pop: 0, need: 0, hunger: 1,/g) || []).length} of 2`);
+/* And the literal is not trusted at all: the books are opened once before
+   anybody moves, so hunger is worked out rather than assumed. A `days` of zero
+   eats nothing and spoils nothing. */
+check('and the books are opened before anybody picks a job', (() => {
+  const build = html.indexOf('function buildWorld');
+  if (build < 0) return 'no buildWorld';
+  const body = html.slice(build, build + 1800);
+  return /updateEconomy\(0\);/.test(body) ? true : 'buildWorld never opens them';
+})() === true);
+/* The restore reads the store back and has to work the hunger out from it. */
+check('and again after coming back to a saved world', (() => {
+  const restore = html.indexOf('camps[i].food = c.food;');
+  if (restore < 0) return 'no restore';
+  return /updateEconomy\(0\);/.test(html.slice(restore, restore + 3000))
+    ? true : 'the store is restored but the hunger is not';
+})() === true);
+
+group('breeding flat out');
+
+check('births run at the full rate or not at all',
+  /const plenty = daysOfFood\(camp\) > FOOD\.breedsUntil \? 1 : 0;/.test(html));
+/* If it were still proportional there would be a division by `comfortable` in
+   the birth rate, which is what made the line flat. */
+check('and nothing tapers them off as the store falls',
+  !/plenty = clamp\(daysOfFood/.test(html));
+/* The stop has to come after the starving has begun, or it is restraint again
+   in a different costume. hunger is 1 - days/comfortable, and people start
+   losing their ceiling at STARVE_FROM. */
+check('and they stop only once the band is already starving', (() => {
+  const comfortable = Number((html.match(/comfortable: ([\d.]+),/) || [, 0])[1]);
+  const breedsUntil = Number((html.match(/breedsUntil: ([\d.]+),/) || [, 0])[1]);
+  const starveFrom = Number((html.match(/STARVE_FROM = ([\d.]+);/) || [, 0])[1]);
+  // Hunger at the moment the last child is born.
+  const hungerThen = 1 - breedsUntil / comfortable;
+  return hungerThen > starveFrom
+    ? true
+    : `hunger ${hungerThen.toFixed(2)} at the last birth, starving starts at ${starveFrom}`;
+})() === true);
+/* And it is not zero, or a band breeds into a literally empty store on the
+   step before everybody's ceiling hits the floor. */
+check('but not so late that the last child is born into nothing',
+  Number((html.match(/breedsUntil: ([\d.]+),/) || [, 0])[1]) > 0);
+/* The crash was always there; only the birth rate stopped it arriving. These
+   three still key off `comfortable`, and have to, or there is no crash. */
+check('the machinery of the crash is untouched',
+  /c\.hunger = clamp\(1 - daysOfFood\(c\) \/ FOOD\.comfortable, 0, 1\);/.test(html)
+  && /hunger: LIFE\.hungerMortality \* hunger \* hunger,/.test(html)
+  && /p\.camp\.hunger > STARVE_FROM/.test(html));
 check('a camp on the edge does not either', starve(STARVE_FROM, 200) === null);
 const emptyCamp = starve(1, 200);
 /* Weeks, not days. Two sim-days from full to dead is not starving, it is a
@@ -2494,6 +3243,163 @@ check('there is a window onto all of it', /function openChronicle\(\)/.test(html
    from the moment the page loaded. */
 check('and it can actually be hidden', /#chron\[hidden\] \{ display: none; \}/.test(html));
 check('a button opens it', /\$\('chronOpen'\)\.addEventListener\('click', openChronicle\)/.test(html));
+
+/* -------------------------------------------------------------------------
+   What is worth telling
+
+   The chronicle keeps everything and everything is mostly hunting. Twelve lines
+   of panel fill with kills inside a minute, so the day a band worked out how to
+   cure meat goes past between two rabbits. Measured on one real world: of 655
+   lines, 238 were kills. The one that mattered — three bands splitting away —
+   was three.
+   ------------------------------------------------------------------------- */
+group('worth telling');
+
+const MILE = (() => {
+  const m = html.match(/MILESTONES = new Set\(\[([\s\S]*?)\]\)/);
+  return m ? [...m[1].matchAll(/'([a-z]+)'/g)].map((x) => x[1]) : [];
+})();
+check('the band\'s own history is kept', (() => {
+  const want = ['learned', 'lost', 'split', 'joined', 'moved', 'extinct'];
+  const missing = want.filter((k) => !MILE.includes(k));
+  return missing.length ? `missing ${missing.join(', ')}` : true;
+})() === true);
+/* The two the ask was actually about. */
+check('including what a band worked out', MILE.includes('learned') && MILE.includes('lost'));
+check('and who walked off to start their own fire', MILE.includes('split'));
+/* And the things that fill it up are not. */
+check('a day of hunting is not', (() => {
+  const noise = ['kill', 'birth', 'death', 'predator', 'forage', 'visit'];
+  const leaked = noise.filter((k) => MILE.includes(k));
+  return leaked.length ? `${leaked.join(', ')} kept` : true;
+})() === true);
+/* A sickness reaching a camp is the band's news; one person catching it off
+   another is not. They shared a kind, so neither could be filtered alone. */
+check('a plague arriving and a person catching it are different kinds',
+  /logEvent\('plague',/.test(html) && /logEvent\('sickness',/.test(html));
+check('and only the first is worth telling',
+  MILE.includes('plague') && !MILE.includes('sickness'));
+/* Nothing is dropped: the filter is a way of looking, not a way of recording. */
+check('everything is still written down', (() => {
+  const i = html.indexOf('function logEvent(kind, text');
+  const body = html.slice(i, i + 500);
+  return i > 0 && !/MILESTONES/.test(body) ? true : 'logEvent filters at the source';
+})() === true);
+check('and one button gives it all back',
+  /setMilestonesOnly\(!milestonesOnly\)/.test(html));
+/* A funnel rather than two words. "worth telling" and "everything" are
+   different lengths, so the button changed width every time it was pressed and
+   shoved the search box along with it. */
+check('the filter is an icon',
+  /id="chronKind" aria-pressed="true" aria-label="Filter the chronicle"/.test(html)
+  && /<svg viewBox="0 0 16 16"/.test(html));
+/* Which must not be written over. `textContent = …` on a button whose label is
+   an svg throws the svg away on the first press, and the button is empty for
+   the rest of the session. */
+check('and nothing writes text over it', (() => {
+  const at = html.indexOf('function renderChronKind()');
+  if (at < 0) return 'no renderChronKind';
+  // To the end of the function, not to the next declaration: bodyOf would sweep
+  // in the wiring below it, which writes plenty of text to plenty of things.
+  const body = html.slice(at, html.indexOf('\n}', at));
+  // An assignment, not the word: the comment in there explains why the svg
+  // must not be written over, and saying so should not fail the check.
+  return !/textContents*=/.test(body) ? true : 'renderChronKind sets textContent';
+})() === true);
+/* The icon is never the only channel: the state is in the class that fills the
+   funnel, in aria-pressed, and in words in the title. */
+check('its state is readable as well as visible',
+  /b\.setAttribute\('aria-pressed', String\(milestonesOnly\)\);/.test(html)
+  && /b\.setAttribute\('title', milestonesOnly/.test(html));
+/* The panel and the window read the same flag, or they show different answers
+   to the same question. */
+check('the panel and the window agree on what matters',
+  /const rows = milestonesOnly \? chronicle\.filter\(isMilestone\) : chronicle;/.test(html)
+  && /const rows = milestonesOnly \? chronRows\.filter\(isMilestone\) : chronRows;/.test(html));
+
+/* -------------------------------------------------------------------------
+   And a band only learns a thing once
+
+   `told` is what the band has already been announced as knowing. It is derived
+   from `skill`, so it is not saved — and it was not worked out again on the way
+   back in either, so it came back as the zero a fresh camp is built with and
+   every reload re-announced the whole ladder. A band that had known how to cure
+   meat for eighty years learnt it again, in four steps, every time the page
+   reloaded: 236 of one world's 655 lines, against at most four rungs on three
+   skills that can honestly be climbed.
+   ------------------------------------------------------------------------- */
+check('what a band has been told about itself is worked out, not stored',
+  /camps\[i\]\.told\[key\] = skillTier\(camps\[i\]\.skill\[key\]\);/.test(html));
+check('by the same rungs the announcement uses',
+  /function skillTier\(v, told = 0\)/.test(html)
+  && /const tier = skillTier\(v, told\);/.test(html));
+/* Storing it would be the same fact written twice, which is how the two come
+   to disagree — so the save carries skill and not told. */
+check('and the save carries the mastery, not the announcement', (() => {
+  const i = html.indexOf('camps: camps.map((c) => ({');
+  const body = html.slice(i, i + 400);
+  return i > 0 && /skill: Object\.fromEntries/.test(body) && !/told:/.test(body);
+})() === true);
+
+/* -------------------------------------------------------------------------
+   Six skills, not three
+
+   Three was not enough to make two bands different from each other: every band
+   that lasted learned all of them, and "what is this band good at" had one
+   answer. Six is enough that a century leaves two bands with different
+   histories — and each of the new ones moves a number the simulation already
+   had, because a skill that only shows on a readout is a readout.
+   ------------------------------------------------------------------------- */
+check('there are six of them', Object.keys(
+  (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
+    .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
+    .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
+).length === 6);
+check('and every one of them does something', (() => {
+  const want = [
+    ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
+    ['baskets', /SKILL\.basketHaul \* p\.camp\.skill\.baskets/],
+    ['drying', /SKILL\.dryKeep \* c\.skill\.drying/],
+    ['herbs', /SKILL\.herbCure \* \(p\.camp\.skill\.herbs \|\| 0\)/],
+    ['tracking', /SKILL\.trackFar \* \(camp\?\.skill\?\.tracking \|\| 0\)/],
+    ['fire', /PANIC\.fireSafe \* \(camp\?\.skill\?\.fire \|\| 0\)/],
+  ];
+  const idle = want.filter(([, re]) => !re.test(html)).map(([n]) => n);
+  return idle.length ? `${idle.join(', ')} changes nothing` : true;
+})() === true);
+/* A band learns to treat a fever because it has been having fevers, which is
+   the nicest of them: the bands that are good at healing are the ones that have
+   been through something, and you can read that off the card years later. */
+check('a band works on what it has been worrying about',
+  /\['herbs', 0\.10 \+ 1\.10 \* sick\]/.test(html)
+  && /if \(q\.sick\) ill\+\+;/.test(html));
+check('and there is a weight for every skill', (() => {
+  const m = html.match(/const weights = \[([\s\S]*?)\];/);
+  const listed = m ? (m[1].match(/\['(\w+)',/g) || []).length : 0;
+  return listed === 6 ? true : `${listed} weights for 6 skills`;
+})() === true);
+/* Written out in five places before. Adding a seventh should not be a hunt
+   through the file for the ones that were missed. */
+check('an empty set of them is built from the list',
+  /export const emptySkills = \(\) => Object\.fromEntries\(Object\.keys\(SKILLS\)\.map\(\(k\) => \[k, 0\]\)\);/.test(
+    rawSources[srcFiles.indexOf('life.js')] || ''));
+check('and nothing writes the three out by hand any more',
+  !/\{ spears: 0, baskets: 0, drying: 0 \}/.test(html));
+/* A save from before the other three has to still mean what it meant. */
+check('an old save is read by the order it was written in',
+  /SAVED_SKILL_ORDER = \['spears', 'baskets', 'drying'\]/.test(html)
+  && /if \(Array\.isArray\(kn\)\)/.test(html));
+check('and a new one is keyed, so inserting a skill shifts nobody',
+  /kn: Object\.fromEntries\(Object\.keys\(SKILLS\)\.map\(\(k\) => \[k, r2\(p\.knows\?\.\[k\] \|\| 0\)\]\)\)/.test(html));
+/* And a word for forgetting each of them, or a band that loses one says
+   "has forgotten how to undefined". */
+check('every skill can be forgotten in words', (() => {
+  const skills = [...(html.match(/^\s{2}(\w+): \{ label: '[^']*', of: '([^']*)' \},/gm) || [])]
+    .map((l) => (l.match(/of: '([^']*)'/) || [, ''])[1]);
+  const words = (html.match(/FORGET_WORDS = \{([\s\S]*?)\};/) || [, ''])[1];
+  const missing = skills.filter((of) => !words.includes(`${of}:`) && !words.includes(`'${of}':`));
+  return missing.length ? `no word for ${missing.join(', ')}` : true;
+})() === true);
 check('L opens and closes it', /if \(ev\.code === 'KeyL'\)/.test(html));
 check('escape closes it', /closeChronicle\(\);/.test(html.slice(html.indexOf("ev.code === 'Escape'"),
   html.indexOf("ev.code === 'Escape'") + 120)));
@@ -2562,15 +3468,81 @@ check('a death goes into it', /p\.camp\.toll\[cause\] = \(p\.camp\.toll\[cause\]
 check('and it is sorted worst first', /\.sort\(\(a, b\) => b\[1\] - a\[1\]\)/.test(html));
 check('with the causes that never happened left out', /\.filter\(\(\[, n\]\) => n > 0\)/.test(html));
 
-check('the panel says what has become of them', /class="toll"/.test(html)
-  && /\$\{lost\} lost: /.test(html));
+/* -------------------------------------------------------------------------
+   A list you scan and a card you read
+
+   The panel row used to carry the sex split, the children, the days of food,
+   three skill bars and the toll with its causes. That is a good paragraph about
+   one band and an unreadable wall about twenty, so the row is a colour, a code,
+   a name and a number, and everything else moved to the card a click away.
+
+   "Eleven died" still says nothing and "eleven died, seven of the sickness and
+   three hungry" is still the story — that has not changed, only where there is
+   room to tell it. On the card there is room for all of them, so none of it
+   hides behind a hover any more.
+   ------------------------------------------------------------------------- */
+check('the band card says what has become of them',
+  /lost \$\{toll\.reduce\(\(n, \[, k\]\) => n \+ k, 0\)\}: /.test(html));
+/* On the card, all of them. The obituary keeps its leading two on purpose —
+   that is one line in the chronicle, not a panel with room — so this asks about
+   the card rather than about the file. */
+check('and names every cause, not the leading two', (() => {
+  const card = html.slice(html.indexOf('function renderTribeCard'), html.indexOf('function showKeys'));
+  if (!card) return 'no renderTribeCard';
+  if (!/toll\.map\(\(\[k, n\]\) => `\$\{n\} \$\{TOLL_WORDS\[k\]\}`\)\.join\(', '\)/.test(card)) {
+    return 'the card does not name the causes';
+  }
+  return /toll\.slice\(0, 2\)/.test(card) ? 'the card still truncates to two' : true;
+})() === true);
 // And from the band's own tally, not from an empty list that renders nothing.
-check('and reads it off the band', /const toll = tollOf\(c\);/.test(
-  html.slice(html.indexOf('function renderTribes'), html.indexOf('function drawTribeChart'))));
-/* Two on the line and all of them behind the hover: "eleven died" says nothing
-   and "eleven died, seven of the sickness and three hungry" is the story. */
-check('the leading two on the line, the rest on the hover',
-  /toll\.slice\(0, 2\)/.test(html) && /title="\$\{toll\.map/.test(html));
+check('and reads it off the band', /const toll = tollOf\(camp\);/.test(
+  html.slice(html.indexOf('function renderTribeCard'), html.indexOf('function showKeys'))));
+
+check('the panel row is a colour, a code, a name and a number', (() => {
+  const body = html.slice(html.indexOf('function renderTribes'), html.indexOf('function drawTribeChart'));
+  if (!body) return 'no renderTribes';
+  const gone = ['tollOf(c)', 'class="toll"', 'class="skills"', 'daysOfFood(c)', 'sexMarks']
+    .filter((t) => body.includes(t));
+  return gone.length ? `still on the row: ${gone.join(', ')}` : true;
+})() === true);
+check('and it still counts the people on it',
+  /for \(const p of people\) if \(p\.camp === c\) pop\+\+;/.test(html));
+/* Everything that left the row has to arrive on the card, or it is not a move,
+   it is a deletion. */
+/* -------------------------------------------------------------------------
+   Which skill, and how far
+
+   Three anonymous bars said a band knew *something*. Which of the three, and
+   how much, was only reachable by hovering — and the whole reason skills are
+   interesting is watching one climb while the others do not.
+   ------------------------------------------------------------------------- */
+check('the card lists the skills one to a row',
+  /<div class="skillRow"><span>\$\{SKILLS\[k\]\.of\}<\/span>/.test(html));
+check('with the number on it',
+  /<b>\$\{pct\}%<\/b>/.test(html));
+check('and the rung it is on, in words',
+  /<em>\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/em>/.test(html));
+/* SKILL_WORDS is written to sit inside a sentence — "has a fair hand at
+   knapping" — so a column of them reads as a column of half-sentences. */
+check('which are labels, not the middles of sentences',
+  /SKILL_RUNGS = \['not yet', 'beginnings', 'a fair hand', 'real skill', 'mastery'\]/.test(html));
+check('and there is a rung for every step of the ladder', (() => {
+  const rungs = (html.match(/SKILL_RUNGS = \[([^\]]*)\]/) || [, ''])[1].split(',').length;
+  const steps = (html.match(/SKILL_STEPS = \[([^\]]*)\]/) || [, ''])[1].split(',').length;
+  return rungs === steps + 1 ? true : `${rungs} rungs for ${steps} steps`;
+})() === true);
+
+check('and everything it dropped is on the card', (() => {
+  const card = html.slice(html.indexOf('function renderTribeCard'), html.indexOf('function showKeys'));
+  if (!card) return 'no renderTribeCard';
+  const want = [['the sex split', 'sexMarks'], ['the children', 'children'],
+    ['the ill', 'ill</em>'], ['the skills', 'class="sk"'], ['the days of food', 'daysOfFood(camp)']];
+  const missing = want.filter(([, t]) => !card.includes(t)).map(([n]) => n);
+  return missing.length ? `missing: ${missing.join(', ')}` : true;
+})() === true);
+/* The row is how you get to the card, so it has to stay clickable. */
+check('and the row opens the card',
+  /data-camp="\$\{i\}"/.test(html));
 
 group('extinction');
 
@@ -2819,7 +3791,18 @@ check('running rather than walking', /if \(p\.panic > 0\) want = Math\.max\(want
 check('and keeping it up after losing sight of it', /runs: \d+,/.test(html)
   && /p\.panic = Math\.max\(0, \(p\.panic \|\| 0\) - slice\)/.test(html));
 check('a tiger will not come to the fire',
-  /if \(inCamp\(p\.x, p\.z, PANIC\.safe\)\) continue;/.test(html));
+  /if \(inCamp\(p\.x, p\.z, safeGround\(p\.camp\)\)\) continue;/.test(html));
+/* And how much ground that is depends on how well the band keeps its fire. */
+check('and a better-kept fire holds it further off',
+  /export const safeGround = \(camp\) => PANIC\.safe \+ PANIC\.fireSafe \* \(camp\?\.skill\?\.fire \|\| 0\);/.test(
+    rawSources[srcFiles.indexOf('wildlife.js')] || ''));
+check('by about the width of the trampled ground round a camp', (() => {
+  const safe = Number((html.match(/safe: (\d+),/) || [, 0])[1]);
+  const more = Number((html.match(/fireSafe: (\d+),/) || [, 0])[1]);
+  const clearing = Number((html.match(/CAMP_CLEARING = (\d+);/) || [, 0])[1]);
+  return safe + more >= clearing && safe < clearing
+    ? true : `${safe} to ${safe + more} against a clearing of ${clearing}`;
+})() === true);
 check('which makes foraging far out a risk taken, not a thing that happens',
   /sees: \d+,\s+\/\/ metres at which somebody notices a tiger/.test(html));
 
@@ -2861,7 +3844,7 @@ check('and so does every other way a chase can end',
    one thing people do about tigers worth precisely nothing. */
 check('reaching the fire ends a chase already under way', (() => {
   const i = html.indexOf('const gone = d.prey.kind === ');
-  return i > 0 && /inCamp\(d\.prey\.person\.x, d\.prey\.person\.z, PANIC\.safe\)/
+  return i > 0 && /inCamp\(d\.prey\.person\.x, d\.prey\.person\.z, safeGround\(d\.prey\.person\.camp\)\)/
     .test(html.slice(i, i + 300));
 })());
 /* The one number that decides whether any of this works.

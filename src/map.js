@@ -7,7 +7,7 @@ import { updateTiles } from './world.js';
 import { packs } from './wildlife.js';
 import { camps, people } from './people.js';
 import { recountBlades, streams } from './move.js';
-import { _fwd, syncLookFromCamera } from './chronicle.js';
+import { _fwd, setViewMode, syncLookFromCamera } from './chronicle.js';
 import { $, persistState } from './save.js';
 import { armAudio, audio } from './audio.js';
 
@@ -26,15 +26,53 @@ import { armAudio, audio } from './audio.js';
    ------------------------------------------------------------------------- */
 
 export const MAP_N = 384;                  // map pixels across the whole 1600-unit world
-export const MAP_DISPLAY = 118;            // how big it actually sits on screen
-// Marker sizes below are written in screen pixels; this converts them.
-export const MK = MAP_N / MAP_DISPLAY;
+
+/* How big it sits on screen, and M walks through them. One of these is "not at
+   all", which is where the old M left it — it was a single toggle, so a map you
+   wanted smaller rather than gone was a map you turned off. */
+export const MAP_SIZES = [
+  { name: 'small', px: 92 },
+  { name: 'medium', px: 118 },
+  { name: 'large', px: 168 },
+  { name: 'xlarge', px: 236 },
+  { name: 'hidden', px: 0 },
+];
+export let nextMapDraw = 0;
+export const MAP_DEFAULT = 1;              // medium, which is where it always was
+export let mapSize = MAP_DEFAULT;
+export let MAP_DISPLAY = MAP_SIZES[MAP_DEFAULT].px;
+/* Marker sizes below are written in screen pixels; this converts them. It moves
+   with the size, or a bigger map is the same island with the same dots on it
+   drawn smaller, which is not a bigger map. */
+export let MK = MAP_N / MAP_DISPLAY;
 export const mapCanvas = $('mapCanvas');
 export const mapCtx = mapCanvas.getContext('2d');
+
+/** Walks to the next size, wrapping through hidden and back to the smallest. */
+export function stepMapSize(by = 1) {
+  return setMapSize((mapSize + by + MAP_SIZES.length) % MAP_SIZES.length);
+}
+
+export function setMapSize(i) {
+  mapSize = ((i % MAP_SIZES.length) + MAP_SIZES.length) % MAP_SIZES.length;
+  const at = MAP_SIZES[mapSize];
+  const box = $('map');
+  if (at.px === 0) {
+    if (box) box.hidden = true;
+    return at.name;
+  }
+  MAP_DISPLAY = at.px;
+  MK = MAP_N / MAP_DISPLAY;
+  mapCanvas.style.width = MAP_DISPLAY + 'px';
+  mapCanvas.style.height = MAP_DISPLAY + 'px';
+  if (box) box.hidden = false;
+  nextMapDraw = 0;                          // redraw at the new marker scale
+  return at.name;
+}
+
 mapCanvas.style.width = MAP_DISPLAY + 'px';
 mapCanvas.style.height = MAP_DISPLAY + 'px';
 export let mapBase = null;
-export let nextMapDraw = 0;
 
 export const MAP_WATER = new THREE.Color(0x2b5a78);
 export const MAP_DEEP = new THREE.Color(0x122b44);
@@ -115,28 +153,28 @@ export function drawMap(now) {
     }
   }
 
-  // Camps: a ring you can pick out at a glance, plus its fire.
+  /* Camps: one small red dot each.
+
+     It was a ring, a fire and a name, all sized for two bands on an island. At
+     twenty they were most of the map — rings running into each other and labels
+     stacked into a pile — and what a map is for is where things are, not what
+     they are called or how ornate they look. The names are on the panel and on
+     the band card, where there is room for them.
+
+     Red because nothing else on the map is: the island is greens and browns,
+     the band is amber, the water is blue. A hue nothing else uses is worth more
+     than any amount of size, and it lets the dot be small. The dark edge is for
+     the one place a red dot would otherwise disappear — a red-brown ridge in
+     low sun. */
   for (const c of camps) {
     const [px, py] = worldToMap(c.x, c.z);
     mapCtx.beginPath();
-    mapCtx.arc(px, py, 4.2 * MK, 0, Math.PI * 2);
-    mapCtx.strokeStyle = 'rgba(255, 150, 60, 0.9)';
-    mapCtx.lineWidth = 1.1 * MK;
-    mapCtx.stroke();
-    mapCtx.beginPath();
-    mapCtx.arc(px, py, 1.4 * MK, 0, Math.PI * 2);
-    mapCtx.fillStyle = '#ff9b3c';
+    mapCtx.arc(px, py, 1.7 * MK, 0, Math.PI * 2);
+    mapCtx.fillStyle = '#ff2233';
     mapCtx.fill();
-    // The name under the ring, so the map and the panel are talking about the
-    // same band without you having to work out which is which.
-    mapCtx.font = `${8 * MK}px system-ui, sans-serif`;
-    mapCtx.textAlign = 'center';
-    mapCtx.lineWidth = 3 * MK;
-    mapCtx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
-    mapCtx.strokeText(c.name, px, py + 11 * MK);
-    mapCtx.fillStyle = '#ffd9a8';
-    mapCtx.fillText(c.name, px, py + 11 * MK);
-    mapCtx.textAlign = 'left';
+    mapCtx.lineWidth = 0.7 * MK;
+    mapCtx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+    mapCtx.stroke();
   }
 
   // The band. Asleep is drawn smaller and dimmer rather than hidden, so an
@@ -144,7 +182,7 @@ export function drawMap(now) {
   for (const p of people) {
     const [px, py] = worldToMap(p.x, p.z);
     mapCtx.beginPath();
-    mapCtx.arc(px, py, (p.asleep ? 1.0 : 1.6) * MK, 0, Math.PI * 2);
+    mapCtx.arc(px, py, (p.asleep ? 0.7 : 1.05) * MK, 0, Math.PI * 2);
     mapCtx.fillStyle = p.asleep ? 'rgba(255, 214, 150, 0.5)'
       : p.child ? '#ffe9a8' : '#ffcc74';
     mapCtx.fill();
@@ -152,7 +190,7 @@ export function drawMap(now) {
       mapCtx.strokeStyle = 'rgba(255, 120, 90, 0.85)';
       mapCtx.lineWidth = MK;
       mapCtx.beginPath();
-      mapCtx.arc(px, py, 2.8 * MK, 0, Math.PI * 2);
+      mapCtx.arc(px, py, 1.9 * MK, 0, Math.PI * 2);
       mapCtx.stroke();
     }
   }
@@ -188,6 +226,12 @@ export function drawMap(now) {
 /* Click to travel. Fly keeps whatever height you were at, walk lands on the
    ground, orbit reassembles its rig around the new spot. */
 export function travelTo(x, z) {
+  /* Follow is not a place you can travel from: the camera is rebuilt behind
+     somebody every frame, so putting it on a hillside lasts exactly one frame
+     and the click reads as doing nothing. Clicking the map is asking to be
+     somewhere, which means letting go of the person first — and setViewMode
+     hands them back to their own life on the way out. */
+  if (P.view === 'follow') setViewMode('fly');
   const ground = sampleHeight(x, z);
   if (P.view === 'orbit') {
     controls.target.set(x, ground + 2.5, z);

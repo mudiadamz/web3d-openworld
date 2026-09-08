@@ -80,6 +80,50 @@
   input[type=number] { width: 100px; }
   input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; }
   .hint { color: var(--accent); opacity: 0.85; margin-top: 4px; font-size: 11px; }
+  /* One scrollbar for every pane that has one. The platform default is a wide
+     opaque bar that reads as part of the page rather than part of the panel,
+     and on a dark panel it is the brightest thing in it. */
+  #ui, #chronicle, #tribeList, #chronList, #keysCard, #tribeCard {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  #ui::-webkit-scrollbar,
+  #chronicle::-webkit-scrollbar,
+  #tribeList::-webkit-scrollbar,
+  #chronList::-webkit-scrollbar,
+  #keysCard::-webkit-scrollbar,
+  #tribeCard::-webkit-scrollbar { width: 8px; height: 8px; }
+  #ui::-webkit-scrollbar-track,
+  #chronicle::-webkit-scrollbar-track,
+  #tribeList::-webkit-scrollbar-track,
+  #chronList::-webkit-scrollbar-track,
+  #keysCard::-webkit-scrollbar-track,
+  #tribeCard::-webkit-scrollbar-track { background: transparent; }
+  #ui::-webkit-scrollbar-thumb,
+  #chronicle::-webkit-scrollbar-thumb,
+  #tribeList::-webkit-scrollbar-thumb,
+  #chronList::-webkit-scrollbar-thumb,
+  #keysCard::-webkit-scrollbar-thumb,
+  #tribeCard::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16); border-radius: 99px;
+    border: 2px solid transparent; background-clip: content-box;
+  }
+  #ui::-webkit-scrollbar-thumb:hover,
+  #chronicle::-webkit-scrollbar-thumb:hover,
+  #tribeList::-webkit-scrollbar-thumb:hover,
+  #chronList::-webkit-scrollbar-thumb:hover,
+  #keysCard::-webkit-scrollbar-thumb:hover,
+  #tribeCard::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.32); background-clip: content-box; }
+  #ui::-webkit-scrollbar-corner,
+  #chronList::-webkit-scrollbar-corner { background: transparent; }
+
+  /* Which one somebody is. Colour rather than a word, because it sits inside a
+     line that is already dense — and the glyph carries the meaning on its own
+     for anybody who cannot see the difference. */
+  .sx { font-style: normal; }
+  .sx.f { color: #ff9ec4; }
+  .sx.m { color: #7fc4ff; }
+
   #stats { margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.6; }
   #tribes { font-size: 10px; line-height: 1.6; }
   #tribes div { display: flex; align-items: baseline; gap: 5px; padding: 1px 0; color: var(--text); }
@@ -169,6 +213,14 @@
     font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
     color: var(--muted); margin-top: 1px;
   }
+  /* Beside the clock rather than in the world panel, because the panel is the
+     first thing H hides and these two are the numbers you want while looking
+     at something else. */
+  #vitals {
+    font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
+    color: var(--muted); margin-top: 1px;
+  }
+  #vitals b { color: var(--text); font-weight: 600; }
   #following {
     font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
     color: var(--accent); margin-top: 2px;
@@ -214,6 +266,22 @@
     line-height: 1; padding: 0 2px;
   }
   #tribeHead { margin: 10px 0 8px; font-size: 11px; line-height: 1.7; }
+  /* One row per skill: what it is, how far along, the number, and the rung in
+     words. The number and the word say the same thing twice on purpose — 62%
+     is precise and "a fair hand" is what it means. */
+  #tribeHead .skills { margin-top: 5px; }
+  #tribeHead .skillRow {
+    display: grid; grid-template-columns: 62px 1fr 34px auto; gap: 7px;
+    align-items: center; line-height: 1.5;
+  }
+  #tribeHead .skillRow > span { color: var(--muted); }
+  #tribeHead .skillRow > b { color: var(--text); font-weight: 600; text-align: right;
+    font-variant-numeric: tabular-nums; }
+  #tribeHead .skillRow > em { color: var(--muted); font-style: normal; font-size: 10px; }
+  #tribeHead .skillRow .sk {
+    display: block; height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, #7fd08a var(--v), rgba(255,255,255,0.13) var(--v));
+  }
   #tribeHead b { color: var(--accent); font-weight: 400; }
   #tribeHead span { color: var(--muted); }
   #tribeTabs { display: flex; gap: 4px; margin: 0 0 8px; }
@@ -232,6 +300,8 @@
   #tribeList td.n { color: var(--text); font-variant-numeric: normal; }
   #tribeList tr.chief td.n::after { content: ' · chief'; color: var(--accent); font-size: 9px; }
   #tribeList tr.gone td { opacity: 0.45; }
+  #tribeList tr[data-p] { cursor: pointer; }
+  #tribeList tr[data-p]:hover td { background: rgba(255,255,255,0.07); }
   #tribes > div { cursor: pointer; }
   #chronCard {
     width: min(680px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
@@ -239,6 +309,30 @@
     background: var(--panel); border: 1px solid rgba(255,255,255,0.10);
   }
   #chronCard header { display: flex; align-items: center; justify-content: space-between; }
+  #chronTools { display: flex; gap: 6px; align-items: stretch; }
+  #chronTools #chronFind { flex: 1 1 auto; min-width: 0; }
+  #chronTools .btn { flex: 0 0 auto; white-space: nowrap; }
+  .btn.on { color: var(--accent); border-color: var(--accent); }
+  /* An icon button. The label went to `title` and `aria-label`: "worth telling"
+     and "everything" are different lengths, so the button changed width every
+     time it was pressed and shoved the search box along with it. A funnel does
+     not, and the filled-or-not funnel says which way it is set without needing
+     to be read. */
+  .btn.icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 7px; min-width: 26px;
+  }
+  .btn.tiny.icon { width: 22px; padding: 0; }
+  .btn.icon svg { width: 12px; height: 12px; display: block; }
+  /* Filtering: a solid funnel. Everything: the outline of one, which is the
+     same shape with nothing caught in it. */
+  .btn.icon svg > * {
+    fill: none; stroke: currentColor; stroke-width: 1.4;
+    stroke-linejoin: round; stroke-linecap: round;
+  }
+  /* The funnel fills to say it is filtering. An order button does not: a filled
+     spear is only a fatter spear, so its state is the border and the colour. */
+  #chronKind.on svg > *, #chronKind2.on svg > * { fill: currentColor; }
   #chronCard h2 { margin: 0; font-size: 13px; }
   #chronClose {
     background: none; border: 0; color: var(--muted); font-size: 17px; cursor: pointer;
@@ -297,13 +391,27 @@
     color: var(--text); background: rgba(255, 255, 255, 0.09);
     border-radius: 4px; padding: 1px 5px; font: inherit; margin: 0 1px;
   }
+/* No frame, no plate behind it: the island is a shape on a dark screen and a
+     panel round it was one more rectangle competing with the thing inside it.
+     What is left is the canvas and enough shadow to lift it off the world. */
   #map {
     position: fixed; right: 12px; bottom: 12px;
-    background: var(--panel); backdrop-filter: blur(14px);
-    border: 1px solid var(--line); border-radius: 10px; padding: 7px 7px 5px;
-    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+    background: none; border: 0; padding: 0;
+    filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.55));
   }
   #map[hidden] { display: none; }
+  /* Bottom middle, above the toast, and out of the way of the map. */
+  #orders {
+    position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);
+    display: flex; gap: 5px; padding: 5px;
+    background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+  #orders[hidden] { display: none; }
+  #orders .btn.order { width: 30px; height: 28px; padding: 0; }
+  #orders .btn.order svg { width: 15px; height: 15px; }
+  @media (max-width: 720px) { #orders { display: none; } }
   #mapCanvas {
     /* Drawn larger than it is shown, so it stays crisp on a retina display.
        The display size is set from MAP_DISPLAY in one place, not here. */
@@ -409,7 +517,7 @@
   </section>
 
   <section>
-    <h2>Chronicle <button class="btn tiny wide" id="chronOpen" title="All of it (L)">all</button></h2>
+    <h2>Chronicle <button class="btn tiny icon on" id="chronKind" aria-pressed="true" aria-label="Filter the chronicle" title="Showing what is worth telling — click for every line"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 2.6h12.4a.5.5 0 0 1 .38.82L9.8 9.2v4.05a.5.5 0 0 1-.72.45l-2.4-1.2a.5.5 0 0 1-.28-.45V9.2L1.42 3.42a.5.5 0 0 1 .38-.82z"/></svg></button><button class="btn tiny wide" id="chronOpen" title="All of it (L)">all</button></h2>
     <div id="chronicle"><div><span>—</span> nothing has happened yet</div></div>
   </section>
 
@@ -426,7 +534,7 @@
   <div id="aheadLog"></div>
   <button class="btn" id="aheadStop">Stop here</button>
 </div></div>
-<div id="hud"><span id="clock">07:30</span><span id="skip" hidden>▶▶</span><div id="almanac">day 0 · spring</div><div id="following" hidden></div></div>
+<div id="hud"><span id="clock">07:30</span><span id="skip" hidden>▶▶</span><div id="almanac">day 0 · spring</div><div id="vitals"><b id="hudPop">–</b> people · <b id="hudFps">–</b> fps</div><div id="following" hidden></div></div>
 
 <div id="toast" hidden></div>
 
@@ -451,8 +559,11 @@
       <h2>Chronicle</h2>
       <button id="chronClose" aria-label="Close">×</button>
     </header>
-    <input id="chronFind" type="search" placeholder="a name, a band, a kind of thing that happened…"
-           autocomplete="off" spellcheck="false">
+    <div id="chronTools">
+      <input id="chronFind" type="search" placeholder="a name, a band, a kind of thing that happened…"
+             autocomplete="off" spellcheck="false">
+      <button class="btn icon on" id="chronKind2" aria-pressed="true" aria-label="Filter the chronicle" title="Showing what is worth telling — click for every line"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 2.6h12.4a.5.5 0 0 1 .38.82L9.8 9.2v4.05a.5.5 0 0 1-.72.45l-2.4-1.2a.5.5 0 0 1-.28-.45V9.2L1.42 3.42a.5.5 0 0 1 .38-.82z"/></svg></button>
+    </div>
     <div id="chronList"></div>
     <div id="chronFoot">
       <button class="btn" id="chronPrev">← newer</button>
@@ -479,14 +590,20 @@
     <div class="keyGroup">Views <b id="keysView">Fly</b></div>
     <div class="keyRow" data-mode="fly"><span><kbd>C</kbd></span><em>next view — Fly, Walk, Orbit, Follow</em></div>
     <div class="keyRow"><span><kbd>F</kbd></span><em>follow somebody — again for somebody else. Their energy is on the caption, because it is what decides what they take on</em></div>
+    <div class="keyRow"><span><kbd>R</kbd></span><em>somewhere else on the island — drops you into Orbit over a random spot, and again for another one. Dry land and not a cliff, so there is always something under you</em></div>
+    <div class="keyRow"><span>click</span><em><i>(in Follow)</i> go there — click the ground and the person you are behind walks to it, on their own, with a ring on the spot. Click again and they turn round. Nothing else steers them while you have them — not dusk, not a job, not a tiger — but they still tire, still get hungry, and can still be caught</em></div>
+    
+    <div class="keyRow"><span><kbd>W</kbd></span><em><i>(in Follow)</i> hold to make them run instead of walk. It is a jog and it is charged for like one — it costs energy, it slows with a full basket, and it gives out when there is nothing left</em></div>
+    <div class="keyRow"><span><kbd>shift</kbd>+<kbd>W</kbd></span><em><i>(in Follow)</i> let go, and they pick up their own life where they stand</em></div>
+    <div class="keyRow"><span>icons</span><em><i>(in Follow)</i> a row across the bottom tells them what to do rather than where to go — find food, hunt, knap, tend the fire, rest, walk to the next band. One instruction, taken up once: afterwards they are choosing for themselves again</em></div>
 
     <div class="keyGroup">On screen</div>
     <div class="keyRow"><span><kbd>H</kbd></span><em>the world panel</em></div>
-    <div class="keyRow"><span><kbd>M</kbd></span><em>the map — click it to travel there</em></div>
-    <div class="keyRow"><span><kbd>[</kbd><kbd>]</kbd></span><em>slower and faster — the clock, and everything living on it. The night runs itself through at <code>NIGHT_SKIP_RATE</code> once everybody is in</em></div>
+    <div class="keyRow"><span><kbd>M</kbd></span><em>the map, one size bigger — small, medium, large, xlarge, hidden, and round again. <kbd>shift</kbd>+<kbd>M</kbd> goes back the other way. Click it to travel there</em></div>
+    <div class="keyRow"><span><kbd>[</kbd><kbd>]</kbd></span><em>slower and faster — the clock, and everything living on it. Once everybody is in, the night is run through rather than watched and takes about a second; <code>NIGHT_SKIP_RATE</code> is how much of each frame is spent doing it</em></div>
     <div class="keyRow"><span><kbd>B</kbd></span><em>hide one more layer — press until something stops looking wrong, and the last name shown is the culprit. <kbd>shift</kbd>+<kbd>B</kbd> puts it all back</em></div>
-    <div class="keyRow"><span><kbd>T</kbd></span><em>the band you are watching — who they are, their ages, how many children, what each of them has carried home</em></div>
-    <div class="keyRow"><span><kbd>L</kbd></span><em>the whole chronicle — every line from every world, searchable</em></div>
+    <div class="keyRow"><span><kbd>T</kbd></span><em>the band you are watching — who they are, their ages, how many children, what each of them has carried home. Click a name to follow them, which is how you reach somebody who is indoors or over a hill</em></div>
+    <div class="keyRow"><span><kbd>L</kbd></span><em>the whole chronicle — every line from every world, searchable. It opens on what is <i>worth telling</i>: what a band worked out, who broke away and who went with them, who took somebody in, the days the store ran out. The button beside it gives back every kill and birth as well</em></div>
     <div class="keyRow"><span><kbd>/</kbd></span><em>this list</em></div>
     <div class="keyRow"><span><kbd>esc</kbd></span><em>close this</em></div>
 
@@ -500,6 +617,19 @@
       <code>?wind=0</code>. Hills shading each other is off because it’s the one thing that speckled — <code>?terrainshadow=1</code> brings it back.
     </p>
   </div>
+</div>
+
+<!-- Only while you are behind somebody. Icons alone: six of them across the
+     bottom of the screen, and a row of words there would be a menu bar over the
+     world. The name of each is on its title and its aria-label, so nothing is
+     hidden from a pointer that hovers or a reader that speaks. -->
+<div id="orders" hidden>
+  <button class="btn icon order" data-order="gather" aria-label="Find food" title="Find food"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5.2" cy="6" r="2.3"/><circle cx="10.8" cy="5.2" r="2"/><circle cx="8" cy="10.8" r="2.6"/></svg></button>
+  <button class="btn icon order" data-order="hunt" aria-label="Go hunting" title="Go hunting"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5 12 4"/><path d="M9.2 3.4 13.2 2.6 12.5 6.6z"/></svg></button>
+  <button class="btn icon order" data-order="craft" aria-label="Knap" title="Knap"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2 13.4 12.4H2.6z"/><path d="M5.4 8.6h5.2"/></svg></button>
+  <button class="btn icon order" data-order="tend" aria-label="Tend the fire" title="Tend the fire"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14c2.6 0 4.2-1.7 4.2-3.9C12.2 7 9.4 5.6 9.4 2 7 3.6 6.1 5.6 6.1 7.4c0 1-.6 1.4-1 1-.6-.5-.6-1.4-.6-1.4-.5 1-.7 2-.7 3.1C3.8 12.3 5.4 14 8 14z"/></svg></button>
+  <button class="btn icon order" data-order="sleep" aria-label="Rest" title="Rest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.4 9.4A5.6 5.6 0 0 1 6.2 2.4a5.8 5.8 0 1 0 7.2 7z"/></svg></button>
+  <button class="btn icon order" data-order="visit" aria-label="Walk to the next band" title="Walk to the next band"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.6" cy="8" r="1.9"/><circle cx="12.4" cy="8" r="1.9"/><path d="M6 8h4"/></svg></button>
 </div>
 
 <div id="map">

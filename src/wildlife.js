@@ -306,6 +306,41 @@ export const SPECIES = [
       hunts: 0.55,          // starts hunting below this
       meal: 0.8,            // what a kill is worth
       person: 0.5,          // a person is a smaller meal than a deer
+      /* Two sighting ranges, not one, and this is the change that matters.
+
+         `sees` is how far off it picks a deer out of the landscape. A person it
+         does not notice until `seesPeople`, which is a third of that — the
+         difference between a tiger that hunts people and a tiger that takes the
+         person who walks into it.
+
+         Without it `prefersAnimals` did nothing most of the time, and the
+         arithmetic says why: a couple of hundred animals spread over an island
+         900 metres across is less than one animal inside a 62-metre circle, so
+         most of the time there was no four-legged option to prefer. A person
+         alone in an empty stretch was simply the best thing on offer, from as
+         far away as a deer, and got taken. On seed 20260906 that was 11 of 14
+         deaths over eight years — against a section comment claiming a tiger is
+         what happens to somebody who went too far out on their own. */
+      seesPeople: 22,
+      /* And never somebody who has company. This is the other half of the rule
+         this file has always described and never implemented: "it will take
+         somebody who is out alone". It is what makes a foraging party different
+         from a foraging person — and it does not make anyone safe, because the
+         bold go furthest, arrive first, and are still alone when they do. */
+      company: 15,
+      /* And only when it is properly hungry.
+
+         `hunts` is when it starts looking. This is how far down it has to be
+         before a person is on the list at all — so there is a stretch, most of
+         its hunting life, where it is hunting and what it is hunting is deer.
+
+         This is the difference between "prefers animals" and "eats people when
+         the hunting has gone badly", and it is the one that shows up in the
+         numbers. A stomach falls from full to empty over `lasts` days: it
+         starts looking around day 2.7 and only starts counting people around
+         day 4.8, by which point it has had two days of failing to find
+         anything with four legs. A tiger that hunts well never gets there. */
+      desperate: 0.22,
     },
   },
 ];
@@ -627,6 +662,37 @@ export function pickTarget(d, spec) {
    person — but it will take somebody who is out alone, and that is where a
    death by tiger comes from. Nothing about it is fair; that is rather the
    point of having one.
+
+   "Somebody who is out alone" is four separate things in the code, and for a
+   long time only the first of them existed: a person scores as `prefersAnimals`
+   times their real distance, so anything with four legs in sight wins; a person
+   is not noticed at all beyond `seesPeople`, which is a third of the range a
+   deer is seen at; a person with anyone else within `company` metres is not
+   considered at all; and none of it happens unless the tiger is below
+   `desperate`, well past merely hungry. The first alone did nothing, because on
+   an island this size there is usually no animal in sight to prefer — see the
+   note on `seesPeople`.
+
+   Measured the way this file measures things: the same six seeds run eight
+   years through each version, counting off `lineage` rather than off the
+   panel, which shows a band's two leading causes and drops the rest.
+
+     tigers as a share of all deaths      73%  ->  44%  ->  26%
+     tiger deaths across the six seeds     38  ->   27  ->   15
+     alive at eight years, six bands       87  ->  105  ->  112
+
+   The three columns are: as it was; with the two sighting rules; with
+   `desperate` as well. The middle column is why all three are here — halving
+   the range and skipping anyone with company moved it a long way and left
+   tigers still the leading cause of death, because a hungry tiger with no
+   deer in sight will walk until it finds somebody. The hunger gate is what
+   makes that a rare state rather than most of a tiger's week.
+
+   They still kill. Fifteen deaths over forty-eight band-years is a tiger
+   that is worth running from, and on seed 20260906 — the one this started
+   from — it is still seven of ten deaths, because the hunting is poor on
+   that island and a tiger that hunts poorly is exactly the one that comes
+   for people. That is the mechanism working, not the mechanism failing.
    ------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------
@@ -646,7 +712,16 @@ export const PANIC = {
   sees: 46,            // metres at which somebody notices a tiger
   runs: 14,            // seconds they keep running once they have
   safe: 9,             // metres from the fire a tiger will not come
+  /* ...and how much further out a band that keeps its fire well pushes that.
+     At mastery the sanctuary is 23 metres, which is about the size of the
+     trampled ground round a camp — so a well-kept fire makes the whole clearing
+     somewhere you are safe rather than a place you have to reach the middle
+     of. It is the difference between getting home and getting nearly home. */
+  fireSafe: 14,
 };
+
+/** The ground round this band's fire that a tiger will not cross. */
+export const safeGround = (camp) => PANIC.safe + PANIC.fireSafe * (camp?.skill?.fire || 0);
 
 export function nearestPredator(x, z, within) {
   let best = null, bestD = within * within;
@@ -659,6 +734,18 @@ export function nearestPredator(x, z, within) {
     }
   }
   return best;
+}
+
+/* Somebody within `within` metres of them, awake and on their feet. Cheap
+   enough to ask per candidate: there are a dozen or two people, and only a
+   hungry tiger with something already in sight ever asks. */
+export function hasCompany(p, within) {
+  const r2 = within * within;
+  for (const q of people) {
+    if (q === p || q.asleep) continue;
+    if ((q.x - p.x) ** 2 + (q.z - p.z) ** 2 < r2) return true;
+  }
+  return false;
 }
 
 export function nearestQuarry(d, spec) {
@@ -676,13 +763,22 @@ export function nearestQuarry(d, spec) {
     }
   }
 
+  /* Nothing above stops here; the loop below is the one that can be skipped.
+     A person is not an alternative to a deer — they are what it comes to when
+     there has been no deer for days. */
+  if (d.fed > h.desperate) return best;
+
   for (let i = 0; i < people.length; i++) {
     const p = people[i];
     if (p.asleep) continue;                     // inside a hut, out of reach
     // Nor will it come to the fire. Standing in camp is standing somewhere.
-    if (inCamp(p.x, p.z, PANIC.safe)) continue;
+    if (inCamp(p.x, p.z, safeGround(p.camp))) continue;
     const dist = Math.hypot(p.x - d.x, p.z - d.z);
-    if (dist > h.sees) continue;
+    // Much shorter than the range it spots a deer at: it has to nearly walk
+    // into them, rather than pick them out of the middle distance.
+    if (dist > h.seesPeople) continue;
+    // And somebody with company is not on the menu at all.
+    if (hasCompany(p, h.company)) continue;
     /* A person is scored as though they were much further away, so a tiger with
        any other option takes it. People die when they are the only thing out
        there — which is exactly when they are foraging alone. */
@@ -732,7 +828,7 @@ export function updatePredator(d, spec, dt) {
     const gone = d.prey.kind === 'animal'
       ? d.prey.a.dead
       : !people.includes(d.prey.person)
-        || inCamp(d.prey.person.x, d.prey.person.z, PANIC.safe);
+        || inCamp(d.prey.person.x, d.prey.person.z, safeGround(d.prey.person.camp));
     if (gone) { d.prey = null; d.chase = 0; }
   }
 

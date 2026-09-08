@@ -10,7 +10,7 @@ import {
   drainDirtyTiles, stats, updateGrassDetail, updateTiles, wireWorld
 } from './world.js';
 import { loadModels, recountAnimals, updateAnimals } from './wildlife.js';
-import { FF_STEP, PACE_MAX_STEP, clockRate, ffStep, pace, rateIndex, setDrawingWorld, setWorldClock, tickWorldStep, worldClock } from './clock.js';
+import { FF_STEP, NIGHT_SKIP_BASE, PACE_MAX_STEP, clockRate, ffStep, nightIdle, pace, rateIndex, setDrawingWorld, setWorldClock, skipping, tickWorldStep, worldClock } from './clock.js';
 import { camps, paintPeople, people } from './people.js';
 import {
   bornCount, chronicle, diedCount, drawTribeChart, loadChronicle, logEvent, onNewDay, personAge, regrowFruit, renderChronicle, renderTribes, repopulate, setSimDay, simDay, startRun, updateEconomy, updateGround, updateLives
@@ -146,6 +146,14 @@ export function stepWorld(dt) {
    short of the point where the page stops noticing input, because the one
    button that has to keep working while this runs is the one that stops it. */
 export const AHEAD_BUDGET = 20;
+
+/* Milliseconds of a frame given to running the night through. The same trade
+   the fast-forward makes and a smaller slice of it, because unlike the
+   fast-forward this one still draws a frame at the end and has to leave time
+   to do it. NIGHT_SKIP_RATE scales it, so the setting still means what it
+   always meant — bigger is a quicker night — it is just no longer a multiplier
+   on the clock. */
+export const NIGHT_BUDGET = 10;
 export let ahead = null;
 
 export function seeAhead(years) {
@@ -287,7 +295,44 @@ export function tick() {
   /* Everything below this line runs on world time, not wall time. `elapsed` is
      deliberately not scaled: it drives the fire flicker and the toasts, which
      belong to the room you are sitting in rather than to the world. */
-  const dt = real * clockRate();
+  /* Asked first, because it is what decides `skipping` and puts the badge up.
+     Reading `skipping` before calling this gets last frame's answer — and the
+     one time that really bites is at the end of the night, where a stale true
+     would take the branch that skips this call and never clear itself. */
+  const rate = clockRate();
+
+  /* The night, run rather than watched.
+
+     Nothing happens in the dark that anybody can see: everybody is asleep in a
+     hut or standing at the fire. clock.js's note on drawingWorld says where the
+     money goes — deciding what two hundred animals and twenty people do is
+     cheap, and writing out the four thousand matrices that draw them is not. So
+     the night goes through stepWorld, which does the first and skips the
+     second, as many times as fit in a slice of this frame.
+
+     It used to be one stretched frame instead: clockRate multiplied dt by
+     nightSkipRate and everything carried on as normal. That works to about 15x
+     and then quietly breaks, because `paced` is clamped by PACE_MAX_STEP and dt
+     is not. Past there the books — eating, ageing, births, deaths, the store
+     spoiling — run at the full rate while movement and sleep run at the clamped
+     one: at 60x a band took a whole night's hunger and got a quarter of a
+     night's rest, and at 600x a fortieth. A quicker night was a night they woke
+     up starving from, which is why the rate was capped at 60 and still too slow.
+
+     stepWorld cannot drift that way. ffStep() is FF_STEP / pace(), so
+     dt * pace() is exactly FF_STEP and the clamp inside it never bites: the
+     clock and the sleeping stay tied together however fast it runs. How fast it
+     runs is now the machine's business. */
+  let ranNight = false;
+  if (skipping) {
+    const until = Date.now() + NIGHT_BUDGET * (P.nightSkipRate / NIGHT_SKIP_BASE);
+    const step = ffStep();
+    while (nightIdle() && Date.now() < until) { stepWorld(step); ranNight = true; }
+  }
+
+  /* The frame's own share of world time — none of it if the loop above already
+     moved the world, or the night is advanced twice. */
+  const dt = ranNight ? 0 : real * rate;
   setWorldClock(worldClock + dt);
 
   // The clock always runs; there is no setting for what time it is, only for
@@ -313,6 +358,21 @@ export function tick() {
      Wind and firelight are left on the real clock. They are weather and light,
      not life, and speeding them up only looks wrong. */
   const paced = Math.min(dt * pace(), PACE_MAX_STEP);
+
+  /* Whose turn it is comes off this, and a watched frame is a step of the world
+     exactly as much as an unwatched one is. It was only ticked in stepWorld —
+     the fast-forward — so while anybody was actually looking, `worldStep` never
+     moved, `turnStart` returned the same offset every frame, and updatePeople
+     walked the same slice of the band for ever.
+
+     Everyone outside that slice was not merely undrawn, they were unsimulated:
+     they never chose a job, never took a step, never aged an hour. It stayed
+     invisible while a band was small because `lodStride` returns 1 below
+     LOD.from and every index is visited anyway — and appeared the moment a
+     world grew past two dozen people, as most of the crowd standing still and
+     never being drawn at all. Measured on a fresh world of 121: 95 who should
+     have been on screen, 24 with a matrix. */
+  tickWorldStep();
 
   moveCamera(paced);
   // update() recomputes the camera from its spherical coordinates, so in the
@@ -362,8 +422,18 @@ export function tick() {
        cadence with the frame counter because updateHud() rewrites the element
        the frame counter lives in. */
     updateHud();
+    const rate = Math.round(frames / fpsTime);
     const el = $('fps');
-    if (el) el.textContent = Math.round(frames / fpsTime);
+    if (el) el.textContent = rate;
+    /* And again beside the clock, which is the copy that survives H hiding the
+       world panel — these two are the numbers you want while looking at
+       something else. Written here rather than in renderTribes because this is
+       the half-second the frame rate is measured over, and a head count is one
+       property read. */
+    const hf = $('hudFps');
+    if (hf) hf.textContent = rate;
+    const hp = $('hudPop');
+    if (hp) hp.textContent = people.length;
     frames = 0; fpsTime = 0;
   }
 }

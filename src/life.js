@@ -15,7 +15,7 @@ import {
 } from './people.js';
 import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
-import { codeChip, codeColor, hhmm, nameForSeed, tribeChips, worldCode, worlds } from './ui.js';
+import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, tribeChips, worldCode, worlds } from './ui.js';
 import { updateHud } from './main.js';
 
 /* -------------------------------------------------------------------------
@@ -45,6 +45,44 @@ export const CHRONICLE_STORE = 'openworld.chronicle';
 export let chronicle = [];
 export let pendingEvents = [];
 export let runId = null;
+
+/* -------------------------------------------------------------------------
+   What is worth reading
+
+   The chronicle keeps everything, and everything is mostly hunting. A band of
+   twenty brings something home a few times a day, somebody is always being born
+   and somebody is always dying, and twelve lines of panel fill with that inside
+   a minute — so the one line that mattered, the day they worked out how to cure
+   meat, goes past between two rabbits and is gone.
+
+   These are the lines you would use to tell somebody what happened to a band:
+   what they worked out and what they forgot, who walked off to start their own
+   fire and who went with them, who took anybody in, who fed whom, and the days
+   the store ran out and came back. They have something in common — every one of
+   them is about the band rather than about a person having a Tuesday, and
+   nothing that happens on its own schedule is in here.
+
+   Nothing is dropped. The filter is a way of looking, not a way of recording:
+   the same list is underneath and one button gives it back. */
+export const MILESTONES = new Set([
+  'learned',    // a band worked something out
+  'lost',       // ...and a band that forgot it, which is the same news
+  'split',      // somebody took a share of them and walked off
+  'joined',     // ...and a band that took somebody in
+  'moved',      // the whole camp picked up and went
+  'trade',      // one band fed another
+  'plague',     // a sickness reached a camp
+  'hunger',     // the store ran out
+  'relief',     // ...and the day it came back
+  'extinct',    // a band ended
+  'end',        // and the last one of them
+]);
+export const isMilestone = (e) => MILESTONES.has(e.kind);
+
+/* On by default, because the reason to have it is that the unfiltered list
+   buries the very thing it is for. */
+export let milestonesOnly = true;
+export function setMilestonesOnly(v) { milestonesOnly = !!v; }
 
 export function logEvent(kind, text, x = 0, z = 0) {
   const entry = {
@@ -107,43 +145,19 @@ export function renderTribes(now = 0) {
   if (now && now < nextTribeDraw) return;
   nextTribeDraw = now + 0.5;
 
+  /* A colour, a code, a name and how many. Nothing else.
+
+     It used to carry the sex split, the children, the days of food, three skill
+     bars and the toll with its causes, on every row. That is a good paragraph
+     about one band and an unreadable wall about twenty — and all of it is on
+     the band card already, which is one click away and has room to lay it out.
+     A list you scan and a card you read are different jobs. */
   el.innerHTML = camps.map((c, i) => {
-    let pop = 0, kids = 0, women = 0, men = 0, ill = 0;
-    for (const p of people) {
-      if (p.camp !== c) continue;
-      pop++;
-      if (p.child) kids++;
-      if (p.sex === 'f') women++; else men++;
-      if (p.sick) ill++;
-    }
-    /* Days-of-food is the store divided by what the camp eats in a day, and a
-       camp with nobody in it eats nothing — which came out as twenty-six
-       thousand days. An empty camp has no such number. */
-    const detail = pop === 0
-      ? 'empty'
-      : `${women}♀ ${men}♂ · ${kids} child · ${daysOfFood(c).toFixed(1)}d food`
-        + (ill ? ` · <em class="ill">${ill} ill</em>` : '');
-    /* What has become of them, worst first. On the line rather than behind a
-       hover, because the whole question is why a band is doing badly and the
-       answer is usually right here. */
-    const toll = tollOf(c);
-    const lost = toll.reduce((n, [, k]) => n + k, 0);
-    const why = lost
-      ? `<span class="toll" title="${toll.map(([k, n]) => `${n} ${TOLL_WORDS[k]}`).join(', ')}">`
-        + `${lost} lost: ${toll.slice(0, 2).map(([k, n]) => `${n} ${TOLL_WORDS[k]}`).join(', ')}`
-        + `</span>`
-      : '';
-    /* What it has worked out, as three bars. This is the line that makes a
-       century of simulation legible: two bands on one map, one of them with
-       drying racks and one without, and you can see which is which. */
-    const learned = Object.keys(SKILLS)
-      .map((k) => `<i class="sk" title="${SKILLS[k].label}" style="--v:${Math.round(c.skill[k] * 100)}%"></i>`)
-      .join('');
+    let pop = 0;
+    for (const p of people) if (p.camp === c) pop++;
     return `<div data-camp="${i}"><i style="background:${TRIBE_COLORS[i % TRIBE_COLORS.length]}"></i>`
       + `<b class="wcode" style="background:${c.color}">${c.code}</b>`
-      + `<b>${c.name}</b> ${pop}<span>${detail}</span>`
-      + `<span class="skills" title="knapping · weaving · curing">${learned}</span>`
-      + why + `</div>`;
+      + `<b>${c.name}</b> <span>${pop || 'empty'}</span></div>`;
   }).join('') || '<div><span>no camps</span></div>';
 
   drawTribeChart();
@@ -192,9 +206,14 @@ export function drawTribeChart(cv = $('tribeChart')) {
 export function renderChronicle() {
   const el = $('chronicle');
   if (!el || ui.classList.contains('collapsed')) return;
-  el.innerHTML = chronicle.slice(0, 12)
+  const rows = milestonesOnly ? chronicle.filter(isMilestone) : chronicle;
+  /* A band can go a long while without doing anything of note, and twelve
+     blank lines is a worse answer than a short list — so the empty case says
+     which list it is empty of, rather than claiming nothing has happened. */
+  el.innerHTML = rows.slice(0, 12)
     .map((e) => `<div>${codeChip(e.seed)}<span>d${e.day} ${e.hour}</span> ${tribeChips(e.text)}</div>`).join('')
-    || '<div><span>—</span> nothing has happened yet</div>';
+    || `<div><span>—</span> ${milestonesOnly && chronicle.length
+      ? 'nothing has come of it yet' : 'nothing has happened yet'}</div>`;
 }
 
 export async function startRun() {
@@ -295,7 +314,45 @@ export const SKILLS = {
   spears: { label: 'spears', of: 'knapping' },
   baskets: { label: 'baskets', of: 'weaving' },
   drying: { label: 'drying', of: 'curing' },
+  /* Three more, and the reason for them is that three was not enough to make
+     two bands different from each other. With three, every band that lasted
+     learned all of them and the interesting question — what is this band good
+     at? — had one answer. Six is enough that a century leaves two bands with
+     different histories: one that has buried a lot of people and knows how to
+     treat a fever, one that has been hungry and can find a deer at three
+     hundred metres.
+
+     Each does something the simulation already had a number for. A skill that
+     only shows on a readout is a readout, not a skill. */
+  herbs: { label: 'herbs', of: 'healing' },
+  tracking: { label: 'tracking', of: 'tracking' },
+  fire: { label: 'fire', of: 'fire-keeping' },
 };
+
+/* Every skill at nothing. Built from SKILLS rather than written out, because it
+   was written out in five places and adding a seventh skill should not be a
+   hunt through the file for the ones that were missed. */
+export const emptySkills = () => Object.fromEntries(Object.keys(SKILLS).map((k) => [k, 0]));
+
+/* What one person remembers, read back off a save.
+
+   Saves written before there were six skills carry three, in order, as an
+   array. Reading that as an object gives everybody nothing; reading the new
+   object as an array gives the same. So: both shapes, and the old one is
+   mapped by the order it was written in rather than by position in whatever
+   SKILLS happens to say today — insert a skill in the middle and an ordered
+   read would hand everybody's knapping to the weavers. */
+export const SAVED_SKILL_ORDER = ['spears', 'baskets', 'drying'];
+
+export function knowsFrom(kn) {
+  const out = emptySkills();
+  if (Array.isArray(kn)) {
+    SAVED_SKILL_ORDER.forEach((k, i) => { if (k in out) out[k] = Number(kn[i]) || 0; });
+  } else if (kn && typeof kn === 'object') {
+    for (const k in out) out[k] = Number(kn[k]) || 0;
+  }
+  return out;
+}
 
 export const SKILL = {
   perCraft: 0.028,     // mastery gained by one completed session
@@ -308,6 +365,19 @@ export const SKILL = {
   spearChance: 1.20,   // kill chance, at mastery
   basketHaul: 0.90,    // what a foraging trip brings home
   dryKeep: 0.65,       // how much less of the store spoils
+  /* Healing. The sickness was the leading cause of death and the only one
+     nobody could do anything about; this is the something. Not a cure — 0.55
+     of the mortality at mastery still leaves a plague worth fearing — but it is
+     the difference between a band that comes through one and a band that does
+     not, and it is the only skill you can watch pay off in a week. */
+  herbCure: 0.55,      // how much less a sickness kills
+  /* Tracking. Hunters look for prey inside FOOD.searchRadius; at mastery they
+     look half as far again. Reach is what turns hunting from a thing that works
+     when a deer wanders past into a thing a band does on purpose. */
+  trackFar: 0.50,      // further a hunter will find something
+  /* Fire-keeping. A tiger will not come within PANIC.safe of a fire, and a
+     better-kept fire pushes that out — see safeGround in wildlife.js, where the
+     metres live next to the tiger that respects them. */
 };
 
 /** The best any living adult of this camp actually remembers. */
@@ -343,16 +413,32 @@ export function practise(camp, key, amount) {
    wider one to fall, because losing a skill is the louder claim. */
 export const SKILL_STEPS = [0.25, 0.5, 0.75, 1];
 export const SKILL_WORDS = ['', 'the beginnings of', 'a fair hand at', 'real skill at', 'mastery of'];
+/* The same five rungs as a label. SKILL_WORDS is written to sit in the middle
+   of a sentence — "has a fair hand at knapping" — and a column in a table wants
+   the words on their own. */
+export const SKILL_RUNGS = ['not yet', 'beginnings', 'a fair hand', 'real skill', 'mastery'];
 export const SKILL_RISE = 0.02;
 export const SKILL_FALL = 0.06;
-export const FORGET_WORDS = { knapping: 'knap', weaving: 'weave', curing: 'cure meat' };
+export const FORGET_WORDS = {
+  knapping: 'knap', weaving: 'weave', curing: 'cure meat',
+  healing: 'treat the sick', tracking: 'track', 'fire-keeping': 'keep a fire',
+};
+
+/* Which rung a mastery is standing on, given the rung it was last said to be
+   on. Pulled out of announceSkill because the restore needs the same answer
+   without saying anything: `told` is derived from `skill` and is not saved, so
+   it has to be worked out again on the way back in. */
+export function skillTier(v, told = 0) {
+  let tier = told;
+  while (tier < SKILL_STEPS.length && v >= SKILL_STEPS[tier] + SKILL_RISE) tier++;
+  while (tier > 0 && v < SKILL_STEPS[tier - 1] - SKILL_FALL) tier--;
+  return tier;
+}
 
 export function announceSkill(camp, key) {
   const v = camp.skill[key];
   const told = camp.told[key] || 0;
-  let tier = told;
-  while (tier < SKILL_STEPS.length && v >= SKILL_STEPS[tier] + SKILL_RISE) tier++;
-  while (tier > 0 && v < SKILL_STEPS[tier - 1] - SKILL_FALL) tier--;
+  const tier = skillTier(v, told);
   if (tier === told) return;
   camp.told[key] = tier;
   // The rack goes up, or comes down, the moment drying crosses the line.
@@ -383,10 +469,25 @@ export function fadeSkills(days) {
    themselves in a bad one. */
 export function craftChoice(camp) {
   const h = camp.hunger;
+  /* How much of the band is ill, which is what makes anybody think about
+     medicine. It is the nicest of these: a band learns to treat a fever because
+     it has been having fevers, so the bands that are good at healing are the
+     ones that have been through something — and you can read that off the card
+     years later. */
+  let pop = 0, ill = 0;
+  for (const q of people) {
+    if (q.camp !== camp) continue;
+    pop++;
+    if (q.sick) ill++;
+  }
+  const sick = pop ? ill / pop : 0;
   const weights = [
     ['spears', 0.25 + 0.5 * h],
     ['baskets', 0.25 + 0.5 * h],
     ['drying', 0.20 + 0.7 * (1 - h)],
+    ['tracking', 0.16 + 0.45 * h],
+    ['fire', 0.14 + 0.40 * (1 - h)],
+    ['herbs', 0.10 + 1.10 * sick],
   ];
   let roll = luck() * weights.reduce((a, w) => a + w[1], 0);
   return weights.find(([, w]) => (roll -= w) <= 0)?.[0] || 'spears';
@@ -481,7 +582,7 @@ export function arriveAtCamp(p, host) {
     const well = people.filter((q) => q.camp === host && !q.sick && !immune(q));
     if (well.length) {
       fallIll(well[(luck() * well.length) | 0]);
-      logEvent('sickness',
+      logEvent('plague',
         `the sickness came to [${host.code}] ${host.name} with ${who(p)}`, host.x, host.z);
     }
   }
@@ -546,6 +647,26 @@ export const FOOD = {
      standing on it. */
   gather: 0.44,        // units brought home by one completed foraging trip
   comfortable: 6,      // days of store above which nobody worries
+  /* Days of store above which a band breeds at its full rate.
+
+     This used to be `comfortable`, and births were scaled smoothly by how full
+     the store was — a band at three days of food had half as many children as
+     one at six. That is a population regulating itself, and it is not what
+     anything alive does. It gave a flat line: bands found a level and sat on
+     it for thirty years.
+
+     A species breeds at the rate it breeds at, and what stops it is running out
+     of food, not anticipating running out. So the curve is a cliff instead: at
+     any store worth the name they breed flat out, and below `breedsUntil` they
+     stop, by which point the band is already starving and the deaths have
+     started. What you get is the real shape — overshoot, then a crash, then a
+     recovery on ground that has had time to grow back.
+
+     Nothing else changed. `camp.hunger`, the starvation ceiling and the hunger
+     mortality all still key off `comfortable`, so the crash was already built;
+     it simply never used to arrive, because the birth rate backed off before
+     the store ever got low enough to kill anybody. */
+  breedsUntil: 0.75,   // days of store below which nobody is born
   /* A thrown spear, not a footrace. Hunters jog at 3.6 m/s and deer flee at
      6.8, so a hunt that has to touch its quarry can only ever catch the
      slowest animal in the world — the first run of this ended with every kill
@@ -608,7 +729,9 @@ export const SPLIT = {
      the parent most of the way down with it. A band leaves because it has more
      than it needs, which is the only reason anybody ever has. */
   needFood: 11,        // days of store before anybody can be spared to walk
-  minAway: 300,        // metres from every existing camp, before MAP_SCALE
+  minAway: 300,        // metres from every existing camp. Plain metres: a
+                       // bigger island holds more bands rather than the same
+                       // number further apart.
   everyYears: 1.5,     // no camp splits twice in quick succession
   pairs: 3,            // fertile adults of each sex who go, at most
   keepPairs: 2,        // and who must be left behind, at least
@@ -645,7 +768,9 @@ export const GROUND = {
   shy: 0.55,           // how much of a spot's worth is lost for being theirs
   squeeze: 0.62,       // hunger at which being crowded starts to count
   patience: 40,        // sim-days of that before a band gives up its site
-  apart: 200,          // metres from every other camp, before MAP_SCALE
+  apart: 200,          // metres from every other camp. Plain metres, like
+                       // `range` above it — where a camp may go scales with the
+                       // island, how close it may sit to another one does not.
 };
 
 /** The band whose ground this is, if it is nearer their fire than ours. */
@@ -693,7 +818,7 @@ export function moveCampAway(camp) {
       if (c === camp || c.gone) continue;
       nearest = Math.min(nearest, Math.hypot(x - c.x, z - c.z));
     }
-    if (nearest < GROUND.apart * MAP_SCALE) continue;
+    if (nearest < GROUND.apart) continue;
     // Room first, then ground worth foraging.
     const score = nearest + forageRichness(x, z) * 120;
     if (score > bestScore) { bestScore = score; best = { x, z }; }
@@ -732,7 +857,7 @@ export function newCampSite(rng) {
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const h = sampleHeight(x, z);
     if (h < SEA + 4 || h > SNOW - 25) continue;
-    if (camps.some((c) => Math.hypot(c.x - x, c.z - z) < SPLIT.minAway * MAP_SCALE)) continue;
+    if (camps.some((c) => Math.hypot(c.x - x, c.z - z) < SPLIT.minAway)) continue;
     const flat = flatnessAt(x, z);
     if (flat > bestFlat) { bestFlat = flat; best = { x, z }; }
     if (flat > 0.985) break;
@@ -859,12 +984,13 @@ export function splitCamp(parent) {
     rng, voice, name: uniqueName(rng, 2 + ((rng() * 2) | 0), voice),
     code: worldCode((P.seed ^ 0x1d3f) + camps.length * 6151),
     get color() { return codeColor(this.code); },
-    food: 0, pop: 0, need: 0, hunger: 0, wasEmpty: false,
+    // Nothing in the store, so: hungry. See the note in people.js.
+    food: 0, pop: 0, need: 0, hunger: 1, wasEmpty: false,
     /* What the leavers remember between them, which is where the new band
        starts. A camp founded by somebody who knew how to cure meat does not
        have to work it out again. */
-    skill: { spears: 0, baskets: 0, drying: 0 },
-    told: { spears: 0, baskets: 0, drying: 0 },
+    skill: emptySkills(),
+    told: emptySkills(),
     toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0 },
     born: 0, peak: 0, founded: simDay, gone: false, history: [],
   };
@@ -988,7 +1114,7 @@ export function updateSickness(days) {
       const well = people.filter((p) => p.camp === camp && !p.sick && !immune(p));
       if (well.length) {
         fallIll(well[(luck() * well.length) | 0]);
-        logEvent('sickness', `a sickness reached [${camp.code}] ${camp.name}`, camp.x, camp.z);
+        logEvent('plague', `a sickness reached [${camp.code}] ${camp.name}`, camp.x, camp.z);
       }
     }
 
@@ -1076,9 +1202,13 @@ export function repopulate(days) {
   }
 }
 
+/** How far this band's hunters can pick something out. */
+export const huntReach = (camp) =>
+  FOOD.searchRadius * (1 + SKILL.trackFar * (camp?.skill?.tracking || 0));
+
 /** The nearest living animal, for a hunter to go after. */
-export function findPrey(x, z) {
-  let best = null, bestD = FOOD.searchRadius * FOOD.searchRadius;
+export function findPrey(x, z, reach = FOOD.searchRadius) {
+  let best = null, bestD = reach * reach;
   for (const pack of packs) {
     if (!QUARRY[pack.spec.key]) continue;
     /* A species that has been hunted down is left alone until it recovers.
@@ -1524,7 +1654,8 @@ export function newPerson(camp, rng, ageYears) {
     state: 'idle', job: 'tend', timer: rng() * 6, energy: 0.6 + rng() * 0.4,
     sick: 0, immuneUntil: 0, nourish: 1, panic: 0,
     targetX: camp.x, targetZ: camp.z,
-    crouch: 0, bend: 0, carry: 0, hasSpear: false, asleep: false,
+    crouch: 0, bend: 0, carry: 0, hasSpear: false, asleep: false, hidden: false, led: false,
+    orders: null,
     haul: 0, prey: null, attempt: 0, kills: 0,
     hut: camp.huts[(rng() * camp.huts.length) | 0],
     work: rng() * Math.PI * 2,
@@ -1533,7 +1664,7 @@ export function newPerson(camp, rng, ageYears) {
        an untouched slot (three fills instanceColor with 1, so they came out
        white), and everyone shuffled up a place when somebody died and inherited
        a stranger's skin. */
-    taught: false, knows: { spears: 0, baskets: 0, drying: 0 }, visiting: null, moved: false,
+    taught: false, knows: emptySkills(), visiting: null, moved: false,
     traits: traitsFor(rng, null, null),
     skin: SKIN[(rng() * SKIN.length) | 0],
     skinShade: 0.9 + rng() * 0.2,
@@ -1596,7 +1727,8 @@ export function updateLives(days) {
     /* Sickness is a daily risk rather than an annual one, so it is converted
        here rather than living in the same units as growing old. */
     if (p.sick) {
-      h.sickness = PLAGUE.mortality * (1 + PLAGUE.hungerFactor * p.camp.hunger) * P.yearLength;
+      h.sickness = PLAGUE.mortality * (1 + PLAGUE.hungerFactor * p.camp.hunger)
+        * (1 - SKILL.herbCure * (p.camp.skill.herbs || 0)) * P.yearLength;
     }
     /* Nothing left. Not a risk, not a hazard competing with the others — a
        person at zero is done, and the readout said so all the way down. */
@@ -1625,8 +1757,12 @@ export function updateLives(days) {
       if (p.sex === 'f') mothers++; else fathers++;
     }
     if (mothers < 1 || fathers < 1) continue;
-    // Nobody has a child into an empty store.
-    const plenty = clamp(daysOfFood(camp) / FOOD.comfortable, 0, 1);
+    /* Flat out until the food is gone, which is the whole of the rule. Not
+       `clamp(days / comfortable)` — that is a band deciding to have fewer
+       children because next month looks thin, and no animal does that. They
+       breed at their rate; the store empties; then they starve. The crash is
+       the regulator, not restraint. */
+    const plenty = daysOfFood(camp) > FOOD.breedsUntil ? 1 : 0;
     const chance = mothers * 2 * LIFE.birthPerYear * plenty * P.fertility * perYear;
     if (luck() > chance) continue;
     const child = newPerson(camp, luck, 0);

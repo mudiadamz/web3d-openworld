@@ -28,18 +28,32 @@ export let rateIndex = RATES.indexOf(1);
    the whole night at 1×, and in one run out of eight it did. */
 export let skipping = false;
 
+/* What NIGHT_SKIP_RATE is measured against: at this value the night gets the
+   whole of NIGHT_BUDGET, above it more of the frame and below it less. It is
+   the old default, so every .env that set a rate keeps the sense it had —
+   bigger is a quicker night. */
+export const NIGHT_SKIP_BASE = 6;
+
 /* Fifteen degrees below the horizon: past dusk, properly dark, and far enough
-   in that whoever is still out there is not coming back before dawn. */
+   in that whoever is still out there is not coming back before dawn. Both ends
+   of the window are settings now — see NIGHT_FROM and NIGHT_DEEP — and this is
+   what they default to. */
 export const DEEP_NIGHT = -0.25;
 
+/* The far end, never above the near end. Set the two the wrong way round and
+   the deep test would fire before the night had started, which would run the
+   world on through a sunset with everybody still out in it. Clamping here is
+   cheaper than a validation rule nobody reads. */
+export function deepNight() { return Math.min(P.nightDeep, P.nightFrom); }
+
 export function nightIdle() {
-  if (!P.nightSkip || sunDir.y > -0.02) return false;
+  if (!P.nightSkip || sunDir.y > P.nightFrom) return false;
   if (!people.length) return true;            // nobody left to wait for
   /* Deep night runs whatever anybody is doing. Waiting on stragglers is right
      around dusk and wrong at two in the morning — one person who wandered off
      and never came back held a whole night at 1× in two runs out of eight, and
      a feature that only works when everybody behaves is not on by default. */
-  if (sunDir.y < DEEP_NIGHT) return true;
+  if (sunDir.y < deepNight()) return true;
   for (const p of people) {
     if (p.asleep) continue;
     if (Math.hypot(p.x - p.camp.x, p.z - p.camp.z) > CAMP_CLEARING) return false;
@@ -47,7 +61,13 @@ export function nightIdle() {
   return true;
 }
 
-/** The whole time multiplier: what you asked for, times what the night adds. */
+/** What you asked for. Also where `skipping` is decided and the badge shown.
+
+   It used to multiply by `nightSkipRate` as well — that was how the night was
+   made to pass, by stretching one frame. The tick runs the night in proper
+   world-steps now, so there is nothing here to scale: the rate went from a
+   multiplier on the clock to a share of the frame, because as a multiplier it
+   could not be raised without the clock leaving the sleeping behind. */
 export function clockRate() {
   const wasSkipping = skipping;
   skipping = nightIdle();
@@ -55,7 +75,7 @@ export function clockRate() {
     const el = $('skip');
     if (el) el.hidden = !skipping;
   }
-  return RATES[rateIndex] * (skipping ? P.nightSkipRate : 1);
+  return RATES[rateIndex];
 }
 
 export const PACE_DAY = 3600;

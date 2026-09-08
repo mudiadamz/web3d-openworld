@@ -467,6 +467,91 @@ picks up and goes somewhere with room — which is what a band without granaries
 walls actually does. Everybody gets a hut in the new camp, because a reference to
 the old one is a person walking to where their house used to be.
 
+## A frame is a step of the world
+
+Not everybody is walked every step. Past `LOD.from` — two dozen people — they
+take turns: `lodStride` decides how many groups there are and `turnStart` is
+`worldStep % stride`, so each step walks one slice and steps over the rest.
+
+`worldStep` was only ticked inside `stepWorld`, which is the *unwatched*
+fast-forward. The watched frame updated people and never moved the counter — so
+while anybody was actually looking, `turnStart` returned the same offset every
+frame and `updatePeople` walked the same slice for ever.
+
+Everyone outside it was not merely undrawn. They were never stepped: no job, no
+movement, no ageing, and the zero matrix they were built with that nothing ever
+overwrote. It stayed invisible while a band was small, because `lodStride`
+returns 1 below the threshold and every index gets visited anyway, and it
+arrived the moment a world grew past two dozen people — as most of a crowd
+standing perfectly still and never being drawn at all.
+
+Measured on a fresh world of 121 people, counting non-zero matrices on the head
+mesh against the people who should have been on screen:
+
+| | should be visible | actually drawn |
+|---|---|---|
+| before | 95 | **24** |
+| after | 88 | **88** |
+
+The fix is one line: a watched frame ticks the step too. It is the same shape as
+the book-keeping directly below it — two paths through the world, and anything
+either owes has to be paid by both, which is why `bookDue += simDays` appears
+twice and is checked for appearing twice. `tickWorldStep()` now is as well.
+
+This is also why the harness kept reporting that nobody walked anywhere: the
+band was not refusing to forage, most of it was never asked.
+
+## What is worth telling
+
+The chronicle keeps everything, and everything is mostly hunting. Counted on one
+real world: **655 lines, of which 238 were kills**. Twelve lines of panel fill
+with those inside a minute, so the day a band worked out how to cure meat goes
+past between two rabbits — and the thing you actually want to know, that three
+bands split away and who led them, is three lines out of six hundred.
+
+So the panel and the window show **the band's own history** by default. That is
+what it worked out and what it forgot, who walked off to start their own fire and
+who went with them, who took somebody in, who fed whom, the days the store ran
+out and came back, and the day a band ended. What they have in common is that
+every one is about the band rather than about a person having a Tuesday.
+
+Hidden: kills, births, deaths, a tiger missing, the last of the fruit, one person
+catching a sickness off another. **Nothing is dropped** — the filter is a way of
+looking, not a way of recording, and one button gives the whole list back. The
+panel and the window read the same flag, so they cannot show different answers to
+the same question.
+
+One kind had to be split in two to make this work. `sickness` was both "a
+sickness reached this camp", which is the band's news, and "they caught it from
+the ones they were sitting with", which is not; sharing a kind meant neither
+could be filtered without the other. The first is `plague` now.
+
+### A band only learns a thing once
+
+The filter alone was not enough, because the loudest thing in the record was a
+bug. `camp.told` is which rung of a skill the band has already been *announced*
+as standing on. It is derived from `camp.skill`, so it is not saved — and it was
+not worked out again on the way back in either, so it came back as the zero a
+fresh camp is built with, and every reload re-announced the entire ladder. A band
+that had known how to cure meat for eighty years learnt it again, in four steps,
+every time the page came back.
+
+The numbers from that same world, and they are not close:
+
+| | |
+|---|---|
+| `learned` lines | 236 |
+| days they happened on | **6** |
+| lines inside a same-day burst of six or more | **236 — every one** |
+| biggest single day | **72 announcements** |
+| honest ceiling: 4 rungs × 3 skills × ~4 bands | 48 |
+
+Every skill line in the history was a reload, not a band learning anything. The
+restore now works `told` out from `skill` through the same `skillTier` the
+announcement uses. Storing it instead would be the same fact written twice, which
+is how two copies come to disagree — the save carries the mastery and not the
+announcement.
+
 ## Indoors
 
 A camp of a hundred and forty was a hundred and forty figures standing in a
@@ -476,9 +561,33 @@ ill — and every toddler in the band underfoot among them. From any distance it
 read as a crowd scene rather than as a camp.
 
 **A camp is tents with people in them.** An errand either takes you out of the
-camp or it does not: foraging, hunting, walking to the neighbours and children
-playing are outside, and everything else happens under a roof. Anybody indoors is
-not drawn. **Toddlers stay in** whatever else is going on.
+camp or it does not: foraging, hunting, walking to the neighbours, children
+playing — and sitting at the fire. Knapping, sitting with the ill and sleeping
+happen under a roof. Anybody indoors is not drawn. **Toddlers stay in** whatever
+else is going on.
+
+**Sitting at the fire was on the wrong side of that line**, and it is the one job
+whose name says where it happens. Somebody "at the fire" was hidden inside a
+tent: the card said one thing and the camp showed another. It was also the
+largest group of people never being drawn — with a full store the job weights put
+better than a third of a band on it — so a well-fed camp was mostly an empty
+clearing. Measured over the same boot with nothing else changed, moving `tend`
+outdoors took the band from **1 of 3 drawn to 2 of 3**.
+
+They sit where you would sit: `FIRESIDE` puts them between 1.8 and 4.0 metres
+out, inside the ring of tents and outside the ring of stones. The huts stand 6.5
+to 9.1 metres from the fire and are a couple of metres across, so their inner
+edge is about 4.1; the fire's stones sit at 1.15. The old range was the generic
+`[2, 9]` shared with knapping and nursing, which put fire-tenders among the tents
+and sometimes inside one — which never showed, because they were not drawn.
+
+**And the words follow the figure, not the job.** A job says what somebody's
+hands are busy with; it says nothing about whether you can see them, and the two
+came apart the moment anything was hidden. `doingWords` keys off `p.hidden` — the
+flag the draw loop sets — so somebody under a roof reads *resting* or *knapping
+in a tent* rather than *at the fire*, and somebody at the fire is at the fire and
+on screen. It is the same rule the click-picker follows: one answer to "is this
+person visible", written once and read everywhere.
 
 Not drawn is all it is. They are still there, still eating, still catching things
 off each other, still counted by everything that counts people — `indoorsNow` is
@@ -830,8 +939,40 @@ not to the world.
 
 ### The night runs itself through
 
-By default, once there is nothing left to watch, the night goes past at
-`NIGHT_SKIP_RATE` (6× out of the box). A `▶▶` beside the clock says when.
+By default, once there is nothing left to watch, the night is **run through
+rather than watched**, and it takes a second or so. A `▶▶` beside the clock says
+when.
+
+It used to take five minutes. The night is half of a 3600-second day, and the
+way it was skipped was to multiply `dt` by `NIGHT_SKIP_RATE` and let the frame
+carry on as normal — 6× of 1800 seconds is 300 of them. Turning the rate up did
+not fix it, because the mechanism comes apart above about 15×: `paced` is
+clamped by `PACE_MAX_STEP` and `dt` is not, so past that point the books —
+eating, ageing, births, deaths, the store spoiling — run at the full rate while
+movement and sleep run at the clamped one.
+
+| rate | clock per frame | movement and sleep | apart by | night lasts |
+|---|---|---|---|---|
+| 6 | 0.100s | 0.100s | — | 300s |
+| 15 | 0.250s | 0.250s | — | 120s |
+| 60 | 1.000s | 0.250s | **4×** | 30s |
+| 600 | 10.000s | 0.250s | **40×** | 3s |
+
+At 60× a band took a whole night's hunger and got a quarter of a night's rest.
+That is why the setting was capped at 60 and a night still took half a minute:
+it could not be raised without the clock leaving the sleeping behind.
+
+So the night goes through `stepWorld` instead — the same machinery the
+fast-forward uses, which decides what everybody does and skips writing the four
+thousand matrices that draw them, and that is nearly all of the per-frame cost.
+It cannot drift, either: `ffStep()` is `FF_STEP / pace()`, so `dt * pace()` is
+exactly `FF_STEP` and the clamp never bites. The clock and the sleeping stay
+tied together however fast it runs.
+
+Measured on the boot harness, frames spent inside the night: **5,910 before,
+82 after.** `NIGHT_SKIP_RATE` keeps its sense — bigger is a quicker night — but
+it is a share of each frame now rather than a multiplier on the clock, so
+raising it costs smoothness rather than correctness.
 
 Two conditions, and the second one matters more than it looks:
 
@@ -854,11 +995,266 @@ in the middle of the second, reporting 1.8× and looking like a broken feature
 rather than a broken measurement. It now waits for a window the night skip does
 not touch, and throws the window away if it turns on partway.
 
+## How many bands an island holds
+
+Every distance in camp siting was a number of metres tuned on a 1600 m island,
+and on a 4800 m one they all still meant 1600 m — six bands huddled inside a
+410 m circle in the middle of an island nine times the size, fighting over the
+same ground. Sixty people down to nine. So they were all multiplied by
+`MAP_SCALE`, which fixed the huddle and introduced a quieter problem: it scaled
+two things that are not the same thing.
+
+*Where* a camp may be placed is about the island — on a bigger one the sites
+have to spread further out. How far two fires must be *apart* is about camps:
+260 metres is 260 metres whatever the island measures. Scaling both cancels. A
+disc 2.5 times wider than its own spacing holds the same handful of sites however
+you multiply the pair, so a 6400 m island held exactly as many bands as a 1600 m
+one and merely spread them thinner. Asking for forty camps got you seven on
+every map in the game, and `.env.example` documented `CAMPS 0-5` because that is
+what actually happened, while `config.js` allowed 0-40.
+
+So the placement radii still scale and the three spacings — `CAMPS_APART`,
+`SPLIT.minAway`, `GROUND.apart` — are plain metres. `GROUND.range`, the ground
+one band works, was already in plain metres and sits three lines above
+`GROUND.apart`, which was not.
+
+Sites placed when asked for forty, by map size:
+
+| map | 1600 | 2400 | 3200 | 4800 | 6400 |
+|---|---|---|---|---|---|
+| before | 6.9 | 6.9 | 6.9 | 6.9 | 6.9 |
+| after | 6.9 | 13.7 | 22.2 | 40 | 40 |
+
+The default island is unchanged, which is the point: nothing about a 1600 m
+world moves. A bigger one is now more bands rather than the same bands further
+apart.
+
+## Breeding is not planning
+
+A band used to have children in proportion to how full its store was — half as
+many at three days of food as at six. That is a population regulating itself,
+and it is not a thing any species does. It also gave a flat line: bands found a
+level and sat on it for thirty years, because the birth rate backed off long
+before the store ever got low enough to kill anybody. All the starvation
+machinery below it — `camp.hunger`, the `nourish` ceiling, `hungerMortality` —
+was built and almost never fired.
+
+Now the curve is a cliff. Above `FOOD.breedsUntil` they breed flat out; below
+it, nobody is born. And that threshold sits *past* the point where the band is
+already starving: hunger is `1 - days / comfortable`, so at 0.75 days of store
+the band is at 0.875 hunger and the starvation ceiling started coming down at
+`STARVE_FROM` = 0.82. The last child is born into a band that is already dying.
+
+What that produces is the real shape — overshoot, crash, and a recovery on
+ground that has had time to grow back — rather than a line. The regulator is the
+crash. Nothing else changed: the three consumers of `FOOD.comfortable` are
+untouched, because they are what makes the crash happen.
+
+## Six things a band can be good at
+
+Three was not enough to make two bands different from each other. Every band
+that lasted learned all of them, so *what is this band good at* had one answer,
+and the three skill bars were three gauges that all filled up.
+
+| skill | what it moves |
+|---|---|
+| knapping | the chance a thrown spear kills |
+| weaving | what a foraging trip carries home |
+| curing | how much of the store spoils |
+| **healing** | how much a sickness kills — `herbCure` takes 55% off it at mastery |
+| **tracking** | how far a hunter can pick something out — half as far again |
+| **fire-keeping** | the ground round a fire a tiger will not cross, 9m out to 23m |
+
+Each of them moves a number the simulation already had. A skill that only shows
+on a readout is a readout, not a skill.
+
+The nicest is healing, because of where it comes from. What a band practises is
+weighted by what it has been worrying about, and the weight on herbs is the
+share of the band that is ill right now — so a band learns to treat a fever
+*because it has been having fevers*. The bands that are good at healing are the
+ones that have been through something, and you can read that off the card years
+after the last of them died of it.
+
+Fire-keeping is the other one worth watching. At mastery the sanctuary is about
+the width of the trampled ground round a camp, which turns "reach the fire" into
+"reach the camp" — the difference between getting home and getting nearly home
+with a tiger behind you.
+
+Adding a seventh should be one edit. The set of them is built from `SKILLS` by
+`emptySkills()` rather than written out, which it was in five places; the save
+is keyed by name rather than ordered, because an ordered array quietly hands
+everybody's knapping to the weavers the day a skill is inserted anywhere but the
+end; and a check fails if any skill has no effect, no craft weight, or no word
+for forgetting it.
+
+## What the tiger will come after
+
+A tiger was killing 73% of everybody. That is not a difficulty setting being too
+high; it is a rule that was described in a comment and never written down in
+code. The comment said a tiger "prefers four legs to two ... but it will take
+somebody who is out alone", and what the code did was score a person as six
+times their real distance and otherwise treat them exactly like a deer.
+
+Preferring four legs only helps when four legs are in sight. Two hundred animals
+spread over an island 900 metres across is *less than one animal* inside the
+62-metre circle a tiger sees a deer in — so most of the time there was nothing
+four-legged to prefer, and a person alone in an empty stretch was simply the
+best thing on offer, from as far off as a deer. That is the whole bug.
+
+So "out alone" is now four things, and the last one does most of the work:
+
+| rule | what it does |
+|---|---|
+| `prefersAnimals` | a person scores as 6× their real distance — anything with four legs in sight wins. This was the only one that existed. |
+| `seesPeople` | it does not notice a person past 22 metres, against 62 for a deer. It has to nearly walk into them. |
+| `company` | somebody with another person within 15 metres is not considered at all. A foraging party is not a foraging person. |
+| `desperate` | none of the above happens unless its stomach is below 0.22. It starts *hunting* at 0.55. Between the two it hunts, and what it hunts is deer. |
+
+Measured the way everything else here is measured — six seeds, eight years each,
+counted off `lineage` rather than off the panel, which shows a band's two
+leading causes and silently drops the rest:
+
+| | as it was | + sighting rules | + `desperate` |
+|---|---|---|---|
+| tigers as a share of all deaths | 73% | 44% | **26%** |
+| tiger deaths over six seeds | 38 | 27 | **15** |
+| alive at eight years, six bands | 87 | 105 | **112** |
+
+The middle column is why all four rules are there rather than two. Halving the
+sighting range moved it a long way and still left tigers the leading cause of
+death, because a hungry tiger with no deer in sight will simply walk until it
+finds somebody. The hunger gate is what makes that a rare state instead of most
+of a tiger's week.
+
+They still kill. Fifteen deaths over forty-eight band-years is a tiger worth
+running from, and on seed 20260906 — the one that started this — it is still
+seven of ten deaths, because the hunting is poor on that island and a tiger that
+hunts poorly is exactly the one that comes for people. That is the mechanism
+working, not the mechanism failing.
+
+The measurement itself needed fixing first. `PROBES=survive` was reading the
+tribes panel, which prints a band's top two causes — so a run where six died "4
+of hunger, 1 of old age" had a death nobody could see, and a band wiped out
+entirely took its whole toll off the board with it. It now reads `lineage`,
+which carries every person who ever lived and what became of them.
+
+## Somewhere, as against somebody
+
+`F` answers *show me somebody*. In Orbit the question is *show me somewhere*,
+and there was no answer to it but flying there — which on a 3200m island is a
+long way to go to find out there is nothing at the far end. `R` is the same
+shape as `F`: it puts you in the mode it needs rather than making you cycle to
+it first, and pressing it again finds somewhere else.
+
+It picks the flattest of sixty tries that are on dry land and inside the island
+— the same three tests camp siting uses, because a spot that fails them is a
+spot with nothing to look at — and comes in on a random bearing, so twice in the
+same place is still a different picture. The orbit pivot moves with the camera,
+or the next drag spins the world around a point you left behind.
+
+Reading the source cannot tell you it lands anywhere real, so the boot check
+presses it twenty times and asks where the camera ended up: on land, inside the
+island, above the hill rather than inside it, and somewhere new each time. That
+probe runs **last**, deliberately — it draws from `Math.random`, which the
+harness pins so a seed replays, and sixty draws a press moves the stream under
+everything after it. Put in the middle of the file it did exactly that, and four
+checks about bands and burials started failing on a world that had quietly
+become a different world.
+
+## The one figure you are actually looking at
+
+Turn-taking is invisible at the distance a crowd is seen from and very visible
+at three metres. In Follow the one figure on screen is the one being grouped, so
+it stepped four times as far, four times less often — a judder on the only thing
+you were watching.
+
+It had never shown, because it could not: while `worldStep` was frozen the
+followed person was either permanently inside the one group and perfectly
+smooth, or permanently outside it and frozen solid. Fixing the step made the
+grouping real, and made this visible with it.
+
+So whoever the camera is locked to is not dealt into a group. They take their
+turn every frame and get one frame of time rather than the whole group's wait —
+otherwise they would walk at `stride` times everybody else's pace. It costs one
+extra person a frame against a saving measured in the hundreds, which makes it
+the cheapest exemption in the file.
+
 ## Following somebody
 
 `F` puts you over their shoulder and picks somebody at random; `F` again finds
 somebody else. It used to take `C` three times to cycle into Follow and then `N`
 to find anybody — four keys to do one thing.
+
+### Taking them by the hand
+
+Following is watching. The other half of it is that the person you are behind
+does what you say instead of what they were going to do.
+
+| | |
+|---|---|
+| **click the ground** | they walk there, on their own, with a ring on the spot |
+| **click again** | they turn round and walk to the new one |
+| **hold `W`** | run instead of walk |
+| **`shift`+`W`** | let go |
+
+Running is a jog and is charged for like one. The speed is set before the
+clamps that everything else goes through, not after, so it costs energy, slows
+with a full basket, and gives out when there is nothing left — a run you could
+hold for ever for nothing would make walking pointless, and a band you run
+everywhere arrives tired and hunts worse.
+
+A click used to mean *follow that one*. It does not any more: "go there" is a
+thing you say about a place rather than about a person, and one gesture cannot
+carry both readings without one of them being wrong half the time. Choosing who
+to follow is `F`, or a name on the band card.
+
+The ground is found by marching the ray out until it is under the terrain and
+then halving — a height field has exactly one crossing along a downward ray, so
+twenty-four halvings put it within a millimetre, where a flat plane test walks
+straight through hills. Sky, sea and anything past the shelf are not places
+anybody can be sent to.
+
+**While they are led, nothing else gets to steer them** — not the tiger they
+would run from, not dusk sending them home, not the timer that ends one errand
+and starts the next. A person who obeys most of the time is worse than one who
+cannot be steered at all, because you never learn which of your instructions
+took. Everything that is *not* steering still runs: they tire, they get hungry,
+their nourishment ceiling falls with an empty store, and a tiger can still catch
+them. Led is a hand on the shoulder, not a shield — the books and `nearestQuarry`
+do not know the flag exists, and a check fails if they learn.
+
+Pointing is the whole instruction. Holding a key as well was one step too many
+for a single idea — you pointed, so go — and a walk across the island was a key
+held down for a minute. `goto` already means walk until you arrive, so being led
+needs nothing added to the movement at all.
+
+A ring marks the spot, because from behind somebody’s shoulder at three metres
+a person setting off looks the same whichever way they were going to go anyway —
+the only evidence a click landed was that something moved. It is built the first
+time somebody is actually led and not before: three.js gives every geometry,
+material and object a UUID out of `Math.random`, so a mesh made on the first
+frame regardless is a feature nobody has used spending draws, and in the boot
+harness — where `Math.random` is pinned so a seed replays — that quietly built a
+different island.
+
+The release is read before `keys` sees the `W`, which mattered more when `W` did
+something on its own and costs nothing to keep right.
+
+**Or pick the name off the band card.** `T` opens the band you are watching;
+every living row in it is a button now, and clicking one follows that person and
+closes the card. This is the answer to the person you want not being on screen —
+asleep in a hut, over a hill, or a hundred metres out with their back to you —
+which is precisely the case clicking a figure cannot cover. The rows carry
+`p.id` rather than a row number, because the card is a filtered, re-sorted copy
+of `people` and one death renumbers the lot.
+
+Choosing somebody makes the choice stick. Follow has always handed you off a
+sleeper — staring at a hut looks exactly like the mode being broken — but that
+rule was written for `F`, which *offers* you somebody, and applying it to a name
+you picked yourself swaps the person out from under you. So an explicit pick
+sets `followChosen`, and the handover leaves it alone: you chose the one who is
+asleep, most likely because they were the one who was asleep, and they get up in
+the morning.
 
 The caption carries **their energy out of ten**, with the bar behind it:
 
@@ -1323,8 +1719,8 @@ below.
 |---|---|
 | **Fly** | Free camera. No target, no orbit, no clamp beyond not burrowing into the hill. `W` follows wherever you are looking, so you can climb until the island is a shape below you. |
 | **Walk** | Eye height, feet on the terrain, no vertical. The locked-to-a-person view, on purpose. |
-| **Orbit** | The original rig: circles a point out in front of you. Still the best mode for looking *at* something. |
-| **Follow** | Over the shoulder of one person, picked at random. **`F`** from anywhere; `F` again for somebody else. Drag to look round them, scroll for distance. The corner tells you who they are, whose they are, their age and sex, what they are doing, and how much they have left in them. |
+| **Orbit** | The original rig: circles a point out in front of you. Still the best mode for looking *at* something. **`R`** from anywhere drops you over a random spot on the island; `R` again for another one. |
+| **Follow** | Over the shoulder of one person. **`F`** from anywhere picks somebody; `F` again for somebody else; **clicking a figure** in any view follows that one. Drag to look round them, scroll for distance. The corner tells you who they are, whose they are, their age and sex, what they are doing, and how much they have left in them. |
 
 | | fly | walk | orbit |
 |---|---|---|---|
@@ -1998,6 +2394,35 @@ because two bugs got past everything else by being runtime failures at load, and
 both left a file that parsed perfectly and a page that rendered nothing. It needs
 three.js on disk (`vendor/three.module.js`, fetched not committed) and skips
 politely without it.
+
+**Two lines in the wrong order, and the tents fell over.** `_m4` is a single
+scratch `Matrix4`, declared in world.js and shared by everything that scatters
+instances — trees, rocks, cairns, the fire each frame, and every piece of a camp.
+Anything that wants to *keep* a transform has to compose into it and then clone.
+`layoutCamp` cloned first:
+
+    camp.hutAt[i] = _m4.clone();                          // keeps the last thing
+    campParts.huts.setMatrixAt(slot, _m4.compose(_v, _q, _s));
+
+The mesh got the right matrix on the second line, so a camp looked perfect the
+moment it was built. `camp.hutAt` is what dressCamp hands back every time the
+band grows or shrinks, so the wrong matrix arrived at the first birth or death
+and stayed. What each hut had kept: the first hut of the second camp onward got
+the last thing the previous camp composed — the drying rack's crossbar, rotated
+a quarter turn about Z and floating 1.85m up; the first hut of the first camp
+got whatever the world scatter finished with, a rock half a kilometre away on a
+random tumble; and every other hut got the hut before it, so the tents stood
+inside each other and the last one in the ring was never placed. The two
+uprights of the drying rack had it too — the crossbar between them did not,
+which is why two poles of three were wrong and it read as a modelling problem.
+
+Nothing that reads the source can see this; the lines parse perfectly in either
+order. The boot check now decomposes every stored matrix and asks which way up
+the tent is and whether it is standing where its own place in the ring says —
+against the old code it reports `hut 0 tilted 90°` and `hut 0 534.2m from where
+it is meant to be`. That check needs three.js on disk and skips without it, so
+`npm test` also asserts the ordering directly: nothing in people.js may clone
+`_m4` without having composed into it first.
 
 **A bug that no syntax check could see.** Adding the seasons put
 `uSeasonTint: seasonUniforms.uSeasonTint` into `grassUniforms` at line 781,

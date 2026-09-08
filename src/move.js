@@ -23,9 +23,9 @@ import {
   CAMP_CLEARING, buildCamps, buildGraves, buildPeople, campParts, camps, chooseCampSites, inCamp, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
 import {
-  DUSK_AT, FOOD, GROUND, ORCHARD, PLAGUE, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, campIsIll, craftChoice, findPrey, forageRichness, groundOf, nearestFruit, otherCamp, personAge, pickFruit, practise, tryKill
+  DUSK_AT, FOOD, GROUND, ORCHARD, PLAGUE, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, campIsIll, craftChoice, findPrey, forageRichness, groundOf, huntReach, nearestFruit, otherCamp, personAge, pickFruit, practise, tryKill, updateEconomy
 } from './life.js';
-import { syncLookFromCamera } from './chronicle.js';
+import { followIdx, leadRunning, syncLookFromCamera } from './chronicle.js';
 import { renderMapBase } from './map.js';
 import { arm } from './ui.js';
 import { updateHud } from './main.js';
@@ -254,7 +254,8 @@ export function pickWork(p) {
      down is nobody's idea of daring. */
   const far = (p.traits?.bold ?? 1) * (p.child ? FORAGE.childRange : 1);
   const range = p.job === 'hunt' ? [90 * far, 260 * far]
-    : p.job === 'gather' ? [26 * (p.child ? FORAGE.childRange : 1), 95 * far] : [2, 9];
+    : p.job === 'gather' ? [26 * (p.child ? FORAGE.childRange : 1), 95 * far]
+    : p.job === 'tend' ? FIRESIDE : [2, 9];
   if (p.job === 'gather') return pickForage(p, camp, range);
   for (let t = 0; t < 14; t++) {
     const a = luck() * Math.PI * 2;
@@ -363,6 +364,18 @@ export function chooseJob(p, day) {
     let roll = luck() * weights.reduce((a, w) => a + w[1], 0);
     p.job = weights.find(([, w]) => (roll -= w) <= 0)?.[0] || 'gather';
   }
+  setOut(p);
+}
+
+/* Given the job, point them at something to do it on. This was the tail of
+   chooseJob and is now its own thing, because an order from the panel needs
+   exactly this and none of the choosing above it.
+
+   It draws from `luck()`, so it may only ever be called from inside the step —
+   see the note on the stream in clock.js. That is why an order is left on the
+   person for their next turn to pick up rather than acted on where it is
+   given. */
+export function setOut(p) {
   p.hasSpear = p.job === 'hunt';
   p.prey = null;
   if (p.job === 'visit') {
@@ -377,7 +390,7 @@ export function chooseJob(p, day) {
   }
   if (p.job === 'hunt') {
     // Set off after something real, not toward a random point on the map.
-    const prey = findPrey(p.x, p.z);
+    const prey = findPrey(p.x, p.z, huntReach(p.camp));
     if (prey) {
       p.prey = prey;
       p.targetX = prey.animal.x;
@@ -408,9 +421,26 @@ export function chooseJob(p, day) {
    nothing that hunts them is fooled either.
    ------------------------------------------------------------------------- */
 
-/* Errands that take somebody out of the camp. Everything else — tending the
-   fire, knapping, sitting with the ill, sleeping — happens under a roof. */
-const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play']);
+/* Errands that happen where you can see them. The three that are left —
+   knapping, sitting with the ill, sleeping — happen under a roof.
+
+   `tend` was on the wrong side of this line, and it was the one job whose name
+   says where it happens. Somebody "at the fire" was hidden inside a tent: the
+   caption said one thing, the camp showed another, and it was the largest group
+   of people not being drawn — with a full store the weights put better than a
+   third of a band on it. Sitting at the fire is the most visible thing anybody
+   in a camp does. */
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play', 'tend', 'led']);
+
+/* Where somebody at the fire actually sits: inside the ring of tents and
+   outside the ring of stones. The huts stand 6.5-9.1m out and are a couple of
+   metres across, so their inner edge is about 4.1m; the fire's stones sit at
+   1.15m. Between those two is the part of a camp people are actually in.
+
+   The old range was the generic [2, 9] shared with knapping and nursing, which
+   put fire-tenders among the tents and sometimes inside one. It did not show,
+   because they were not drawn. */
+export const FIRESIDE = [1.8, 4.0];
 export const TODDLER_UNTIL = 4;       // years; too small to be underfoot
 
 export function indoorsNow(p) {
@@ -421,6 +451,10 @@ export function indoorsNow(p) {
   return inCamp(p.x, p.z, 0);
 }
 
+/* Whose turn it is this frame. Reused rather than rebuilt, because this runs
+   every frame and it is the only allocation the loop would make. */
+export const _turns = [];
+
 export function updatePeople(dt, day) {
   if (!personParts) return;
   /* The same turn-taking as the herds, and it starts later: twenty-odd people
@@ -428,19 +462,63 @@ export function updatePeople(dt, day) {
      Then they go in pairs, then in fours, and a band of a hundred costs what a
      band of twenty-five does. */
   const stride = lodStride(people.length);
-  const slice = dt * stride;
+
+  /* Whoever the camera is locked to is not dealt into a group.
+
+     Turn-taking is invisible at the distance a crowd is seen from and extremely
+     visible at three metres: a figure that steps four times as far, four times
+     less often, judders — and in Follow the one figure on screen is the one you
+     are looking at. The grouping comment above says as much; what it did not do
+     was exempt anybody. It went unnoticed for as long as `worldStep` never
+     moved while watching, because then the followed person was either in the
+     one permanent group and perfectly smooth, or outside it and frozen.
+
+     They cost one extra person a frame, against a saving measured in the
+     hundreds, so this is the cheapest exemption in the file. */
+  const watched = P.view === 'follow' && followIdx >= 0 && followIdx < people.length
+    ? followIdx : -1;
+  _turns.length = 0;
   for (let i = turnStart(stride); i < people.length; i += stride) {
+    if (i !== watched) _turns.push(i);
+  }
+  if (watched >= 0) _turns.push(watched);
+
+  for (let t = 0; t < _turns.length; t++) {
+    const i = _turns[t];
     const p = people[i];
+    /* Everyone else gets the whole time their group waited; the watched person
+       is here every frame and gets one frame of it, or they would walk at
+       `stride` times everybody else's pace. */
+    const slice = i === watched ? dt : dt * stride;
 
     /* A tiger in sight, and the errand is over. They run for the fire, and
        keep running for a while after losing sight of it — somebody who stops
        the instant the tiger is out of view stops directly in front of it. */
+    /* Being led. Everything below that would choose for them is skipped: the
+       tiger they should run from, dusk sending them home, the timer that ends
+       one errand and starts the next. A person who obeys most of the time is
+       worse than one who cannot be steered at all — you would never know which
+       of your instructions had taken.
+
+       Not skipped: the rest of being alive. They tire, they get hungry, their
+       nourishment ceiling falls if the store is empty, and a tiger can still
+       catch them. Led is a hand on the shoulder, not a shield. */
+    if (p.led) {
+      p.job = 'led';
+      p.prey = null;
+      p.visiting = null;
+      p.asleep = false;
+      p.state = 'goto';
+      p.targetX = p.leadX;
+      p.targetZ = p.leadZ;
+    }
+
     p.panic = Math.max(0, (p.panic || 0) - slice);
     /* A cautious person looks up sooner. The bold notice the same tiger from
        closer in, which costs them metres they cannot spare — the whole margin
        between getting home and not is four of them. */
     const notice = PANIC.sees / (p.traits?.bold ?? 1);
-    if (!p.asleep && p.panic <= 0 && nearestPredator(p.x, p.z, notice)) {
+    if (!p.led && !p.asleep && p.panic <= 0 && nearestPredator(p.x, p.z, notice)) {
       p.panic = PANIC.runs;
       p.state = 'return';
       p.prey = null;
@@ -451,10 +529,18 @@ export function updatePeople(dt, day) {
     }
 
     p.timer -= slice;
-    if (p.timer <= 0) {
+    if (p.timer <= 0 && !p.led) {
       switch (p.state) {
         case 'idle':
-          chooseJob(p, day);
+          /* Told to do something, rather than choosing. One order, taken up
+             once: after this they are back to choosing for themselves, which is
+             the difference between telling somebody to go hunting and holding
+             them there. */
+          if (p.orders) {
+            p.job = p.orders;
+            p.orders = null;
+            setOut(p);
+          } else chooseJob(p, day);
           p.state = 'goto';
           p.timer = travelTimeout(p);
           break;
@@ -517,7 +603,7 @@ export function updatePeople(dt, day) {
     }
 
     // Light wakes people, whatever the sleep timer says.
-    if (day >= 0.25 && p.job === 'sleep') {
+    if (day >= 0.25 && p.job === 'sleep' && !p.led) {
       p.state = 'idle';
       p.timer = luck() * 4;
     }
@@ -529,7 +615,7 @@ export function updatePeople(dt, day) {
        they are sent straight back out to a fresh point beside the fire they are
        already standing at, and nobody ever idles long enough to choose a night
        job. A whole band walked in circles round its own camp all night. */
-    if (day < 0.25 && p.job !== 'sleep' && p.job !== 'tend' && p.state !== 'return') {
+    if (!p.led && day < 0.25 && p.job !== 'sleep' && p.job !== 'tend' && p.state !== 'return') {
       if (Math.hypot(p.x - p.camp.x, p.z - p.camp.z) > 12) {
         p.state = 'return';
         p.targetX = p.camp.x + (luck() - 0.5) * 5;
@@ -549,7 +635,7 @@ export function updatePeople(dt, day) {
         p.targetX = p.camp.x + (luck() - 0.5) * 6;
         p.targetZ = p.camp.z + (luck() - 0.5) * 6;
         p.timer = travelTimeout(p);
-      } else if (Math.hypot(p.prey.animal.x - p.x, p.prey.animal.z - p.z) > FOOD.searchRadius) {
+      } else if (Math.hypot(p.prey.animal.x - p.x, p.prey.animal.z - p.z) > huntReach(p.camp)) {
         p.prey = null;                     // it outran us
       }
     }
@@ -561,7 +647,9 @@ export function updatePeople(dt, day) {
     let want = 0;
     if (p.state === 'goto' || p.state === 'return') {
       if (arrived) {
-        if (p.state === 'goto') {
+        // Stood where you put them. `want` stays 0 until you point somewhere else.
+        if (p.led) { /* nothing to finish */ }
+        else if (p.state === 'goto') {
           p.state = 'work';
           // Sleep has to outlast the night. Give it the same 10-30 seconds as
           // every other task and people shuttle in and out of the huts until
@@ -587,6 +675,11 @@ export function updatePeople(dt, day) {
       } else {
         // Hunters and children move at a jog; everyone else walks.
         want = (p.job === 'hunt' || p.job === 'play') ? PERSON.jog * (p.child ? 0.75 : 1) : PERSON.walk;
+        /* Told to run. Set here rather than after the clamps below so that
+           running is charged for like any other jog: it costs energy, it is cut
+           short when there is none left, and it slows with a full basket. A run
+           you can hold forever for nothing would make walking pointless. */
+        if (p.led && leadRunning()) want = PERSON.jog * (p.child ? 0.75 : 1);
         if (p.carry) want *= 0.8;
         /* Spent, they walk. The jog is what energy buys, and it is the first
            thing to go — which is why a long hunt ends in a trudge home. */
@@ -664,6 +757,11 @@ export function updatePeople(dt, day) {
        neither. */
     p.asleep = p.job === 'sleep' && p.state !== 'goto' && arrived;
     const hidden = p.asleep || indoorsNow(p);
+    /* Kept on the person, because something else needs it now: clicking
+       somebody has to choose between the figures actually on screen, and
+       working the rule out a second time over there is how the two answers
+       start disagreeing. */
+    p.hidden = hidden;
     if (hidden) {
       for (const key in personParts) {
         const per = partsPer(key);
@@ -1077,6 +1175,13 @@ export function buildWorld() {
   buildPeople(P.counts.people | 0);
   buildAnimals();
   buildGrass(q.grid, P.counts.grass | 0);
+
+  /* Open the books before anybody picks a job. Everything about what a person
+     does next comes off `camp.hunger`, and until this runs it is whatever the
+     camp was built with — so the first job every one of them chooses is chosen
+     against a number nobody has worked out yet. A day of zero eats nothing and
+     spoils nothing; it counts heads, works out the need and reads the store. */
+  updateEconomy(0);
 
   renderMapBase();
   applyShadowSettings(q);

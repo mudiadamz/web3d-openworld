@@ -26,6 +26,19 @@ export const P = {
      night — which is a long time to watch nothing at 1×. */
   nightSkip: true,
   nightSkipRate: 6,
+  /* The two ends of the night window, in sun height — the sine of the sun's
+     elevation, so 0 is the horizon and -1 is midnight at the pole.
+
+     `nightFrom` is where the night may start being run through, once everybody
+     is in. `nightDeep` is where it runs whatever anybody is still doing, because
+     waiting on a straggler is right at dusk and wrong at two in the morning.
+
+     Both adjustable because "how much of the night do you want to sit through"
+     is taste rather than physics: -0.02 to -0.25 is the default and skips almost
+     all of it, and somebody who wants to watch the fires burn down can move the
+     first one further under the horizon. */
+  nightFrom: -0.02,
+  nightDeep: -0.25,
   shadows: true,
   // Hills shading each other. Off: see the note where the terrain is built.
   terrainShadow: false,

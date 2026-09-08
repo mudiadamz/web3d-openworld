@@ -7,7 +7,7 @@ import { HIDDEN, _c, _e, _m4, _q, _s, _v, stats, world } from './world.js';
 import { recordPerson, setLineage, tribeVoice, uniqueName, usedNames } from './wildlife.js';
 import { PERSON, PERSON_PARTS, partsPer } from './clock.js';
 import {
-  FOOD, LIFE, chiefOf, hidePeopleFrom, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay
+  FOOD, LIFE, chiefOf, emptySkills, hidePeopleFrom, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay
 } from './life.js';
 import { codeColor, worldCode } from './ui.js';
 
@@ -98,6 +98,10 @@ export const fireMaterial = new THREE.MeshBasicMaterial({ color: 0xffb347 });
 
 export const camps = [];        // { x, z, huts, light, ... }
 export const people = [];
+
+/* Metres between two fires at world build. Not scaled by the map — see the note
+   where it is used. A bigger island now holds proportionally more bands. */
+export const CAMPS_APART = 260;
 export let personParts = null, campParts = null, smoke = null;
 export const tribeGroup = new THREE.Group();
 
@@ -124,8 +128,21 @@ export function chooseCampSites(count) {
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       const h = sampleHeight(x, z);
       if (h < SEA + 4 || h > SNOW - 25) continue;
-      // Keep camps apart, or two bands end up sharing one fire.
-      if (camps.some((c) => Math.hypot(c.x - x, c.z - z) < 260 * MAP_SCALE)) continue;
+      /* Keep camps apart, or two bands end up sharing one fire. In metres, and
+         deliberately not scaled by the map.
+
+         Both this and the radius above used to scale, which cancelled: a disc
+         2.5 times wider than the spacing holds about the same handful of camps
+         whatever you multiply them both by, so a 6400m island held exactly as
+         many bands as a 1600m one and merely spread them further apart. Asking
+         for forty camps got you seven on any map in the game. The distance two
+         fires need between them is a fact about camps; where on the island the
+         camps go is a fact about the island. Only the second one scales.
+
+         GROUND.range, the ground a band treats as its own, was already in
+         plain metres — so scaling GROUND.apart beside it was inconsistent with
+         its own neighbour in the same object. */
+      if (camps.some((c) => Math.hypot(c.x - x, c.z - z) < CAMPS_APART)) continue;
       const flat = flatnessAt(x, z);
       if (flat > bestFlat) { bestFlat = flat; best = { x, z }; }
       if (flat > 0.985) break;                    // good enough, stop looking
@@ -141,10 +158,18 @@ export function chooseCampSites(count) {
          has to say whose it is in less space than a name takes. */
       code: worldCode((P.seed ^ 0x1d3f) + i * 6151),
       get color() { return codeColor(this.code); },
-      food: 0, pop: 0, need: 0, hunger: 0, wasEmpty: false,
+      /* Hunger 1, not 0. An empty store is maximum hunger — `1 - 0/6` — and
+         writing 0 here says the opposite of what `food: 0` on the same line
+         says. It is only a literal until the first book-keeping pass corrects
+         it, an eighth of a day later, but every person picks their first job
+         within six seconds of the world existing. They all picked it believing
+         the store was full, which puts one in five outside instead of all but
+         one of them, and a brand new band sat down round a fire it had nothing
+         to cook on. */
+      food: 0, pop: 0, need: 0, hunger: 1, wasEmpty: false,
       // Everything it will ever know, it has to work out.
-      skill: { spears: 0, baskets: 0, drying: 0 },
-      told: { spears: 0, baskets: 0, drying: 0 },
+      skill: emptySkills(),
+      told: emptySkills(),
       /* What has happened to them, kept per band rather than per world. A
          chronicle says one thing at a time; this is the thing you can only see
          by adding them up — that one camp lost nine to a sickness and the other
@@ -413,8 +438,29 @@ export function layoutCamp(camp, index) {
     _v.set(x, sampleHeight(x, z) - 0.15, z);
     _s.set(sc, sc * (0.9 + rng() * 0.3), sc);
     camp.hutAt = camp.hutAt || [];
-    camp.hutAt[i] = _m4.clone();
+    /* Composed first, and only then kept. This was the wrong way round, and
+       what it stored was not this hut.
+
+       `_m4` is a single scratch matrix, declared in world.js and shared by
+       everything that scatters instances — the trees and rocks, the fire each
+       frame, the cairns, and every piece of a camp. Cloning it *before*
+       composing into it keeps whatever the last thing to touch it left behind.
+       The mesh itself was set correctly on the next line, which is why a camp
+       looked right the moment it was built; `camp.hutAt` is what dressCamp
+       hands back to the mesh every time the band grows or shrinks, so the
+       stored matrix is the one you end up looking at.
+
+       Which matrix each hut kept:
+
+         · hut 0 of the second camp onward — the last thing the previous camp
+           composed, which is the drying rack's crossbar: rotated a quarter turn
+           about Z and floating 1.85m up at the rack. A tent on its side.
+         · hut 0 of the first camp — whatever the world scatter finished with,
+           a rock or a tree, somewhere else entirely on a random tumble.
+         · every other hut — the hut before it, so tents stood inside each other
+           and the last hut in the ring was never placed at all. */
     campParts.huts.setMatrixAt(slot, _m4.compose(_v, _q, _s));
+    camp.hutAt[i] = _m4.clone();
     campParts.huts.setColorAt(slot, _c.setHex(0x6d5740 + ((rng() * 0x101010) | 0)));
   }
 
@@ -450,8 +496,9 @@ export function layoutCamp(camp, index) {
     _v.set(x, sampleHeight(x, z), z);
     _s.setScalar(1);
     camp.rackAt = camp.rackAt || [];
-    camp.rackAt[pole - index * P0.poles] = _m4.clone();
+    // Compose, then keep — same as the huts, and for the same reason.
     campParts.poles.setMatrixAt(pole, _m4.compose(_v, _q, _s));
+    camp.rackAt[pole - index * P0.poles] = _m4.clone();
     campParts.poles.setColorAt(pole, _c.setHex(0x7d6446));
     pole++;
   }
