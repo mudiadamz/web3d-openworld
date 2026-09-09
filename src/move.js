@@ -25,7 +25,7 @@ import {
 } from './people.js';
 import { buildPaths, tread } from './paths.js';
 import {
-  DUSK_AT, FISH, FOOD, GROUND, ORCHARD, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, nearestFruit, otherCamp, personAge, nearestShore, pickFishing, pickFruit, practise, raidTarget, resolveRaid, takeForage, tryKill, updateEconomy
+  DUSK_AT, FISH, FOOD, GROUND, ORCHARD, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, nearestFruit, otherCamp, personAge, nearestShore, pickFishing, pickFruit, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, updateEconomy
 } from './life.js';
 import { followIdx, leadRunning, syncLookFromCamera } from './chronicle.js';
 import { renderMapBase } from './map.js';
