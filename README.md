@@ -12,7 +12,7 @@ happens.
 and a folder of ES modules are the whole program; `node:http` and `node:fs` are
 the whole server.
 
-![A band's camp on a hillside at dusk](assets/ss/ss2.webp)
+![A camp of tents on the slope above a river, the band gathered at its fire](assets/ss/cool-camp.webp)
 
 ## What you are actually watching
 
