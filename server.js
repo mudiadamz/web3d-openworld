@@ -114,7 +114,7 @@ function safePath(urlPath) {
   return full.startsWith(ROOT) ? full : null;
 }
 
-createServer(async (req, res) => {
+const listening = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const path = url.pathname;
 
@@ -127,6 +127,27 @@ createServer(async (req, res) => {
         'cache-control': 'no-store',
       });
       return res.end(html);
+    }
+
+    /* Is it up, and is it the one you think it is?
+
+       Answered before the `/api/` guard and without touching the database, so
+       it stays a fact about the process rather than about SQLite: a chronicle
+       that failed to open is worth reporting, not worth failing a health check
+       over, because the page runs fine without one.
+
+       It exists for the thing that restarts this. A service manager that can
+       only see "the process is alive" cannot tell a listening server from one
+       wedged on a port it never got. */
+    if (path === '/healthz') {
+      return json(res, 200, {
+        ok: true,
+        pid: process.pid,
+        uptime: Math.round(process.uptime()),
+        port: server.port,
+        chronicle: Boolean(db),
+        node: process.version,
+      });
     }
 
     if (path.startsWith('/api/')) {
@@ -261,7 +282,9 @@ createServer(async (req, res) => {
     res.writeHead(code, { 'content-type': 'text/plain' });
     res.end(code === 404 ? 'not found' : 'server error');
   }
-}).listen(server.port, server.host, () => {
+});
+
+export const http = listening.listen(server.port, server.host, () => {
   const shown = describe(values);
   console.log(`\n  open world  →  http://${server.host}:${server.port}\n`);
   console.log(shown.length
@@ -272,3 +295,60 @@ createServer(async (req, res) => {
     ? '  chronicle: SQLite — /api/runs, /api/chronicle, /api/history, /api/tribes, /api/worlds, /api/state, /api/data\n'
     : '  chronicle: off (node:sqlite unavailable) — the page still runs\n');
 });
+
+/* -------------------------------------------------------------------------
+   Being stopped
+
+   Run from a terminal this hardly matters: you press ctrl-C, the process dies,
+   and SQLite recovers the write-ahead log next time. Run as a service it
+   matters every time, because a service is stopped and started rather than
+   left running — so "recovers next time" happens on every restart, and the
+   `-wal` file is the size of the last burst of writing.
+
+   `db.close()` checkpoints and removes it. It is one call and it was never
+   made, because nothing ever asked this process to stop politely.
+
+   Which is worth being exact about on Windows, because most ways of stopping a
+   process there never ask. Windows has no SIGTERM: `Stop-Process`, `taskkill`
+   and `process.kill` from another process are all TerminateProcess, and nothing
+   below runs. What does reach here is a console control event — ctrl-C at a
+   prompt, or the CTRL_BREAK a service wrapper sends on stop — which arrives as
+   SIGINT or SIGBREAK. Those are the two paths this is for, and SIGTERM is in
+   the list for the day it runs somewhere that has one.
+
+   When it does not run, nothing is lost: the write-ahead log is crash-safe and
+   SQLite recovers it on the next open. The cost of being killed is a recovery
+   and a file left lying about, not a world. This turns that from every restart
+   into only the abrupt ones.
+   ------------------------------------------------------------------------- */
+export const STOP_GRACE = 5000;
+
+let stopping = false;
+export function shutdown(signal) {
+  if (stopping) return;                 // a second ctrl-C should not race the first
+  stopping = true;
+  console.log(`\n  ${signal} — closing`);
+
+  let finished = false;
+  const finish = (why) => {
+    if (finished) return;
+    finished = true;
+    /* The database last, and never let a failure here stop the exit: a service
+       that cannot be stopped is worse than a write-ahead log that has to be
+       recovered. */
+    try { db?.close(); } catch (err) { console.warn(`  ! closing the chronicle: ${err.message}`); }
+    console.log(`  stopped (${why})`);
+    process.exit(0);
+  };
+
+  listening.close(() => finish('all connections done'));
+  /* A request that never ends must not hold the service open for ever — the
+     service manager's own patience runs out and then it kills the process,
+     which is the ungraceful stop this exists to avoid. Unref'd so it is not
+     itself a reason to stay alive. */
+  setTimeout(() => finish(`gave up waiting after ${STOP_GRACE}ms`), STOP_GRACE).unref();
+}
+
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGBREAK']) {
+  process.on(signal, () => shutdown(signal));
+}

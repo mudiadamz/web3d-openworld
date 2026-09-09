@@ -9,7 +9,11 @@
     "start": "node server.js",
     "test": "node test.js && node test-boot.js",
     "boot": "node test-boot.js",
-    "reset": "node reset.js"
+    "reset": "node reset.js",
+    "service": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/service.ps1",
+    "service:install": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/service.ps1 install",
+    "service:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/service.ps1 restart",
+    "service:status": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/service.ps1 status"
   },
   "engines": {
     "node": ">=18"
