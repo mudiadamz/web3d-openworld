@@ -94,7 +94,30 @@ export function rawHeight(x, z) {
   const calm = smoothstep(40, 280, d);
 
   let h = hills * (0.25 + 0.75 * calm) + mountains * calm + detail;
-  h -= smoothstep(540, 820, d) * 95;    // island falloff → the map ends in sea
+
+  /* The island falloff, so the map ends in sea rather than at a cliff — and in
+     fractions of the map's own half-width, not in metres.
+
+     It used to be `smoothstep(540, 820, d)`: numbers tuned on a 1600 m island,
+     which is what they went on meaning. Ask for a bigger world and you got the
+     same island in more water — 23% of a 3200 m map was land against 56% of a
+     1600 m one, and only 29% of the disc people are allowed to walk in. The
+     island was not big enough for the bands living on it and the rest of the
+     map was scenery nobody could reach.
+
+     Pushed outward as well as scaled. The shoreline now sits at about 0.92 of
+     the half-width, which is exactly where `canStand` stops anybody — so the
+     edge of where you can walk is the water's edge, rather than an invisible
+     wall on open ground with beach carrying on beyond it. Further out than that
+     buys land nobody can stand on.
+
+     The band is the same fraction of the map it always was, so the coast falls
+     at the same gradient and does not turn into a ring of cliffs; measured over
+     three seeds, the share of shoreline too steep to walk went *down*, from 14%
+     to 12% at 1600 m and from 24% to 9% at 3200 m, because on a bigger island
+     the same fall is spread over more metres. */
+  const half = WORLD / 2;
+  h -= smoothstep(half * 0.78, half * 1.12, d) * 95;
   return h + hOffset;
 }
 

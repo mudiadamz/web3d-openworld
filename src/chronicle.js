@@ -2,19 +2,21 @@ import * as THREE from 'three';
 
 import { P, SEA, WORLD } from './params.js';
 import { clamp, flatnessAt, sampleHeight } from './noise.js';
-import { camera, canvas, controls, renderer, scene, sky, sunDir, sunLight } from './scene.js';
+import { seasonName, camera, canvas, controls, renderer, scene, sky, sunDir, sunLight } from './scene.js';
 import { fauna, grassGroup, rockGroup, world } from './world.js';
-import { ancestry, lineage, pick } from './wildlife.js';
+import { lineage, pick } from './wildlife.js';
 import { PERSON, rateIndex, worldClock } from './clock.js';
 import { camps, people, tribeGroup } from './people.js';
 import {
-  SKILLS, SKILL_RUNGS, TOLL_WORDS, chiefOf, childrenOf, chronicle, daysOfFood, energyOutOfTen, isMilestone, milestonesOnly, ordinal, personAge, skillTier,
+  FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood,
+  wealthOf,
+  energyOutOfTen, isMilestone, milestonesOnly, personAge, skillTier,
   runId, tollOf, traitWord, who
 } from './life.js';
 import { VIEW_MODES, applyShadowSettings } from './move.js';
-import { $, ui } from './save.js';
+import { $ } from './save.js';
 import { stepMapSize } from './map.js';
-import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, tribeChips } from './ui.js';
+import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, togglePanel, tribeChips } from './ui.js';
 import { stopAhead } from './main.js';
 
 /* -------------------------------------------------------------------------
@@ -194,6 +196,15 @@ export function renderTribeCard() {
 
   $('tribeName').innerHTML = `<b class="wcode" style="background:${camp.color}">${camp.code}</b>`
     + ` ${camp.name}`;
+  /* Which band the pin will take you to, written on the pin itself.
+
+     It used to read `tribeShown` at click time, through a live binding in
+     another module, and a button that silently does nothing when that is out of
+     step is indistinguishable from a button that is not wired up at all. The
+     card is rendered for exactly one band; this is that band, recorded where
+     the click can reach it without asking anybody. */
+  const pin = $('tribeGo');
+  if (pin) pin.dataset.camp = String(tribeShown);
 
   /* Everything the panel row used to carry, now that the row carries a name
      and a number. A list you scan and a card you read are different jobs, and
@@ -226,6 +237,12 @@ export function renderTribeCard() {
     + `<div><span>store</span> ${camp.food.toFixed(1)} `
     + `<span>(${daysOfFood(camp).toFixed(1)} days)</span> · `
     + `<span>carried home between them</span> ${brought.toFixed(0)}</div>`
+    /* What they are holding that somebody else could want, which is the number
+       a raid is decided by and the one that makes a band a target. Stone rather
+       than food is most of it: food spoils, so a band cannot hoard it, and the
+       pile is the only thing here that keeps. */
+    + `<div><span>worth taking</span> ${wealthOf(camp).toFixed(0)}`
+    + ` <em>(${(camp.stone || 0).toFixed(0)} stone)</em></div>`
     + `<div class="skills">${skills}</div>`
     + `<div><span>founded day ${Math.floor(camp.founded)} · ${camp.born} born · `
     + `most they were was ${camp.peak}${toll.length
@@ -234,25 +251,59 @@ export function renderTribeCard() {
 
   $('tribeNow').className = tribeTab === 'now' ? 'on' : '';
   $('tribeWas').className = tribeTab === 'was' ? 'on' : '';
+  $('tribeLog').className = tribeTab === 'log' ? 'on' : '';
   if (tribeTab === 'was') { $('tribeList').innerHTML = formerTable(camp); return; }
+  if (tribeTab === 'log') { $('tribeList').innerHTML = campHistory(camp); return; }
 
   /* Sorted oldest first, because a band reads as a band that way: the elders
      who remember how things are done, then the ones doing them, then the
      children who will. */
   $('tribeList').innerHTML = folk.length
-    ? `<table><thead><tr><th>who</th><th>age</th><th>children</th><th>carried</th><th>doing</th></tr></thead><tbody>`
+    ? `<table><thead><tr><th>who</th><th>age</th><th>is</th><th>children</th><th>carried</th><th>doing</th></tr></thead><tbody>`
       + folk.map((p) => {
         const kids = childrenOf(p);
         return `<tr class="${p === chief ? 'chief' : ''}${p.sick ? ' gone' : ''}"`
           + ` data-p="${p.id}" title="follow ${p.name}">`
           + `<td class="n">${p.name}</td>`
           + `<td>${Math.floor(personAge(p))}${sexMarks(p.sex === 'f' ? '♀' : '♂')}${p.child ? ' ·' : ''}</td>`
+          /* What they are in the band. Blank for most of them, and blank for
+             all of them in a band too small or too hungry to have divided the
+             work — which is the column doing its job, not failing to. */
+          + `<td class="n">${p.role && p.role !== 'forager' ? (ROLE_WORDS[p.role] || p.role) : ''}</td>`
           + `<td>${kids || (p.child ? '' : '—')}</td>`
           + `<td class="got">${(p.brought || 0).toFixed(0)}</td>`
           + `<td class="n">${p.sick ? 'ill' : doingWords(p)}</td></tr>`;
       }).join('')
       + '</tbody></table>'
     : '<div>nobody is left</div>';
+}
+
+/* -------------------------------------------------------------------------
+   What happened to this band
+
+   The chronicle is every line from every world and it is searchable, which is
+   the right shape for "when did anybody last learn to cure meat" and the wrong
+   one for "what has become of these people". This is the same record read the
+   other way round: one band, oldest last, and only the lines worth telling.
+
+   Bands are found in it by their code rather than by a stored id, for the same
+   reason the colour is: a line is text, it outlives the camp that wrote it, and
+   it travels to another world's chronicle intact. `[TS]` in a line written
+   forty years ago still says Tsekash, and nothing has to have been kept.
+   ------------------------------------------------------------------------- */
+export const CAMP_HISTORY_MAX = 40;
+
+export function campHistory(camp) {
+  const mine = chronicle.filter((e) => isMilestone(e)
+    && e.seed === P.seed && e.text.includes(`[${camp.code}]`));
+  if (!mine.length) {
+    /* A band founded this morning has no history, and saying so is better than
+       an empty box that reads as something failing to load. */
+    return '<div>nothing worth telling yet</div>';
+  }
+  /* Oldest last, the way the rest of the chronicle reads. */
+  return `<div id="tribeLogList">${mine.slice(0, CAMP_HISTORY_MAX).map((e) =>
+    `<div><span class="d">day ${e.day}</span>${sexMarks(tribeChips(e.text))}</div>`).join('')}</div>`;
 }
 
 export function showKeys(open) {
@@ -267,7 +318,24 @@ export function toggleKeys() {
 export const LOOK_SENSITIVITY = 0.0026;      // radians per pixel dragged
 export const PITCH_LIMIT = 1.5;              // just short of straight up or down
 
-export const cam = { yaw: 0, pitch: 0, dragging: false, lastX: 0, lastY: 0 };
+/* `astern` is the over-the-shoulder lock: the camera keeps its station behind
+   whoever you are following instead of holding a compass bearing.
+
+   Without it, "behind them" was only ever true for the instant it was set.
+   `cam.yaw` is a direction in the world, so the moment somebody turned a corner
+   the camera stayed pointing north and you were watching them walk away
+   sideways, then head-on, then away again — which is not a following camera, it
+   is a camera that happens to have been aimed at somebody once. */
+export const cam = {
+  yaw: 0, pitch: 0, dragging: false, lastX: 0, lastY: 0, astern: false,
+};
+
+/* How fast the camera comes back round behind them. Eased rather than welded:
+   a camera pinned exactly to a person's heading swings hard every time they
+   sidestep a rock, and the walk code turns them a little every few seconds to
+   get round things. This is slow enough to ignore a dodge and quick enough to
+   be back astern within a couple of steps of a real turn. */
+export const ASTERN_EASE = 1.8;
 
 /* Where the button went down, in every view. A click and a look-around begin
    identically and stay indistinguishable until the button comes up again. */
@@ -276,7 +344,68 @@ export const press = { x: 0, y: 0, live: false };
 /* Following one person. The whole reason the band exists is to be watched, and
    watching it from a hundred metres up is not the same as walking a day with
    somebody. */
+/* Errands with nothing to watch. Not a judgement about the person — somebody
+   asleep is doing the most important thing they will do all day — but F is a
+   request to be shown something, and the answer to it should not be a figure
+   sitting still.
+
+   Deliberately not `nurse`: sitting with somebody who is ill looks like sitting
+   down and is the most interesting thing in a camp with a sickness in it. */
+export const IDLE_JOBS = new Set(['play', 'tend', 'sleep']);
+
 export let followIdx = -1;
+
+/* The view F leaves you in: behind them, a shade above, close enough to see
+   what they are doing with their hands. `followDist` is the wheel's business
+   after that and the yaw and pitch are the drag's, which is exactly why this
+   has to be somewhere they can all be put back from — twenty seconds of
+   zooming and swinging around somebody is easy to do and, until now, nothing
+   undid it. */
+export const SHOULDER = { pitch: -0.12, dist: 4.5 };
+
+/* Who you were watching before this one. Ids rather than indices: people die
+   and the list shifts under you, and going "back" to whoever inherited an index
+   is worse than refusing. Short, because it is a way out of a wrong keypress
+   and not a browsing history. */
+export const followTrail = [];
+export const FOLLOW_TRAIL_MAX = 12;
+
+/* Called before followIdx changes, by everything that changes it. */
+export function rememberFollowed() {
+  const p = people[followIdx];
+  if (!p) return;
+  const at = followTrail.indexOf(p.id);
+  if (at >= 0) followTrail.splice(at, 1);
+  followTrail.push(p.id);
+  if (followTrail.length > FOLLOW_TRAIL_MAX) followTrail.shift();
+}
+
+/* Behind them and at arm's length again, whatever the wheel and the drag have
+   been doing. Facing the way they are walking, which is where the camera starts
+   and the only angle that stays useful while they move. */
+export function shoulderView() {
+  const p = followedPerson();
+  if (!p) return false;
+  cam.yaw = p.yaw;
+  cam.pitch = SHOULDER.pitch;
+  P.followDist = SHOULDER.dist;
+  cam.astern = true;
+  return true;
+}
+
+/* Back to whoever you were watching before. Skips anybody who has died since —
+   the whole reason the trail is ids — and says so rather than doing nothing. */
+export function followBack() {
+  while (followTrail.length) {
+    const id = followTrail.pop();
+    const idx = people.findIndex((q) => q.id === id);
+    if (idx < 0) continue;                      // died while you were away
+    if (idx === followIdx) continue;            // already there; keep going back
+    followPerson(idx, true, false);             // see the note on `remember`
+    return true;
+  }
+  return false;
+}
 /* Whether the person being followed was asked for by name or by click, rather
    than found by `F`. It is the difference between a suggestion and a choice,
    and the handover below is allowed to overrule only the first of them. */
@@ -300,8 +429,31 @@ export function pickFollow(announce = true) {
      badly: anyone awake, then anyone at all. A camp can genuinely be all
      indoors — a wet afternoon, or three in the morning — and F still has to do
      something. */
+  rememberFollowed();
+  /* Somebody worth following, before anybody visible.
+
+     F used to land on whoever was on screen, which on a fed island is mostly
+     children: a band with a full store has a third of it under fourteen, and
+     what a child does is play, run about, sit at the fire and sleep. You would
+     press F four times to find somebody doing something, which is F not
+     working rather than F being unlucky.
+
+     So: an adult on an errand first. Everything below it is unchanged and is
+     what makes this safe to want — the fallbacks already existed, because
+     refusing to pick anybody is worse than picking badly, and a camp can
+     genuinely be all children asleep in the rain. */
+  /* Never the one you are already behind, in either of the pools that can
+     afford the exclusion. F is "show me somebody", and showing you the person
+     you are looking at is F doing nothing — which is what narrowing the first
+     pool did the moment a band had exactly one adult on an errand. */
   const pool = [];
-  for (let i = 0; i < people.length; i++) if (!people[i].hidden) pool.push(i);
+  for (let i = 0; i < people.length; i++) {
+    const q = people[i];
+    if (i !== followIdx && !q.hidden && !q.child && !IDLE_JOBS.has(q.job)) pool.push(i);
+  }
+  if (!pool.length) {
+    for (let i = 0; i < people.length; i++) if (i !== followIdx && !people[i].hidden) pool.push(i);
+  }
   if (!pool.length) for (let i = 0; i < people.length; i++) if (!people[i].asleep) pool.push(i);
   if (!pool.length) for (let i = 0; i < people.length; i++) pool.push(i);
   followIdx = pool[(Math.random() * pool.length) | 0];
@@ -310,23 +462,32 @@ export function pickFollow(announce = true) {
   /* Behind them, not in front. The camera sits at `target − forward × distance`,
      so adding π here put it out ahead walking backwards, staring at their face. */
   cam.yaw = p.yaw;
-  cam.pitch = -0.12;
+  cam.pitch = SHOULDER.pitch;
+  P.followDist = SHOULDER.dist;
+  cam.astern = true;
   if (announce) updateFollowCaption();
 }
 
 /* Follow this exact person. F finds you somebody, which is the right answer
    when you have nobody in mind and the wrong one the moment you do — usually
    you are already watching one of them carry something home. */
-export function followPerson(idx, announce = true) {
+/* `remember` is false for one caller: stepping back along the trail. Going back
+   to A must not put B on the trail, or shift+F pressed twice returns you to
+   where you started — two people passing each other for ever instead of a way
+   out of the room. */
+export function followPerson(idx, announce = true, remember = true) {
   if (idx < 0 || idx >= people.length) return false;
   /* Entering Follow picks somebody at random on the way in, so the choice has
      to be made after the switch rather than before it. */
   if (P.view !== 'follow') setViewMode('follow');
+  if (remember) rememberFollowed();
   followIdx = idx;
   followChosen = true;
   const p = people[idx];
   cam.yaw = p.yaw;                 // behind them, the way pickFollow leaves it
-  cam.pitch = -0.12;
+  cam.pitch = SHOULDER.pitch;
+  P.followDist = SHOULDER.dist;
+  cam.astern = true;
   updateFollowCaption();
   if (announce) toast(who(p));
   return true;
@@ -502,7 +663,10 @@ export function releaseLead(announce = true) {
    reproducible is that only what the step calls may draw from it: a click
    happens on a frame, not on a step, so it queues and the next turn spends it.
    ------------------------------------------------------------------------- */
-export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit'];
+/* What you can tell somebody to do. The last two are errands a grown band has
+   and a new one does not: there is nowhere to quarry until somebody has found
+   the rocks, and nowhere to stand until somebody has been buried. */
+export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit', 'quarry', 'mourn', 'raid', 'fish'];
 
 export function orderJob(job) {
   const p = followedPerson();
@@ -587,10 +751,59 @@ export function updateLeadMark() {
   mark.scale.set(beat, 1, beat);
 }
 
+/* What somebody is, as against what they are doing this afternoon. `forager`
+   is deliberately absent: it is what everybody is until the band can afford
+   for them not to be, and a card that says it of half the village says
+   nothing. */
+export const ROLE_WORDS = {
+  chief: 'chief', hunter: 'hunter', knapper: 'toolmaker', healer: 'healer', warrior: 'warrior', fisher: 'fisher',
+  keeper: 'fire-keeper', quarrier: 'quarrier', trader: 'trader',
+};
+
 export const JOB_WORDS = {
   gather: 'foraging', hunt: 'hunting', craft: 'knapping',
   tend: 'at the fire', play: 'playing', sleep: 'asleep',
   nurse: 'sitting with the ill',
+  mourn: 'at the stones',
+  quarry: 'working the rock',
+  raid: 'taking it',
+  fish: 'fishing',
+  visit: 'walking to the next band',
+  led: 'going where you point',
+};
+
+/* The same jobs, for somebody still on their way to one. `visit` was always
+   here in spirit — "walking to the next band" is a job that is mostly walking,
+   and it was the only one the caption told the truth about. */
+/* Where somebody has come in from, said only when it is worth saying. A person
+   walking to the fire is walking to it from somewhere, and which somewhere is
+   the difference between a figure crossing a hillside and a hunt that has just
+   ended. Nothing for the camp jobs: "back from resting" is not news. */
+export const CAME_WORDS = {
+  gather: ', back from the foraging',
+  hunt: ', back from a hunt',
+  quarry: ', back from the rocks',
+  mourn: ', back from the stones',
+  visit: ', back from the next band',
+};
+
+/* And the jobs that are somewhere to come back *to*. Walking out to forage
+   "back from a hunt" is two errands in one sentence; walking to the fire back
+   from one is a person you have been watching. */
+export const HOMEWARD = new Set(['tend', 'craft', 'sleep', 'nurse']);
+
+export const GOING_WORDS = {
+  gather: 'walking out to forage',
+  hunt: 'out after something',
+  mourn: 'walking out to the stones',
+  quarry: 'walking out to the rocks',
+  raid: 'going to take it',
+  fish: 'walking down to the water',
+  craft: 'off to sit and knap',
+  tend: 'walking to the fire',
+  nurse: 'going to sit with the ill',
+  play: 'running about',
+  sleep: 'off to their tent',
   visit: 'walking to the next band',
   led: 'going where you point',
 };
@@ -614,9 +827,92 @@ export const INDOOR_WORDS = {
    caption says why, and if they are it says what they are up to. That is the
    same rule the click-picker follows, and for the same reason: one answer to
    "is this person visible", written in one place and read everywhere else. */
+/* Slow enough to be a stroll and faster than standing still. `p.speed` eases
+   toward what somebody wants rather than snapping, so a person who has just
+   stopped spends a moment below a walk and above nothing. */
+export const WALKING_AT = 0.25;
+
+/* Why somebody is walking to the next band.
+
+   "Walking to the next band" says where and not what, and a visit is the one
+   errand in this world with several completely different points to it. The
+   reasons are not invented for the caption either: they are the same conditions
+   the visit was chosen under and the same ones `arriveAtCamp` acts on when it
+   gets there — a band goes because it is comfortable enough to spare somebody
+   or hungry enough to go and ask, and what actually changes hands is food,
+   stone, or what one of them knows.
+
+   Read in the order they matter. Somebody starving is going for food whatever
+   else is in their arms. */
+export function visitWords(p, walking) {
+  const host = p.visiting;
+  if (!host) return walking ? 'walking to the next band' : 'at the next band';
+  const home = p.camp;
+  const to = walking ? `walking to ${host.name}` : `at ${host.name}`;
+
+  if (home.hunger > VISIT.begFrom) return `${to}, to ask for food`;
+  if (home.food - home.need * FOOD.comfortable > 0 && host.hunger > 0.5) {
+    return `${to}, with food`;
+  }
+  if ((home.stone || 0) - SKILL.stonePerTool * 4 > 0
+      && (host.stone || 0) < SKILL.stoneMax * 0.5) {
+    return `${to}, with stone to trade`;
+  }
+  /* What one band knows and the other does not, which is the quietest of the
+     three and the one that changes the island. Their own memory rather than the
+     camp's: what a visitor carries is what they can show, and that is the same
+     number `arriveAtCamp` teaches from. */
+  for (const key in SKILLS) {
+    if ((p.knows?.[key] || 0) * VISIT.learn > (host.skill?.[key] || 0) + 0.08) {
+      return `${to}, to show them ${SKILLS[key].of}`;
+    }
+  }
+  return `${to}, to see them`;
+}
+
+/* Why somebody is at the fire.
+
+   "At the fire" is where, and for a third of a band on any given afternoon it
+   is the whole caption — which makes it the least informative thing the page
+   says about the most people. The reasons are already on the person and on the
+   camp; none of this is invented for the wording.
+
+   Read in the order that decides it. Somebody with nothing left is resting
+   whatever else is true of the evening. */
+export function fireWords(p) {
+  if (p.role === 'keeper') return 'keeping the fire';
+  if (p.energy < 0.35) return 'resting by the fire';
+  if ((p.camp?.hunger ?? 0) > 0.8) return 'at the fire, with nothing in the store';
+  if (seasonName === 'winter') return 'at the fire, out of the cold';
+  /* Night is last of the four, because it is the least surprising: everybody is
+     at the fire at night, and saying so of all of them is saying nothing. */
+  if (P.time < 6 || P.time > 20) return 'sitting up at the fire';
+  return 'at the fire';
+}
+
 export function doingWords(p) {
   if (p.asleep) return 'asleep in a hut';
   if (p.hidden) return INDOOR_WORDS[p.job] || 'resting';
+
+  /* What they are doing *now*, which for most of a day is walking to where they
+     mean to do it. A job says what somebody is out to do; it does not say
+     whether they have got there — so the caption read "knapping" and "at the
+     fire" off a figure crossing a hillside, which is the same disagreement
+     `INDOOR_WORDS` exists to fix, one step earlier.
+
+     Read off `p.speed`, and that is the point rather than a convenience: it is
+     the number `writePerson` builds the gait from, so the words cannot say one
+     thing while the legs do another. Anything derived from the state machine
+     instead can, and did — there is a moment at the end of every errand where
+     somebody has arrived and is still coasting to a stop. */
+  if (p.job === 'visit') return visitWords(p, p.speed > WALKING_AT);
+  if (p.job === 'tend' && p.speed <= WALKING_AT) return fireWords(p);
+  if (p.speed > WALKING_AT) {
+    if (p.state === 'return') return p.carry ? 'carrying it home' : 'walking home';
+    const going = GOING_WORDS[p.job] || 'walking';
+    // ...and where from, when they are coming in off an errand worth naming.
+    return HOMEWARD.has(p.job) ? going + (CAME_WORDS[p.came] || '') : going;
+  }
   return JOB_WORDS[p.job] || p.job;
 }
 
@@ -643,26 +939,29 @@ export function updateFollowCaption() {
   const bars = Math.max(0, Math.min(5, Math.round(p.energy * 5)));
   const meter = '▮'.repeat(bars) + '▯'.repeat(5 - bars);
   const ill = p.sick ? ' · ill' : '';
-  /* Through the father. A line of one is a founder, and saying "1st of the
-     Beku line" of the man the line is named after reads as a mistake — so the
-     founders are simply named as founders. */
-  const born = p.fatherName ? ` · ${p.sex === 'f' ? 'daughter' : 'son'} of ${p.fatherName}` : '';
-  /* The line, and then the line itself. A generation number says how deep they
-     are; the fathers say who they are — and the whole reason for keeping the
-     dead is being able to name them years after they are gone. */
-  const fathers = ancestry(p, 4);
-  const chain = fathers.length
-    ? ` <span class="line">${p.name} ${fathers.map((r) => `← ${r.n}`).join(' ')}`
-      + `${fathers.length === 4 && fathers[3].f ? ' ←…' : ''}</span>`
-    : '';
-  /* Said only when there is a line to say. "Of the founding band" was on
-     every first-generation person in the world, which at the start is all of
-     them — a phrase that is on everybody tells you nothing about anybody. */
-  const house = (p.gen || 1) > 1 ? ` · ${ordinal(p.gen)} of the ${p.line} line` : '';
+  /* No ancestry on this card any more — not "daughter of Bresher", not "3rd of
+     the Lohae line", and not the chain of fathers that ran under it.
+
+     It was three ways of saying the same thing, it was on the card whether or
+     not you were asking, and it is the half of the caption that does not change
+     while you watch somebody: who their father was is settled before you start
+     following them. What does change — what they are doing, what they are
+     carrying, whether they are ill, how much they have left — is what the card
+     is for.
+
+     None of it is lost: a father, a line and a generation are still set on
+     every person, still saved, and still written into the record every birth
+     goes through, and the chronicle still says who was born to whom. It is off
+     this caption, not out of the world. `ancestry()` has no caller in the page
+     now — it reads that record and nothing displays it. */
   /* Named only when it is worth naming — most people are unremarkable and the
      card should say so by not saying anything. */
   const word = traitWord(p);
-  el.textContent = `${who(p)}, ${age}${p.sex === 'f' ? '♀' : '♂'}${born}${house}`
+  /* What they are in the band, when the band is big enough and fed enough to
+     have made them anything — see assignRoles. A camp of eight has no roles and
+     says nothing, which is correct: everybody there does everything. */
+  const post = p.role && p.role !== 'forager' ? ` · ${ROLE_WORDS[p.role] || p.role}` : '';
+  el.textContent = `${who(p)}, ${age}${p.sex === 'f' ? '♀' : '♂'}${post}`
     + `${word ? ` · ${word}` : ''} · ${doing}${carrying}${ill}`;
 
   /* Where they are, read straight off the person rather than off anything
@@ -695,7 +994,6 @@ export function updateFollowCaption() {
 
   el.innerHTML = sexMarks(tribeChips(el.textContent))
     + ` <span class="meter${ten <= 2 ? ' low' : ''}" title="energy">${meter} ${ten}/10</span>`
-    + chain
     + `<span class="where">`
     + `x ${p.x.toFixed(1)}  z ${p.z.toFixed(1)}  alt ${alt.toFixed(1)}m`
     + `  ·  want ${p.speed.toFixed(2)}  going ${going} m/s`
@@ -789,7 +1087,8 @@ export const endDrag = (ev) => {
 export function wireInput() {
   addEventListener('keydown', (ev) => {
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
-    if (ev.code === 'KeyH') ui.classList.toggle('hidden');
+    // Minimised to its icon rather than gone — see togglePanel.
+    if (ev.code === 'KeyH') togglePanel();
     /* M used to be a single toggle, so a map you wanted smaller rather than
        gone was a map you turned off. It walks the sizes now and "hidden" is the
        last of them, so the old gesture still gets there — it just takes the
@@ -799,9 +1098,26 @@ export function wireInput() {
     if (ev.code === 'Escape') { stopAhead(); showKeys(false); closeChronicle(); closeTribe(); }
     /* One key rather than two. It used to take C to cycle into Follow and then
        N to find somebody worth following, which is two keys to do one thing. */
+    /* F is "show me somebody"; shift+F is "the one before that". F picks at
+       random, so losing somebody you were watching is one keypress and, until
+       there was a way back, irreversible — you could not ask for them again
+       because you never chose them in the first place. Out of Follow it puts
+       you back in, on the last person you were watching rather than a new
+       stranger, which is the other half of the same want. */
     if (ev.code === 'KeyF') {
-      if (P.view !== 'follow') setViewMode('follow');
+      if (ev.shiftKey) {
+        if (P.view !== 'follow') setViewMode('follow');
+        if (!followBack()) toast('nobody watched before this one');
+      } else if (P.view !== 'follow') setViewMode('follow');
       else pickFollow();
+    }
+    /* And back to the view F left you in. The wheel sets how far back you stand
+       and dragging sets the angle, and after a minute of both you are looking at
+       the sky from forty metres with no way back short of finding somebody else
+       to follow. */
+    if (ev.code === 'KeyV') {
+      if (shoulderView()) toast('over the shoulder');
+      else toast('nobody to stand behind');
     }
     /* The same shape as F, for the other question. F is "show me somebody";
        this is "show me somewhere", and like F it puts you in the mode it needs
@@ -874,6 +1190,13 @@ export function wireInput() {
        mode. */
     canvas.style.cursor = P.view === 'follow' && followedPerson() ? 'crosshair' : '';
     if (!cam.dragging || P.view === 'orbit') return;
+    /* Taking hold of the camera lets go of their shoulder. Anything else is a
+       camera that fights you: you drag to look at the hill and it swings
+       straight back. V puts you behind them again, which is what V is for.
+
+       The wheel deliberately does not do this — how far back you stand is not
+       an opinion about which way to look. */
+    cam.astern = false;
     cam.yaw -= (ev.clientX - cam.lastX) * LOOK_SENSITIVITY;    // drag right, turn right
     cam.pitch -= (ev.clientY - cam.lastY) * LOOK_SENSITIVITY;  // drag down, look down
     cam.pitch = clamp(cam.pitch, -PITCH_LIMIT, PITCH_LIMIT);
@@ -914,12 +1237,10 @@ export function wireInput() {
 /* Metres a second at an hour-long day; the pace multiplier in the tick does the
    rest, so a shorter day moves the camera as fast as it moves everything else. */
 export const CAMERA_FLY = 26;
-export const CAMERA_WALK = 12;
 
 export const _fwd = new THREE.Vector3();
 export const _right = new THREE.Vector3();
 export const _move = new THREE.Vector3();
-export const _lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 export const UP = new THREE.Vector3(0, 1, 0);
 
 // Read yaw and pitch back off the camera, so switching modes never snaps the view.
@@ -952,49 +1273,30 @@ export function setViewMode(mode) {
   updateFollowCaption();
 }
 
+/* Two ways to watch, and they are the two questions anybody actually has:
+   where is this, and who is that. Orbit is a rig you point at a place; Follow is
+   a person you go with.
+
+   Fly and Walk are gone. They were a free camera with WASD and a free camera
+   with WASD pinned to eye height, and what they were for — getting somewhere to
+   look at it — is what clicking the map does, in one gesture and without flying
+   across an island in real time. Everything they cost was real: two branches in
+   every camera path, a movement block that only they used, W and S bound to
+   moving the camera in the two modes where W and S also mean things to the
+   person you are steering, and a `travelTo` that had to ask which of four rigs
+   it was landing.
+
+   What is left is the pair that read the world rather than fly over it. */
+/* The two overlays are drawn from here because this is the one thing that runs
+   every frame in every view — and the comment is above the signature rather
+   than inside it because two checks require `updateLeadMark()` to be the first
+   line of this function. They are right to: trimming the view modes out dropped
+   that call, which took the ring off the ground somebody had been told to walk
+   to, and nothing else in the page would have noticed. */
 export function moveCamera(dt) {
   updateLeadMark();
   updateOrders();
-  if (P.view === 'orbit') return moveOrbit(dt);
-  if (P.view === 'follow') return moveFollow(dt);
-
-  _lookEuler.set(cam.pitch, cam.yaw, 0);
-  camera.quaternion.setFromEuler(_lookEuler);
-
-  camera.getWorldDirection(_fwd);
-  if (P.view === 'walk') {
-    _fwd.y = 0;                                   // feet on the ground, always
-    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, -1);
-    _fwd.normalize();
-  }
-  _right.crossVectors(_fwd, UP);
-  if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);   // looking straight up or down
-  _right.normalize();
-
-  _move.set(0, 0, 0);
-  if (keys.has('KeyW') || keys.has('ArrowUp')) _move.add(_fwd);
-  if (keys.has('KeyS') || keys.has('ArrowDown')) _move.sub(_fwd);
-  if (keys.has('KeyD') || keys.has('ArrowRight')) _move.add(_right);
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) _move.sub(_right);
-  if (P.view === 'fly') {
-    if (keys.has('KeyE') || keys.has('Space')) _move.y += 1;
-    if (keys.has('KeyQ') || keys.has('ShiftRight')) _move.y -= 1;
-  }
-
-  if (_move.lengthSq() > 0) {
-    const fast = keys.has('ShiftLeft') ? 3.6 : 1;
-    const speed = (P.view === 'walk' ? CAMERA_WALK : CAMERA_FLY) * fast;
-    camera.position.addScaledVector(_move.normalize(), speed * dt);
-  }
-
-  const ground = sampleHeight(camera.position.x, camera.position.z);
-  if (P.view === 'walk') {
-    camera.position.y = ground + 1.7;             // eye height, not negotiable
-  } else if (camera.position.y < ground + 0.4) {
-    // The only limit on the fly camera: do not end up inside the hill. Nothing
-    // else moves, so this cannot ratchet the view upward the way the old rig did.
-    camera.position.y = ground + 0.4;
-  }
+  return P.view === 'follow' ? moveFollow(dt) : moveOrbit(dt);
 }
 
 /* Over the shoulder of one person. The rig orbits their head rather than a
@@ -1020,6 +1322,15 @@ export function moveFollow(dt) {
     p = followedPerson();
   }
   if (!p) return moveOrbit(dt);
+
+  /* Keep station. Toward their heading by the shortest way round, or a person
+     turning from just west of north to just east of it sends the camera the
+     long way round the compass — the one place a bearing has a seam in it. */
+  if (cam.astern) {
+    let off = p.yaw - cam.yaw;
+    off = Math.atan2(Math.sin(off), Math.cos(off));
+    cam.yaw += off * Math.min(1, dt * ASTERN_EASE);
+  }
 
   const ground = sampleHeight(p.x, p.z);
   const eye = ground + PERSON.legLen * p.scale * (1 - 0.44 * p.crouch) + 1.15 * p.scale;

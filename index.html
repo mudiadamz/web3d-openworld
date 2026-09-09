@@ -15,7 +15,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #05070a; }
   body {
-    font: 12px/1.45 ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    font: 11px/1.45 ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
     color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
@@ -45,7 +45,7 @@
   section { padding: 12px 13px; border-bottom: 1px solid var(--line); }
   section:last-child { border-bottom: 0; }
   h2 {
-    margin: 0 0 10px; font-size: 10px; font-weight: 600;
+    margin: 0 0 10px; font-size: 8px; font-weight: 600;
     letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted);
   }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
@@ -67,7 +67,7 @@
   .grid.two { grid-template-columns: 1fr 1fr; }
   .grid button, .btn {
     background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); color: var(--text);
-    border-radius: 7px; padding: 6px 4px; font-size: 11px; cursor: pointer; font-family: inherit;
+    border-radius: 7px; padding: 6px 4px; font-size: 9px; cursor: pointer; font-family: inherit;
   }
   .grid button:hover, .btn:hover { background: rgba(255, 255, 255, 0.13); }
   .btn.danger { color: #e2857c; border-color: rgba(226, 133, 124, 0.3); }
@@ -75,11 +75,11 @@
   .btn.armed { color: #ffd9d4; background: rgba(226, 133, 124, 0.28); border-color: #e2857c; }
   select, input[type=number] {
     background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); color: var(--text);
-    border-radius: 7px; padding: 4px 6px; font-family: inherit; font-size: 11px;
+    border-radius: 7px; padding: 4px 6px; font-family: inherit; font-size: 9px;
   }
   input[type=number] { width: 100px; }
   input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; }
-  .hint { color: var(--accent); opacity: 0.85; margin-top: 4px; font-size: 11px; }
+  .hint { color: var(--accent); opacity: 0.85; margin-top: 4px; font-size: 9px; }
   /* One scrollbar for every pane that has one. The platform default is a wide
      opaque bar that reads as part of the page rather than part of the panel,
      and on a dark panel it is the brightest thing in it. */
@@ -124,19 +124,19 @@
   .sx.f { color: #ff9ec4; }
   .sx.m { color: #7fc4ff; }
 
-  #stats { margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.6; }
-  #tribes { font-size: 10px; line-height: 1.6; }
+  #stats { margin-top: 9px; color: var(--muted); font-size: 8px; line-height: 1.6; }
+  #tribes { font-size: 8px; line-height: 1.6; }
   #tribes div { display: flex; align-items: baseline; gap: 5px; padding: 1px 0; color: var(--text); }
   #tribes i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
   #tribes b { font-weight: 600; }
   #tribes span { color: var(--muted); }
   #tribeChart { display: block; width: 236px; height: 56px; margin-top: 7px; border-radius: 4px;
     background: rgba(255, 255, 255, 0.04); }
-  #chronicle { font-size: 10px; line-height: 1.65; max-height: 150px; overflow-y: auto; }
+  #chronicle { font-size: 8px; line-height: 1.65; max-height: 150px; overflow-y: auto; }
   #chronicle div { color: var(--text); padding: 1px 0; }
   #chronicle span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 5px; }
   #tribes .ill { color: #d98a6a; font-style: normal; }
-  #tribes .toll { display: block; color: #b08878; font-size: 9px; margin-top: 1px; }
+  #tribes .toll { display: block; color: #b08878; font-size: 8px; margin-top: 1px; }
   /* Three little gauges of what a band has worked out for itself. */
   #tribes .skills { display: inline-flex; gap: 2px; margin-left: 5px; vertical-align: middle; }
   #tribes .sk {
@@ -144,14 +144,14 @@
     background: linear-gradient(to right, #7fd08a var(--v), rgba(255,255,255,0.13) var(--v));
   }
   .rate { display: inline-flex; align-items: center; gap: 4px; }
-  .btn.tiny { width: 20px; padding: 0; line-height: 17px; font-size: 12px; }
+  .btn.tiny { width: 20px; padding: 0; line-height: 17px; font-size: 10px; }
   #rateOut { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
   /* Shown beside the clock while the night is being run through. */
-  #skip { margin-left: 4px; opacity: 0.75; font-size: 10px; letter-spacing: 1px; }
+  #skip { margin-left: 4px; opacity: 0.75; font-size: 8px; letter-spacing: 1px; }
   #following .meter { opacity: 0.8; margin-left: 2px; letter-spacing: 0.5px; }
   #following .meter.low { color: #e8746a; opacity: 1; }
   /* The fathers, back as far as anything is remembered. */
-  #following .line { display: block; margin-top: 1px; color: var(--muted); font-size: 10px; }
+  #following .line { display: block; margin-top: 1px; color: var(--muted); font-size: 8px; }
   #years {
     width: 46px; background: rgba(255,255,255,0.07); color: var(--text);
     border: 1px solid rgba(255,255,255,0.14); border-radius: 4px; padding: 1px 4px;
@@ -170,13 +170,13 @@
     width: min(420px, 84vw); padding: 20px 22px; border-radius: 10px;
     background: var(--panel); border: 1px solid rgba(255,255,255,0.10);
   }
-  #aheadCard h2 { margin: 0 0 12px; font-size: 13px; }
+  #aheadCard h2 { margin: 0 0 12px; font-size: 11px; }
   #aheadTrack {
     height: 6px; border-radius: 3px; overflow: hidden;
     background: rgba(255,255,255,0.10);
   }
   #aheadBar { display: block; height: 100%; width: 0%; background: #7fd08a; transition: width 0.1s linear; }
-  #aheadNote { margin-top: 9px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #aheadNote { margin-top: 9px; font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
   #aheadStop { margin-top: 14px; width: 100%; }
   /* The years are the only thing happening; watching them happen is better than
      reading a paragraph about how they are not being drawn. */
@@ -186,7 +186,7 @@
   }
   #aheadLog {
     margin-top: 9px; height: 132px; overflow: hidden;
-    font-size: 10px; line-height: 1.65; color: var(--muted);
+    font-size: 8px; line-height: 1.65; color: var(--muted);
   }
   #aheadLog div { padding: 0; }
   #aheadLog span { font-variant-numeric: tabular-nums; margin-right: 5px; opacity: 0.75; }
@@ -196,10 +196,10 @@
      whole name on it. The same chip marks the world you are standing in. */
   .wcode {
     display: inline-block; min-width: 17px; padding: 0 3px; margin-right: 5px;
-    border-radius: 3px; text-align: center; font-weight: 700; font-size: 9px;
+    border-radius: 3px; text-align: center; font-weight: 700; font-size: 8px;
     letter-spacing: 0.5px; color: #10131a; vertical-align: baseline;
   }
-  #worldHere .wcode { font-size: 10px; }
+  #worldHere .wcode { font-size: 8px; }
 
   /* ---- hud / help ---- */
   #hud {
@@ -207,29 +207,29 @@
     background: var(--panel); backdrop-filter: blur(14px);
     border: 1px solid var(--line); border-radius: 9px;
     font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
-    font-size: 15px; font-weight: 500; color: var(--text); text-align: right;
+    font-size: 13px; font-weight: 500; color: var(--text); text-align: right;
   }
   #almanac {
-    font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
+    font-size: 9px; font-weight: 400; letter-spacing: 0.01em;
     color: var(--muted); margin-top: 1px;
   }
   /* Beside the clock rather than in the world panel, because the panel is the
      first thing H hides and these two are the numbers you want while looking
      at something else. */
   #vitals {
-    font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
+    font-size: 9px; font-weight: 400; letter-spacing: 0.01em;
     color: var(--muted); margin-top: 1px;
   }
   #vitals b { color: var(--text); font-weight: 600; }
   #following {
-    font-size: 11px; font-weight: 400; letter-spacing: 0.01em;
+    font-size: 9px; font-weight: 400; letter-spacing: 0.01em;
     color: var(--accent); margin-top: 2px;
   }
   /* The numbers underneath: where they are and whether they are getting
      anywhere. Tabular so the digits do not dance while you watch them. */
   #following .where {
     display: block; margin-top: 1px; color: var(--muted);
-    font-size: 10px; font-variant-numeric: tabular-nums;
+    font-size: 8px; font-variant-numeric: tabular-nums;
   }
   /* The key list is a popup rather than a strip along the bottom: it can say
      everything once instead of the one line that fits. */
@@ -260,12 +260,12 @@
     background: var(--panel); border: 1px solid rgba(255,255,255,0.10);
   }
   #tribeCard header { display: flex; align-items: center; justify-content: space-between; }
-  #tribeCard h2 { margin: 0; font-size: 13px; }
+  #tribeCard h2 { margin: 0; font-size: 11px; }
   #tribeClose {
-    background: none; border: 0; color: var(--muted); font-size: 17px; cursor: pointer;
+    background: none; border: 0; color: var(--muted); font-size: 14px; cursor: pointer;
     line-height: 1; padding: 0 2px;
   }
-  #tribeHead { margin: 10px 0 8px; font-size: 11px; line-height: 1.7; }
+  #tribeHead { margin: 10px 0 8px; font-size: 9px; line-height: 1.7; }
   /* One row per skill: what it is, how far along, the number, and the rung in
      words. The number and the word say the same thing twice on purpose — 62%
      is precise and "a fair hand" is what it means. */
@@ -277,28 +277,41 @@
   #tribeHead .skillRow > span { color: var(--muted); }
   #tribeHead .skillRow > b { color: var(--text); font-weight: 600; text-align: right;
     font-variant-numeric: tabular-nums; }
-  #tribeHead .skillRow > em { color: var(--muted); font-style: normal; font-size: 10px; }
+  #tribeHead .skillRow > em { color: var(--muted); font-style: normal; font-size: 8px; }
   #tribeHead .skillRow .sk {
     display: block; height: 4px; border-radius: 2px;
     background: linear-gradient(to right, #7fd08a var(--v), rgba(255,255,255,0.13) var(--v));
   }
   #tribeHead b { color: var(--accent); font-weight: 400; }
   #tribeHead span { color: var(--muted); }
+  /* Beside the close button rather than in the body: it acts on the band the
+     card is about, which is what the header is. */
+  #tribeCard header .pin {
+    background: none; border: 0; color: var(--muted); cursor: pointer;
+    padding: 2px 5px; margin-left: auto; display: flex; border-radius: 5px;
+  }
+  #tribeCard header .pin:hover { color: var(--accent); background: rgba(255, 255, 255, 0.08); }
+  #tribeCard header .pin svg { width: 14px; height: 14px; fill: currentColor; }
+  #tribeCard header .pin .hole { fill: var(--panel); }
+  /* One line an event: a day, and what happened on it. */
+  #tribeLogList { display: flex; flex-direction: column; gap: 3px; }
+  #tribeLogList div { display: flex; gap: 7px; align-items: baseline; }
+  #tribeLogList span.d { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 42px; }
   #tribeTabs { display: flex; gap: 4px; margin: 0 0 8px; }
   #tribeTabs button {
     background: none; border: 0; border-bottom: 1px solid transparent; cursor: pointer;
-    color: var(--muted); font: inherit; font-size: 11px; padding: 3px 8px;
+    color: var(--muted); font: inherit; font-size: 9px; padding: 3px 8px;
   }
   #tribeTabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
-  #tribeList { overflow-y: auto; font-size: 11px; }
+  #tribeList { overflow-y: auto; font-size: 9px; }
   #tribeList table { width: 100%; border-collapse: collapse; }
   #tribeList th {
-    text-align: left; font-weight: 400; color: var(--muted); font-size: 10px;
+    text-align: left; font-weight: 400; color: var(--muted); font-size: 8px;
     padding: 0 6px 4px 0; position: sticky; top: 0; background: var(--panel);
   }
   #tribeList td { padding: 2px 6px 2px 0; font-variant-numeric: tabular-nums; }
   #tribeList td.n { color: var(--text); font-variant-numeric: normal; }
-  #tribeList tr.chief td.n::after { content: ' · chief'; color: var(--accent); font-size: 9px; }
+  #tribeList tr.chief td.n::after { content: ' · chief'; color: var(--accent); font-size: 8px; }
   #tribeList tr.gone td { opacity: 0.45; }
   #tribeList tr[data-p] { cursor: pointer; }
   #tribeList tr[data-p]:hover td { background: rgba(255,255,255,0.07); }
@@ -333,27 +346,27 @@
   /* The funnel fills to say it is filtering. An order button does not: a filled
      spear is only a fatter spear, so its state is the border and the colour. */
   #chronKind.on svg > *, #chronKind2.on svg > * { fill: currentColor; }
-  #chronCard h2 { margin: 0; font-size: 13px; }
+  #chronCard h2 { margin: 0; font-size: 11px; }
   #chronClose {
-    background: none; border: 0; color: var(--muted); font-size: 17px; cursor: pointer;
+    background: none; border: 0; color: var(--muted); font-size: 14px; cursor: pointer;
     line-height: 1; padding: 0 2px;
   }
   #chronFind {
-    margin: 11px 0 9px; padding: 5px 8px; font: inherit; font-size: 11px;
+    margin: 11px 0 9px; padding: 5px 8px; font: inherit; font-size: 9px;
     color: var(--text); background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.14); border-radius: 5px;
   }
-  #chronList { overflow-y: auto; font-size: 11px; line-height: 1.7; flex: 1; min-height: 120px; }
+  #chronList { overflow-y: auto; font-size: 9px; line-height: 1.7; flex: 1; min-height: 120px; }
   #chronList div { padding: 1px 0; }
   #chronList span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
   #chronList em { color: var(--muted); font-style: normal; }
   #chronList b.hit { background: rgba(127,208,138,0.22); border-radius: 2px; font-weight: 400; }
   #chronFoot {
     display: flex; align-items: center; gap: 9px; margin-top: 11px;
-    font-size: 10px; color: var(--muted);
+    font-size: 8px; color: var(--muted);
   }
   #chronWhere { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
-  .btn.tiny.wide { width: auto; padding: 0 6px; margin-left: 6px; font-size: 9px; }
+  .btn.tiny.wide { width: auto; padding: 0 6px; margin-left: 6px; font-size: 8px; }
   #keysCard {
     width: min(430px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto;
     background: var(--panel); backdrop-filter: blur(16px);
@@ -365,16 +378,16 @@
     position: sticky; top: 0; background: inherit; padding: 12px 0 8px;
   }
   #keysCard h2 {
-    margin: 0; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text);
+    margin: 0; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text);
   }
   #keysClose {
-    background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1;
+    background: none; border: 0; color: var(--muted); font-size: 17px; line-height: 1;
     cursor: pointer; padding: 0 4px;
   }
   #keysClose:hover { color: var(--text); }
   .keyGroup {
     display: flex; justify-content: space-between; align-items: baseline;
-    margin: 13px 0 5px; font-size: 10px; letter-spacing: 0.13em;
+    margin: 13px 0 5px; font-size: 8px; letter-spacing: 0.13em;
     text-transform: uppercase; color: var(--muted);
   }
   .keyGroup b { color: var(--accent); font-weight: 600; letter-spacing: 0.06em; text-transform: none; }
@@ -399,6 +412,59 @@
     background: none; border: 0; padding: 0;
     filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.55));
   }
+  /* The largest size is the whole window rather than a bigger corner. Centred,
+     because a map you are reading is the thing you are looking at — and it
+     keeps its square aspect, so the size is set against the short edge. */
+  #map.full {
+    right: auto; bottom: auto; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    /* The frame only exists at this size. A 92-pixel corner map with a double
+       rule and corner marks on it is a border with a map inside rather than the
+       other way round. */
+    padding: 10px;
+    background:
+      linear-gradient(180deg, rgba(58, 44, 28, 0.96), rgba(38, 28, 18, 0.96));
+    border: 1px solid rgba(214, 184, 130, 0.55);
+    border-radius: 4px;
+    box-shadow:
+      inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+      inset 0 0 0 4px rgba(196, 162, 108, 0.22),
+      inset 0 0 22px rgba(0, 0, 0, 0.55),
+      0 18px 60px rgba(0, 0, 0, 0.7);
+    filter: none;                      /* the drop-shadow is in the frame now */
+  }
+  #map.full canvas { border: 1px solid rgba(0, 0, 0, 0.55); display: block; }
+  /* Corner marks, drawn with one element each so they cannot drift apart. */
+  #map.full::before, #map.full::after {
+    content: ''; position: absolute; width: 13px; height: 13px;
+    border: 2px solid rgba(224, 196, 142, 0.75); pointer-events: none;
+  }
+  #map.full::before { left: 3px; top: 3px; border-right: 0; border-bottom: 0; }
+  #map.full::after { right: 3px; bottom: 3px; border-left: 0; border-top: 0; }
+
+  #mapUi { display: none; }
+  #map.full #mapUi {
+    display: flex; gap: 4px; position: absolute; right: 14px; top: 14px;
+  }
+  .mapBtn {
+    width: 24px; height: 24px; line-height: 1; cursor: pointer;
+    background: rgba(24, 18, 12, 0.82); color: rgba(232, 214, 178, 0.92);
+    border: 1px solid rgba(214, 184, 130, 0.45); border-radius: 3px;
+    font: inherit; font-size: 12px;
+  }
+  .mapBtn:hover { background: rgba(58, 44, 28, 0.95); color: #fff; }
+  /* A bar and a number, the way a map says how far a thing is. */
+  #mapScale { display: none; }
+  #map.full #mapScale {
+    display: flex; align-items: center; gap: 6px;
+    position: absolute; left: 16px; bottom: 16px;
+    color: rgba(232, 214, 178, 0.92); font-size: 9px; letter-spacing: 0.08em;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); pointer-events: none;
+  }
+  #map.full #mapScale i {
+    display: block; height: 6px; border: 1px solid rgba(232, 214, 178, 0.92);
+    border-top: 0; background: rgba(0, 0, 0, 0.25);
+  }
   #map[hidden] { display: none; }
   /* Bottom middle, above the toast, and out of the way of the map. */
   #orders {
@@ -421,7 +487,7 @@
     position: fixed; left: 50%; bottom: 54px; transform: translateX(-50%);
     padding: 6px 14px; background: var(--panel); backdrop-filter: blur(14px);
     border: 1px solid var(--line); border-radius: 9px;
-    color: var(--text); font-size: 12px; letter-spacing: 0.04em; white-space: nowrap;
+    color: var(--text); font-size: 10px; letter-spacing: 0.04em; white-space: nowrap;
   }
   #toast[hidden], #help[hidden] { display: none; }
   @media (max-width: 720px) { #map { display: none; } }
@@ -542,12 +608,21 @@
   <div id="tribeCard" role="dialog" aria-label="Tribe">
     <header>
       <h2 id="tribeName">Tribe</h2>
+      <!-- Go and stand there. The card names a band and says how it is doing;
+           this is the one thing it could not do, which is show you them. -->
+      <button id="tribeGo" class="pin" aria-label="Go to their camp" title="Go to their camp">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 14.5S13 9.7 13 6.3A5 5 0 0 0 3 6.3C3 9.7 8 14.5 8 14.5Z"/>
+          <circle cx="8" cy="6.2" r="1.9" class="hole"/>
+        </svg>
+      </button>
       <button id="tribeClose" aria-label="Close">×</button>
     </header>
     <div id="tribeHead"></div>
     <div id="tribeTabs">
       <button id="tribeNow" class="on">who is here</button>
       <button id="tribeWas">who is gone</button>
+      <button id="tribeLog">what happened</button>
     </div>
     <div id="tribeList"></div>
   </div>
@@ -581,14 +656,14 @@
     </header>
 
     <div class="keyGroup">Moving</div>
-    <div class="keyRow"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><em>move — flies, walks or slides the rig, depending on the view</em></div>
-    <div class="keyRow"><span><kbd>Q</kbd><kbd>E</kbd></span><em>down and up <i>(fly, orbit)</i></em></div>
+    <div class="keyRow"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><em><i>(in Orbit)</i> slide the rig across the ground, so you can leave the meadow without losing the pivot. Clicking the map is the quicker way to get anywhere</em></div>
+    <div class="keyRow"><span><kbd>Q</kbd><kbd>E</kbd></span><em>down and up <i>(in Orbit)</i></em></div>
     <div class="keyRow"><span><kbd>shift</kbd></span><em>sprint. There is one move speed and it is not adjustable — it is set by <code>DAY_LENGTH</code>, because a short day is a fast one</em></div>
     <div class="keyRow"><span>drag</span><em>look around — orbits the pivot in Orbit, circles the person in Follow</em></div>
     <div class="keyRow"><span>scroll</span><em>zoom in Orbit · how far back you stand in Follow</em></div>
 
-    <div class="keyGroup">Views <b id="keysView">Fly</b></div>
-    <div class="keyRow" data-mode="fly"><span><kbd>C</kbd></span><em>next view — Fly, Walk, Orbit, Follow</em></div>
+    <div class="keyGroup">Views <b id="keysView">Orbit</b></div>
+    <div class="keyRow" data-mode="orbit"><span><kbd>C</kbd></span><em>the other view — Orbit is a rig you point at a place, Follow is a person you go with. Fly and Walk are gone: what they were for is what clicking the map does, in one gesture</em></div>
     <div class="keyRow"><span><kbd>F</kbd></span><em>follow somebody — again for somebody else. Their energy is on the caption, because it is what decides what they take on</em></div>
     <div class="keyRow"><span><kbd>R</kbd></span><em>somewhere else on the island — drops you into Orbit over a random spot, and again for another one. Dry land and not a cliff, so there is always something under you</em></div>
     <div class="keyRow"><span>click</span><em><i>(in Follow)</i> go there — click the ground and the person you are behind walks to it, on their own, with a ring on the spot. Click again and they turn round. Nothing else steers them while you have them — not dusk, not a job, not a tiger — but they still tire, still get hungry, and can still be caught</em></div>
@@ -598,8 +673,10 @@
     <div class="keyRow"><span>icons</span><em><i>(in Follow)</i> a row across the bottom tells them what to do rather than where to go — find food, hunt, knap, tend the fire, rest, walk to the next band. One instruction, taken up once: afterwards they are choosing for themselves again</em></div>
 
     <div class="keyGroup">On screen</div>
-    <div class="keyRow"><span><kbd>H</kbd></span><em>the world panel</em></div>
-    <div class="keyRow"><span><kbd>M</kbd></span><em>the map, one size bigger — small, medium, large, xlarge, hidden, and round again. <kbd>shift</kbd>+<kbd>M</kbd> goes back the other way. Click it to travel there</em></div>
+    <div class="keyRow"><span><kbd>H</kbd></span><em>the world panel, minimised to its icon rather than hidden — the icon stays where it is, so the way back is the thing you just used</em></div>
+    <div class="keyRow"><span><kbd>shift</kbd>+<kbd>F</kbd></span><em>back to whoever you were watching before — F picks at random, so this is the way back to somebody you did not choose in the first place. Out of Follow it returns you to them rather than to a stranger</em></div>
+    <div class="keyRow"><span><kbd>V</kbd></span><em><i>(in Follow)</i> back over their shoulder — the angle and the distance F left you at, and the camera keeps that station as they walk instead of holding a compass bearing while they turn away. Dragging to look around lets go of their shoulder; <kbd>V</kbd> takes it again</em></div>
+    <div class="keyRow"><span><kbd>M</kbd></span><em>the map: off, a corner map, the whole window, and round again. Full page has a frame, the band codes, the paths drawn as roads, a scale, and buttons to zoom and to put it back in the corner; the wheel zooms it too. Zoomed in it follows you until you drag it, and then it stays where you put it — zoom back out to hand it back. A click still travels; what tells the two apart is how far the pointer moved. Clicking a band's dot goes to their camp and opens their card — the cursor turns to a pointer over one. <kbd>shift</kbd>+<kbd>M</kbd> goes back the other way. Click it to travel there</em></div>
     <div class="keyRow"><span><kbd>[</kbd><kbd>]</kbd></span><em>slower and faster — the clock, and everything living on it. Once everybody is in, the night is run through rather than watched and takes about a second; <code>NIGHT_SKIP_RATE</code> is how much of each frame is spent doing it</em></div>
     <div class="keyRow"><span><kbd>B</kbd></span><em>hide one more layer — press until something stops looking wrong, and the last name shown is the culprit. <kbd>shift</kbd>+<kbd>B</kbd> puts it all back</em></div>
     <div class="keyRow"><span><kbd>T</kbd></span><em>the band you are watching — who they are, their ages, how many children, what each of them has carried home. Click a name to follow them, which is how you reach somebody who is indoors or over a hill</em></div>
@@ -630,10 +707,25 @@
   <button class="btn icon order" data-order="tend" aria-label="Tend the fire" title="Tend the fire"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14c2.6 0 4.2-1.7 4.2-3.9C12.2 7 9.4 5.6 9.4 2 7 3.6 6.1 5.6 6.1 7.4c0 1-.6 1.4-1 1-.6-.5-.6-1.4-.6-1.4-.5 1-.7 2-.7 3.1C3.8 12.3 5.4 14 8 14z"/></svg></button>
   <button class="btn icon order" data-order="sleep" aria-label="Rest" title="Rest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.4 9.4A5.6 5.6 0 0 1 6.2 2.4a5.8 5.8 0 1 0 7.2 7z"/></svg></button>
   <button class="btn icon order" data-order="visit" aria-label="Walk to the next band" title="Walk to the next band"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.6" cy="8" r="1.9"/><circle cx="12.4" cy="8" r="1.9"/><path d="M6 8h4"/></svg></button>
+  <!-- The two errands a grown band does that a new one cannot: there is nowhere
+       to quarry until somebody has found the rocks, and nowhere to stand until
+       somebody has been buried. -->
+  <button class="btn icon order" data-order="quarry" aria-label="Work the rock" title="Work the rock"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5 6 5l4.5 3L14 12.5Z"/><path d="M6 5l1.6 3.5"/></svg></button>
+  <button class="btn icon order" data-order="fish" aria-label="Go fishing" title="Go fishing"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8c3-3.4 7.2-3.4 9.6 0-2.4 3.4-6.6 3.4-9.6 0Z"/><path d="M12.1 8l2.4-2.2v4.4Z"/></svg></button>
+  <button class="btn icon order" data-order="raid" aria-label="Go and take it" title="Go and take it"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 11 5"/><path d="M9 3h4v4"/><path d="M3 9l4 4"/></svg></button>
+  <button class="btn icon order" data-order="mourn" aria-label="Go to the stones" title="Go to the stones"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 13V6.4a2.8 2.8 0 0 1 5.6 0V13"/><path d="M3.6 13h8.8"/></svg></button>
 </div>
 
 <div id="map">
   <canvas id="mapCanvas" width="384" height="384" title="click to travel"></canvas>
+  <!-- Only on the full-page map. A corner map is too small to put controls on
+       and does not need them: M is the whole interface it has. -->
+  <div id="mapUi">
+    <button class="mapBtn" id="mapOut" title="Zoom out">−</button>
+    <button class="mapBtn" id="mapIn" title="Zoom in">+</button>
+    <button class="mapBtn" id="mapMin" title="Smaller map (M)">▣</button>
+  </div>
+  <div id="mapScale"><i></i><span>—</span></div>
 </div>
 
 <!--CONFIG-->

@@ -41,14 +41,44 @@ for (const note of [...notes, ...server.notes]) console.warn(`  ! ${note}`);
 const db = openDb(join(ROOT, server.chronicle_db));
 const payload = { values, explicit, chronicle: Boolean(db) };
 
+/* How big a body each endpoint may send.
+
+   A megabyte was one number for everything, and a saved world is not the same
+   kind of object as a day's tribe rows. `LINE_MAX` alone is twenty thousand
+   people who have ever lived at about 123 bytes each — two and a half megabytes
+   before a single living person, a grave or a skill is written — so the page
+   could produce a save the server would not take, and neither cap knew the
+   other existed. `test.js` compares them now.
+
+   Everything else stays tight: these are small, fixed-shape messages, and a cap
+   that fits them is a cap that catches a client gone wrong. */
+export const STATE_LIMIT = 12_000_000;
+export const BODY_LIMIT = 1_000_000;
+
 /** Read a JSON body, with a cap so a stuck client cannot fill memory. */
-function readJson(req, limit = 1_000_000) {
+function readJson(req, limit = BODY_LIMIT) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > limit) { reject(new Error('body too large')); req.destroy(); return; }
+      if (size > limit) {
+        /* Marked, so the handler can answer 413 rather than 500. What the page
+           does about it matters — it falls back to keeping the world in the
+           browser — and it cannot do that if all it gets is a dead socket and a
+           stack trace on the server's console. */
+        const err = new Error(`body too large: ${size} bytes, limit ${limit}`);
+        err.tooLarge = true;
+        /* Stop reading, but do not tear the socket down here: the 413 has not
+           been written yet, and a client that gets a dropped connection instead
+           of a status cannot tell "too big" from "the server is gone". It falls
+           back to keeping the world in the browser either way — but only one of
+           those two tells it why. The handler destroys the request after it has
+           answered. */
+        req.pause();
+        reject(err);
+        return;
+      }
       chunks.push(c);
     });
     req.on('end', () => {
@@ -115,7 +145,7 @@ createServer(async (req, res) => {
         if (req.method === 'POST') {
           // Stored as the text it arrived as: the server has no opinion about
           // the shape of a snapshot, and versioning it is the page's business.
-          const raw = await readJson(req);
+          const raw = await readJson(req, STATE_LIMIT);
           db.saveState(JSON.stringify(raw));
           return json(res, 200, { ok: true });
         }
@@ -198,9 +228,34 @@ createServer(async (req, res) => {
       return res.end('forbidden');
     }
     const body = await readFile(file);
-    res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': TYPES[extname(file)] || 'application/octet-stream',
+      /* The same promise the page itself is served with, and for a worse
+         reason. A response with no `cache-control`, no `etag` and no
+         `last-modified` is one the browser may reuse without asking — so
+         `index.html` came back new every reload, exactly as intended, while the
+         modules it loads came out of the cache.
+
+         That is a page half of which is the code you just wrote. It reads as
+         the new markup being inert: the buttons were there and did nothing, the
+         scale bar sat at its placeholder, the labels never drew — because the
+         new HTML was talking to the old `map.js`. Nothing is wrong with the
+         code in that state and nothing about it is visible from inside the
+         page, which is what makes it worth a header on a local sandbox that has
+         no reason to cache anything. */
+      'cache-control': 'no-store',
+    });
     return res.end(body);
   } catch (err) {
+    /* Too big is the client's mistake and it has something to do about it, so
+       it gets an answer rather than a dropped connection: the page keeps the
+       world in the browser instead. Logged once as a warning, because a save
+       that will not fit is worth knowing about and is not a crash. */
+    if (err.tooLarge) {
+      console.warn(`  ! ${req.method} ${req.url}: ${err.message}`);
+      json(res, 413, { error: err.message });
+      return req.destroy();               // answered; now stop listening
+    }
     const code = err.code === 'ENOENT' || err.code === 'EISDIR' ? 404 : 500;
     if (code === 500) console.error(err);
     res.writeHead(code, { 'content-type': 'text/plain' });

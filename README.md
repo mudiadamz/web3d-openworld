@@ -102,6 +102,36 @@ so saving twice renames rather than duplicates) and in `localStorage` when there
 is not — and when there is neither, which is a real state in a private window,
 the shelf degrades to the one world you are in rather than to an exception.
 
+## A save has to fit through the door
+
+`Error: body too large` — a stack trace on the server console and, in the page,
+nothing at all. Three separate things, and the third was the one that mattered.
+
+**The two caps had never been compared.** `LINE_MAX` is twenty thousand people
+who have ever lived, at about 123 bytes a row: two and a half megabytes of
+lineage before a single living person, grave or skill is written. The server
+took one megabyte for every endpoint. Neither number knew the other existed, and
+a long-running world walked straight past it — the more so now, with room for
+two hundred people and twelve skills apiece.
+
+The save endpoint has its own limit now, sized from the shapes the code actually
+writes. Everything else stays at a megabyte: those are small, fixed-shape
+messages, and a cap that fits them is a cap that catches a client gone wrong.
+`test.js` computes the largest save the page could produce and fails if the
+server would refuse it, so the two cannot drift apart again.
+
+**The page read the refusal as a save.** It awaited the fetch and returned
+without looking at the response, so a 413 was indistinguishable from success —
+and the fallback that keeps the world in the browser, sitting directly below,
+never ran. A world too big for the server was a world silently not kept. It
+checks `res.ok` now.
+
+**And the server dropped the connection instead of answering.** `req.destroy()`
+fired before the 413 was written, so the client got a network error, which it
+cannot tell from the server being gone. It falls back either way — but only one
+of those tells it why. The request is paused, the status is written, and the
+socket is closed after.
+
 ## Keeping your place
 
 Reload the tab, restart the server, come back tomorrow: the band is where you
@@ -444,6 +474,67 @@ goes, which is the wrong way round for a record and the right way round for a
 view: what you can still find on the ground is living memory, and the chronicle
 keeps the rest.
 
+## Fish, and the raft
+
+The island has had water round it since the first frame and nothing has ever
+eaten out of it. A coast was the one piece of ground worth standing on for a
+reason nothing in the simulation could see.
+
+**Fishing is foraging with a different larder**, and it is built that way on
+purpose: the same trip, the same arriving, the same haul into the same store, the
+same baskets carrying it, and the same ground that runs down and grows back.
+What differs is where it is worth doing.
+
+**The good water is the deep water**, and two thirds of it is out of reach from
+the bank. That is what a raft is for — the only thing in this world that opens
+ground rather than improving what a band already does with it. A band builds one
+once it has fished enough to be sure it is worth the wood, and it goes in the
+chronicle like anything else a band works out.
+
+**The sea does not have a winter the way the ground does.** Land forage falls to
+0.35 of high summer; the water falls to 0.75. A band on a coast eats in
+February, and a band that founded itself inland does not — which is one of the
+few things that makes two camps on one island live differently, decided by where
+their founders happened to stop.
+
+**And it made the same mistake foraging did, for about ten minutes.** A single
+landing per camp is everybody standing in the same water until it is fished out,
+with nothing telling them to walk along the beach: the ground worked over a run
+fell from seven patches to two. Fishing spots are chosen the way forage spots
+are now — what the water is worth, less the walk, times a guess — so the
+depletion pushes a band along its own coast and back a week later.
+
+## Ground that gives out
+
+Foraging read a noise field and nothing else, so a patch was worth exactly as
+much on its thousandth visit as its first. And every forager in a band works the
+same best spot out of the same numbers — so the whole band walked to one place,
+for ever. There was no mechanism by which it could have done anything else: the
+ground could not run down, and nobody had an opinion of their own.
+
+**The ground runs down now.** A completed trip takes from a coarse grid of what
+is left, and it grows back over the following days — proportionally, like the
+fruit, so a stripped patch recovers quickest and a lightly-worked one is barely
+marked. A patch stands about two trips before the ground next to it is worth the
+walk, which is what sends the third forager somewhere else. It never reaches
+nothing: there is always something there.
+
+Eight metres a cell — about the ground one person works in an afternoon — and
+one float apiece, so a 3200 m island is 640 KB. It belongs to **the ground**
+rather than to a band, so two camps sharing a hillside strip it between them.
+That is what `GROUND.range` and the crowding rules were always about, and what
+they had no physical basis for until now.
+
+**And nobody has to agree.** Where a spot is worth going is a guess, not a
+measurement: the value is jittered by about a fifth either way, small enough
+that a good patch usually still wins and large enough that a close second
+sometimes does. The jitter multiplies the whole value, fruit and ground
+together — applied to one term and not the other it would be exactly the
+preference the "weighed in food, not in preference" rule exists to keep out.
+
+Measured over a driven run, a band went from holding **three** places worth
+foraging to **six**, and no patch was picked past 38%.
+
 ## Ground
 
 Three bands shared one island and nothing about that was true of any of them.
@@ -603,6 +694,72 @@ Measured on a village of 105: **5 figures on screen**. On a band of 16 in the
 morning: 10 of 16. How many you see is really how many are out working, which is
 the number that was always interesting and was never visible under the crowd.
 
+## A camp is a village that has not grown yet
+
+Fourteen tents in one ring around one fire was the only thing a band could ever
+be. Past that the ring was full, everybody left over shared the last tent, and
+`SPLIT.at` sent half of them over the hill at seventeen people — so a band that
+was doing well was a band that split, and no band was ever big.
+
+Three things changed together, because none of them works alone:
+
+**A tent per household.** That part was already true — a pair and the children
+that belong to them get one tent, whatever its size, and the unpaired share,
+because a camp is short of shelter rather than of ground. What was missing was
+anywhere to put the fifteenth.
+
+**A hearth per cluster of tents.** Fifty tents in five clusters of ten, each
+round its own fire. Tents fill their own hearth's ring before the next hearth
+is used at all, so a band that grows *lights another fire* rather than packing
+more tents round the first — which is the difference between a village and a
+crowd. A fire is lit only once there are tents round it, so a band of one
+household still looks exactly like the camp it always did. Each flame burns on
+its own beat: five fires on one flicker read as a mechanism rather than as fire,
+and the smoke is shared out between the ones that are lit rather than all
+rising off the middle.
+
+**One point light for the village, not one per hearth.** A real light is the
+most expensive thing a camp owns and there can be a hundred and forty camps;
+five apiece is seven hundred lights in a scene that otherwise manages with the
+sun. One in the middle lights the whole village, and the fires are emissive so
+every hearth still reads as burning.
+
+**And people live at their own hearth.** The village had its five fires and
+nobody sat at four of them: everything meaning "go home" — dusk, an errand
+ending, a job by the fire, a hunt finishing, seven call sites in all — aimed at
+`camp.x`, and `camp.x` is hearth nought. Sixty people walked past four burning
+fires to stand at the first one, and the hearths were furniture.
+
+Which fire is yours comes off your tent, so a household sits together — the
+same rule that put their tents beside each other. The exception is a tiger:
+running for the fire takes the *nearest* one, because everything else about
+going home is about where you live and that one is about getting behind a fire
+before it reaches you.
+
+That change found an older bug in the same place. `assignHuts` decides both
+which tent you sleep in and which fire you live at, and it ran only when the
+band changed — a birth, a death, somebody leaving. So a freshly built world had
+no households at all: every hut hidden, every person walking to the middle of
+the village, and the whole thing quietly coming right the first time somebody
+was born. Founding a band is a change to it, and the largest one there is.
+
+`SPLIT.at` is 60 now — about twenty-five households, half the tents a village
+has, with the rest as headroom for the years when nobody has died. What sends
+half a band over the hill is the walk out to the foraging rather than the room
+by the fire.
+
+Two numbers had to move with it, and one of them was a real bug caught by a
+test that compares them directly: `CAMP_CLEARING` went from 17 to 26 so the
+trampled ground covers the village, and `PANIC.fireSafe` from 14 to 17 so that
+the ground a well-kept fire keeps a tiger off covers it too. At 14, the outer
+third of every village was ground where somebody could reach their own tent, be
+inside the camp by every other rule in the world, and be taken there.
+
+And one that only a running world could catch: `CAMP_PIECES` is walked by
+`buildCamps` to park every slot of the mesh each key names, so adding a `fires`
+key to it — when the fires have their own mesh and their own count — was a
+TypeError on the first frame of the first world.
+
 ## A camp you can read
 
 Every camp looked the same whatever was happening to it. A band of four and a
@@ -621,6 +778,50 @@ until now only ever appeared on a panel.
 Both are read off state that already existed. The camp is laid out once and then
 *dressed* — because the layout comes off the camp's own generator, and re-running
 it every time somebody is born would shuffle the whole camp around them.
+
+## A band's own card
+
+Three tabs and a pin. **Who is here** is the roster; **who is gone** is the
+dead and the ones who left; **what happened** is the band's own history.
+
+That last one is the chronicle read the other way round. The chronicle is every
+line from every world and it is searchable, which is the right shape for "when
+did anybody last learn to cure meat" and the wrong one for "what has become of
+these people" — so this is one band, milestones only, capped at forty lines. A
+band's forty years is thousands of lines and eight of them matter, which is the
+same filter the panel and the fast-forward log already use.
+
+**A band is found in the record by the code its lines carry**, not by a stored
+id — the same reason its colour is worked out from the code. A line is text: it
+outlives the camp that wrote it and travels to another world's chronicle intact,
+so `[TS]` in a line written forty years ago still says Tsekash and nothing has
+to have been kept. A line that names two bands, which is what a visit or a split
+looks like, shows up in both their histories, correctly.
+
+And the pin in the header goes and stands there: **every overlay down, the
+camera at their camp, the orbit pointed at the middle of it.**
+
+It took three goes, and the two wrong ones are worth keeping because they are
+the same mistake twice — a button that fails silently is indistinguishable on
+screen from a button that is not wired up, so every theory about why it "did
+nothing" looked equally good.
+
+1. It travelled and left the card open, on the reasoning that the reason to go
+   is to look at what the card describes. `#tribe`, `#chron` and `#keys` are all
+   `position: fixed; inset: 0` with a dimmed, blurred backdrop, so the camera
+   moved and you were left looking at the overlay.
+2. It closed the card and no other overlay, which is the same bug with a smaller
+   blast radius.
+3. It read `tribeShown` out of another module's live binding at click time and
+   returned silently when that was not what it expected. Now the card writes the
+   band on the pin when it renders — the card is drawn for exactly one band, so
+   that is the band, recorded where the click can reach it without asking
+   anybody — and if there is still no camp it says `no band to go to` rather
+   than doing nothing.
+
+Clicking a band on the *map* still opens the card, and that is deliberately the
+opposite gesture: there you are asking who they are, here you are asking to see
+them.
 
 ## Who somebody is
 
@@ -807,6 +1008,68 @@ itself — its `requestAnimationFrame` stub returned early once the boot was
 done, so a loop of forty thousand frames incremented a counter and ran no
 simulation at all while reporting "40000 frames driven".
 
+## The map
+
+Off, a corner map, the whole window. `M` walks the three. It was five sizes
+once, and 118 and 168 and 236 were mostly each other — four keypresses to make
+a decision that is only ever "get it out of the way" or "let me look properly".
+
+**Travelling puts a full-page map away.** Travelling is "show me that place",
+and a map filling the window is the one thing between you and it: click a band
+on the full map and you arrive behind the map you clicked, which reads as the
+click having done nothing. It is the same mistake as leaving the band card up,
+one layer further out — and it caught the pin too, which closes every popup and
+then hands you a map. A corner map stays where it is; it is not in the way.
+
+**A band on the map is a place rather than a coordinate.** Clicking one goes to
+their camp — the rig lands on the fire, not on whichever metre of ground the
+pointer was over — and opens their card beside it. The dot is drawn under two
+pixels across, which is a fine thing to look at and an impossible thing to hit,
+so what is clickable is a ten-pixel target round it, sized for a pointer rather
+than for the island. The cursor says which of the three things a click will do:
+a hand on a map you can drag, a pointer on a band you can go and look at,
+nothing in particular on ground you can travel to. A target you cannot see is a
+target nobody presses.
+
+**The full page is a different object from the corner.** A glance needs a
+relief and some dots; a map you are actually reading needs to say what it is
+showing you, so at that size it also carries:
+
+- **the band codes**, the same two characters in the same colour as the chip
+  beside the name on the panel. Outlined rather than boxed — a label with a
+  panel behind it hides the ground it is labelling, and there can be twenty.
+- **the paths, as roads.** A worn track is about two and a half metres across,
+  which is under a pixel at island scale, so it is drawn thicker than it is —
+  which is what a map does with a road. Only where the ground itself has browned:
+  a road on the map that is not under your feet when you get there is worse than
+  no road. Cached into an image of the whole island like
+  the relief and rebuilt only when `pathVersion` says the ground has changed;
+  repainting a few thousand worn cells fourteen times a second to get the same
+  picture is most of what the map would otherwise cost.
+- **a scale bar** in metres or kilometres, a round distance with its length
+  following, rather than a round number of pixels with a distance like 0.83 km.
+- **zoom**, on the buttons or the wheel, and **drag to look elsewhere**. Past 1×
+  it centres on where you are — finding yourself on the map is the reason to
+  zoom — until you drag it, and then it stays where you put it, because being
+  unable to look at the next valley without walking there is why that is not
+  enough. Zooming back out is how you hand it back. It never scrolls off the
+  side of the world.
+
+  The same pointer does two things here, and the only thing between them is how
+  far it moved: a click travels, a drag pans, and four pixels is the line. That
+  is a `pointerup` that decides, not a click handler — a click handler cannot
+  tell you what happened before it. Zooming crops the relief rather than re-rendering it, so a
+  keypress does not re-sample a quarter of a million heights — it goes soft as
+  you go in, the way paper does, and the markers on top stay sharp because they
+  are drawn rather than sampled.
+- **a frame**, and a button to put it back in the corner.
+
+One transform serves both what is drawn and what is clicked, so a zoomed map
+cannot disagree with itself about where something is — otherwise you click a
+camp and travel somewhere else. Leaving full size drops the zoom with it: a
+92-pixel map of somewhere you cannot identify, with no control on it to undo
+that, is worse than no map.
+
 ## Seeing ahead
 
 Name a number of years on the panel and press **Run years**. The world runs on
@@ -901,7 +1164,41 @@ both at their maximum, five years came to **seven million steps**.
 1.0 years · people 16 -> 15 · skills 21/40/91/20/31/58 -> 100/99/99/100/99/99
 ```
 
+### And what it found the second time
+
+A session of new mechanisms — paths, roles, raids, fishing, a graveyard — left
+three simulated years 27% slower, and the fast-forward felt stuck. Profiled
+rather than guessed at, and the first two guesses were both wrong: recovering
+the foraged ground over the whole island grid, and re-serialising the chronicle
+on every line, together bought nothing measurable. Both were worth fixing and
+neither was the problem.
+
+**The problem was that the unwatched world was still being drawn.** `stepWorld`
+sets `drawingWorld` false, `updatePeople` checks it before posing anybody — and
+does not check it before *hiding* anybody. Somebody indoors is parked out of
+sight with seventeen zeroed matrices, and that was happening for every hidden
+person on every step of a run nobody was looking at.
+
+| | before | after |
+|---|---|---|
+| three simulated years | 10.4 s | **8.6 s** |
+| spent writing matrices | 7.3% | **1.3%** |
+
+That is the same mistake the herds had and were fixed for, arrived at from the
+other side: the guard went on the half that draws somebody and not on the half
+that unde-draws them. The first drawn frame afterwards walks the same branch and
+parks them properly, which is why skipping it costs nothing.
+
+Two scans were made cheap on the way past, both of which a busier world had
+turned from small to significant. `pickFruit` walked every fruit on the island
+for each completed trip — and walked all of them precisely when there were none
+within reach, which is the common case; it reads a bucket index now, built once
+with the trees. And the chronicle was serialised and handed to `localStorage` on
+every line logged; it is flushed with the day's books instead.
+
 ### What it found
+
+
 
 **The scenery was most of the cost.** Profiling the step showed birds and
 butterflies taking longer between them than every herd, boar and tiger on the
@@ -1050,6 +1347,259 @@ ground that has had time to grow back — rather than a line. The regulator is t
 crash. Nothing else changed: the three consumers of `FOOD.comfortable` are
 untouched, because they are what makes the crash happen.
 
+## Somewhere to put the dead
+
+They were buried where they fell. That is defensible and it reads as nothing: a
+stone in the long grass eight hundred metres out is scenery, and forty of them
+scattered over an island are litter.
+
+**Every band has one place it buries people**, picked once when the camp is
+laid out, from the camp's own stream so it cannot wander when somebody dies.
+Just outside the trampled ground — far enough that the village is not built on
+its own dead, near enough to be theirs — on flat, dry ground, sited the way a
+camp is. Somebody who dies out on the hill is carried back, which is the whole
+difference between a grave and a place where somebody died.
+
+The stones are laid in rows off the ground's own line, growing outward, so the
+oldest are at the middle: **how big it is, is how long they have been here.**
+
+## Making things, and getting them somewhere else
+
+The ninth and tenth, and between them they are the two halves of having things
+at all.
+
+**`wares`** is the domestic craft — hides scraped and sewn, bedding, pots, the
+carved and the useful. It is not weaving (that is `baskets`, and it is about
+carrying) and it is not knapping. What it moves is **how well a band rests in
+its own camp**: at mastery a night is worth half as much again, and the band
+that sleeps well is the band that hunts. Only on the way up — home goods make a
+night worth more, they do not make a chase cost less. It is worked at when there
+is time to work at it, which is what a full store buys: a hungry band scrapes a
+hide to carry meat in, a fed one carves it.
+
+**`trade`** is dealings between bands, and like the graveyard pair it is learned
+by doing it rather than by sitting down to it — you get better at trading by
+trading, and both sides learn, because you cannot trade with somebody who is not
+also trading. What it moves is **how much actually changes hands**: at mastery a
+band moves half again as much of its surplus, which is the difference between a
+neighbour who is fed and one who is merely visited. Never more than the surplus,
+because more than all of it is not a trade, it is a subtraction.
+
+It reads backwards for about a second — the band that is good at trading gives
+more away — and then it does not: the band with a name for dealing is the band
+that has dealt.
+
+## Stone, and what it is for
+
+The eleventh and twelfth are one chain rather than two more entries: somebody
+gets it out of the ground, somebody else turns it into something that makes
+every other job quicker.
+
+**`mining`** is worked at an outcrop — one of the rocks actually scattered on
+the hillside, because a spot invented for the errand is a person standing in a
+field pretending. Only the ones big enough to be worth the walk; a pebble is not
+a quarry. Nobody goes on an empty store (stone feeds nobody today) and nobody
+goes when the pile is already high.
+
+What it produces is not a number on a card but **a stock in the camp**. Stone
+does not spoil, and that is the whole of what makes it different from food: a
+band can hold it, and therefore trade it.
+
+**`tools`** is what the stone is for. It does not sharpen a spear (`spears`) or
+weave a better basket (`baskets`) — it makes **the work itself quicker**. An
+errand that took twenty seconds takes twelve at mastery, so a day holds nearly
+twice the errands, which is the difference tools have always made and it
+compounds with everything else a band knows. Not sleep: a good axe does not
+shorten a night.
+
+**It cannot be practised without stone**, which is why the two are one thing.
+`craftChoice` will not pick toolmaking with an empty pile, and a session that
+does pick it spends what somebody quarried — taken where it is spent rather than
+where it is chosen, so choosing stays free of side effects and can be asked
+twice.
+
+**And stone is traded.** It goes the way food does, only what is spare and only
+to a band that has none, and dealing in it teaches dealing. That is what makes
+it a good rather than a number in a camp. A band that walks away to found a
+daughter camp carries nothing but what it knows: the pile stays in the ground it
+was quarried into, and the new band starts at the rocks again.
+
+*(There is no livestock to trade. Every animal in this world is wild — the herds
+are hunted, not kept — so herding would be a subsystem rather than a skill.)*
+
+## Taking it instead
+
+A band with a full pile and a hungry neighbour is a fact about the world before
+it is a fact about either of them. Until now the neighbour could only walk over
+and ask, and a band with nothing to spare said no by having nothing — that was
+the whole of what one band could do about another.
+
+**A raid is the other answer, and nothing in it is new.** It is the same walk
+over the hill a visit is — the same daylight, the same distance, the same
+arriving — and the only thing that differs is what happens when they get there.
+Hunger decides whether it is worth it, `war` decides how it goes, the store and
+the stone pile are what changes hands, and the toll and the chronicle say what
+it cost. There is no new resource and no new place.
+
+**A band asks before it takes.** `RAID.hungry` sits past `VISIT.begFrom`, so a
+band that could still walk over and beg, begs. That ordering is the whole ethics
+of it and it is one comparison.
+
+**What a band is worth taking from** is its surplus food plus its stone, and the
+stone is most of it: food spoils at 18% a day, so nothing can hoard it, and the
+pile is the only thing in this world that keeps. It is on the band card, because
+it is the number that makes a band a target.
+
+**How a raid goes** is the two strengths. Both sides are counted as they
+actually stand — who is well, who is rested, who is a warrior — and the
+defenders have their own camp behind them. Practice counts for more than
+numbers: at mastery `war` is worth two and a half people, so six practised
+defenders hold off twelve desperate raiders. What keeps it a gamble rather than
+an arithmetic problem is that a hungry band cannot see how the other one has
+been eating.
+
+Both sides get better at it, which is the uncomfortable part and the true one: a
+band that has been raided knows how to hold a camp. And somebody may not come
+back — the losing side pays it, `raid` is a way to die like the tigers and the
+sickness, and it goes in the tally.
+
+**The warrior** is a role rather than a job, because there is nothing to do all
+day. They lean on tending the fire and they are who a raid is made of; what
+makes them warriors is being at home when somebody comes for it. A band keeps a
+few once it has anything worth taking.
+
+## Roles, which a band has to be able to afford
+
+A band of eight is eight people doing whatever needs doing, and that is right:
+there is no room in a hungry camp for somebody who only knaps. A band of forty
+with a full store is a different thing — it can afford somebody who is *the*
+knapper, and it gets better at knapping because of it.
+
+So specialising is not a setting. It is something a band can afford, on two
+conditions that already meant something before this existed: **six households**,
+so the work can be split, and **eight days of food**, so a week of somebody not
+foraging does not show. Below either, everybody forages and the roles go away
+again — which is what a bad winter does to a village.
+
+| role | leans toward | will not |
+|---|---|---|
+| chief | tending the fire | forage, hunt, quarry |
+| hunter | hunting | — |
+| toolmaker | knapping | hunt |
+| healer | sitting with the ill | hunt |
+| fire-keeper | tending | hunt |
+| quarrier | the rocks | — |
+| trader | walking to the next band | — |
+| *(everyone else)* | foraging | — |
+
+**A role is a bias, not an assignment.** It multiplies the weight of its own job
+and zeroes the ones it refuses, so a toolmaker still eats, still sleeps and still
+runs from a tiger; they simply do not spend the morning on the hill when there
+are twenty people who will. The chief is the one this is really for: they tend,
+they are there, and they are not out foraging.
+
+**Who gets which is what they already know.** `p.knows` is a person's own memory
+of each skill, so the band's best spear-hand becomes the hunter — the same
+number `pickChief` reads and the same one that caps what a camp can learn. A
+band specialises along the grain of what it happens to be good at, and a band
+that has never been to the rocks has no quarrier: it has people who sometimes go
+there, which is where quarriers come from.
+
+How many of each is a share of the band, so a village of forty has four hunters
+and a camp of ten has one. It is worked out for the whole band at once, once a
+day, because the shares are a fact about the band — you cannot ask "am I the
+healer" without knowing who else wanted to be.
+
+The band card has a column for it, and the follow caption says it. Both stay
+blank for a band too small or too hungry to have divided the work, which is the
+column doing its job rather than failing to.
+
+**Two more buttons on the order row**, for the two errands a grown band has and
+a new one does not: work the rock, and go to the stones. There is nowhere to
+quarry until somebody has found the rocks, and nowhere to stand until somebody
+has been buried.
+
+## Fourteen skills, and where they live
+
+`life.js` grew past the length of the page it was split out of, which is a rule
+this project keeps rather than a number it happens to be under. So what a band
+knows is `src/skills.js` now: one subject with one edge, which is what made it
+the piece to move. Nothing changed on the way across.
+
+`life.js` **re-exports** the names rather than every importer being repointed —
+eight modules import them from there, and a move that is invisible to all of
+them is a move that cannot break any of them. It imports them back for its own
+use, because a re-export binds nothing locally.
+
+Eight of the fourteen are worked at the fire: `craftChoice` picks what an
+afternoon's work improves. Six are not. Two are learned at the graveyard —
+going back to it, and raising something over it — one by walking over the hill
+to the next band, one at a rock, one when somebody arrives to take what you
+have, and one standing in the water.
+
+`life.js` has since shed the larder as well — where food comes from, ground and
+water, in `src/larder.js`. It is handed positions and asked what they are worth,
+and knows nothing about people, camps or days.
+
+## Stones, which is the eighth
+
+`rites` is going back to the graveyard. **`art` is what a band does once going
+back is not enough:** it raises something over its dead.
+
+The form is the band's own, drawn once off its own stream — a ring, an avenue
+leading in, or a cairn — so two villages a kilometre apart have raised different
+things and neither of them chose to. How much of it is standing follows their
+`art`, so it goes up over years rather than appearing: a band at a tenth has a
+few stones on end, a band at mastery has the whole ring. It is the first mark
+any of them leaves that is not shelter or a tool.
+
+It is learned at the ground and nowhere else. Six of the eight skills come off
+`craftChoice` — the things a band gets better at by sitting down and working at
+them — and these two do not: going back to the graveyard, and raising something
+over it. The people who go back are the people who raise them.
+
+**And it moves a number, because a skill that only shows on a readout is a
+readout.** A band that has raised something is a band the neighbours walk to:
+`otherCamp` picks the nearest camp, and a monument counts as nearer than it is —
+at mastery a band pulls from three times as far, which is the difference between
+the next valley and the one after it. Visiting is how everything one band knows
+reaches another, so a gathering place pulls ideas toward it. That is the least
+romantic and most defensible thing a monument has ever done.
+
+Losing it does not take the stones down; they are still standing. What a band
+loses is being able to **say what the stones are for**.
+
+**The graveyard is on the map**, in a pale stone colour nothing else on it uses —
+the island is greens and browns, the bands are their own colours, the paths are
+trodden earth. What is standing there shows as a ring round the mark rather than
+a bigger mark, because how much of it there is, is the thing worth seeing from
+above, and where it is, is not.
+
+## Belief, which is the seventh thing a band can be good at
+
+The other six are techniques — knapping, weaving, curing, healing, tracking,
+fire-keeping. This one is not. A band that buries its dead in one place and goes
+back to it is doing the oldest thing people do that no animal does, and it is
+learned exactly the way the others are: by doing it.
+
+- **A burial** teaches it most, and it is rare. The rite comes from the death.
+- **Going back** teaches it a fifth as much, and there is a job for it —
+  somebody walks out to the stones and stands among them for an afternoon. It
+  needs a band that has buried somebody, and a hungry band stops going, which is
+  most of what makes it worth having: it is the first thing to go.
+
+**And it does something, because a skill that only shows on a readout is a
+readout.** A band gives up its ground when it has been squeezed for
+`GROUND.patience` sim-days — a rule about food and crowding, and the right one.
+A band with its dead in the next field weighs that differently: at mastery it
+endures two and a half times as long before it will walk away. Sometimes that is
+why it comes through a squeeze that would have scattered it. Sometimes it is why
+it starves where it stands. That is what belief is for.
+
+Like the others it can be lost, and the words for losing it are not "forgotten
+how to bury" — a band that loses this has not forgotten how to dig a hole. What
+goes is the going back.
+
 ## Six things a band can be good at
 
 Three was not enough to make two bands different from each other. Every band
@@ -1181,6 +1731,29 @@ the cheapest exemption in the file.
 
 ## Following somebody
 
+**F looks for somebody doing something.** On a fed island a third of a band is
+under fourteen, and what a child does is play, run about, sit at the fire and
+sleep — so F landed on one four times out of five, and you pressed it again.
+That is F not working rather than F being unlucky.
+
+The pool it picks from is now: an adult, on screen, on an errand. Everything
+under that is unchanged and is what makes the preference safe to have — the
+fallbacks were already there, because refusing to pick anybody is worse than
+picking badly, and a camp can genuinely be all children asleep in the rain.
+Measured with two adults put out on a hillside among fourteen children and
+sleepers: a hundred presses, a hundred adults on errands.
+
+Sitting with somebody who is ill is deliberately not on the idle list. It looks
+like sitting down and it is the most interesting thing in a camp with a sickness
+in it.
+
+**And never the person you are already behind.** That is not a nicety: narrowing
+the pool meant a band with exactly one adult on an errand handed you the same
+figure every time you pressed F, which is F doing nothing. The exclusion applies
+to both pools that can afford it.
+
+
+
 `F` puts you over their shoulder and picks somebody at random; `F` again finds
 somebody else. It used to take `C` three times to cycle into Follow and then `N`
 to find anybody — four keys to do one thing.
@@ -1297,14 +1870,118 @@ seconds, not wall seconds**: dividing world metres by real time gave a person
 walking at 1.35 a measured speed of 11.47 with the clock at 8×. A reading with
 no recent one to compare against says `—` rather than inventing a number.
 
+## What they are carrying, and why they are at the fire
+
+**A load is the shape of the thing it is.** Berries, a joint of meat and a
+morning's fish all came home as the same brown block — the one moment of a
+forager's day you can actually watch pay off, saying nothing about what they had
+been doing.
+
+One geometry still: a person is seventeen instanced pieces and a fourth load
+mesh is another two thousand slots on a big map. So the shape is in the scale
+and the kind is in the colour — a basket round and reddish, a joint blocky and
+dark, a catch long, flat and pale, stone grey and squared off. At thirty metres
+the silhouette is the difference between somebody coming back from the hill and
+somebody coming up from the water. The colour is written when the load changes
+hands rather than every frame, because what somebody is carrying is a fact about
+the errand and not about the frame.
+
+**And "at the fire" is where, not why** — which for a third of a band on any
+afternoon is the whole caption, making it the least informative thing the page
+says about the most people:
+
+| | |
+|---|---|
+| `keeping the fire` | it is their job |
+| `resting by the fire` | there is nothing left in them |
+| `at the fire, with nothing in the store` | |
+| `at the fire, out of the cold` | it is winter |
+| `sitting up at the fire` | it is night |
+| `at the fire` | and sometimes that is all it is |
+
+Read in that order, and the order is the point twice over. Somebody with nothing
+left is resting whatever else is true of the evening. And night comes last
+because it is the least surprising: everybody is at the fire at night, and
+saying so of all of them is saying nothing.
+
+## Where somebody has come in from
+
+"Walking to the fire" says where somebody is going and leaves out the half you
+can watch them doing, which is coming in off something. A village has five
+hearths and everybody is walking to one of them at dusk; which fire is not the
+interesting part.
+
+| | |
+|---|---|
+| `walking to the fire, back from a hunt` | |
+| `walking to the fire, back from the rocks` | |
+| `walking to the fire, back from the stones` | |
+| `off to sit and knap, back from the foraging` | |
+
+One field, set in the one place a job is chosen, and said only when it is worth
+saying: nothing for the camp jobs, because "back from resting" is not news, and
+only when somebody is coming *in*. Walking out to forage "back from a hunt" is
+two errands in one sentence.
+
+## What a visit is for
+
+"Walking to the next band" says where and not what, and a visit is the one
+errand in this world with several completely different points to it. The caption
+says which, in the order the reasons matter:
+
+| | |
+|---|---|
+| `to ask for food` | their own store is empty — somebody starving is going for food whatever else is in their arms |
+| `with food` | theirs is comfortable and the neighbours are hungry |
+| `with stone to trade` | they have a pile spare and the neighbours have none |
+| `to show them curing` | they know something the hosts do not |
+| `to see them` | and sometimes that is all it is |
+
+None of it is invented for the caption. Each line is the same condition the
+visit was chosen under and the same one `arriveAtCamp` acts on when it gets
+there — including the last two, which read a visitor's *own* memory rather than
+their camp's, because what somebody can show is what they personally know, and
+that is the number the teaching goes through.
+
 ## Names
 
-Everybody is **`[XX] Name`** — their band's two characters, then them. A camp's
-code comes off its seed, and its **colour comes off the code itself**, not off
-the seed. That is what lets a chronicle line written in another world, years
-ago, still show its band in the right colour: the line stores `[TK]` as plain
-text and the colour is worked out from those two characters at the moment it is
-drawn. Nothing is stored, and nothing can drift.
+Everybody is **`[XX] Name`** — their band's two characters, then them.
+
+**A band's code comes out of its own name.** Tsekash is TS. It used to be a hash
+of a seed, which made it unique and meaningless: the chip on the map and the
+name on the panel were two unrelated facts about the same band, and you learned
+the pairing by rote. The second character is the first of these nobody has
+taken:
+
+| | | |
+|---|---|---|
+| the name's second letter | Tribe | `TR` |
+| the start of its last syllable | Tribetwo | `TT` (TR being gone) |
+| any other letter in it | Tsotsa | `TO` |
+| any letter at all | — | cannot run out inside one island |
+
+Every one of those but the last is still *from the name*, which is the whole
+point: a code you cannot derive is a code you have to look up. The end of a name
+comes before the middle because the end is the part that makes it that name.
+
+Its **colour comes off the code itself**, not off a seed. That is what lets a
+chronicle line written in another world, years ago, still show its band in the
+right colour: the line stores `[TS]` as plain text and the colour is worked out
+from those two characters at the moment it is drawn. Nothing is stored, and
+nothing can drift.
+
+**Making the codes meaningful forced the hash to change.** `h * 31 + c` moves
+the hue by one degree per step of the last character — invisible while codes
+were random and spread over the whole space, fatal once they are initials, since
+half the bands on an island can share a first letter and `TR` and `TS` would
+have come out two degrees apart on the very dots the map uses to tell them
+apart. It is an FNV hash with a finalizer now: twenty codes sharing a first
+letter reach across the wheel instead of sitting inside a thirty-degree window.
+
+World codes are still drawn from the world's seed rather than its name, and
+deliberately: a world's code is stored in every chronicle line it ever wrote,
+and worlds come and go across sessions, so it has to be a fact about the seed
+that nothing can renumber.
 
 One function writes it, so no line can name a person without naming their band.
 
@@ -1375,6 +2052,80 @@ you walked away from it and eventually cull itself out of the frame. The sphere
 is computed over everything in the tile and the count restored afterwards.
 
 `GRASS` still sets the density, and `?grass=0` still turns it off entirely.
+
+### How wide a path comes out
+
+Three numbers decide it — where the ground starts to brown, where it reaches
+full, and how far the colour goes — and all three were set once and never
+measured. Measured now, on a route walked twenty times with the wander a real
+walk has:
+
+| | before | after |
+|---|---|---|
+| painted width | 3.8 m | **2.6 m** |
+| strongest tint | 88% | **50%** |
+
+The wear field is sampled with a linear filter, so a track one cell wide paints
+a tent three metres across before any threshold trims it; browning from 0.10
+painted the whole tent, base and all, at nearly full strength. That is a road.
+Starting at 0.45 cuts the base off and leaves the middle of it.
+
+The cell stays at a metre and a half. A finer one narrows the path — 1.2 m cells
+measured 0.9 m across — but it also changes how fast wear accumulates, since the
+same walking is spread over more cells, and it costs half as much memory again
+on both the CPU and the GPU. The thresholds do the same job for nothing.
+
+The grass still gives up before the earth shows, which is the order it happens
+in: thin first, bare after.
+
+## A better figure, and where the detail can afford to go
+
+A face is legible at about four metres. So is a knuckle, and so is a knee.
+
+Everything a person is made of is an `InstancedMesh` sized to the whole island —
+**eighteen pieces across twelve meshes**, times room for two thousand people. So
+a pair of eyes on everybody is four thousand instances to be seen on one figure,
+and a hand of fingers is twenty thousand. That number decides the whole plan:
+detail that is only visible up close does not belong in the instanced set.
+
+**The near set** is the answer. Plain meshes, one set of them, moved onto
+whoever is being followed and hidden the rest of the time. The cost is fixed and
+does not care how many people there are: a village of four hundred draws exactly
+the same face as a band of nine, because it is the same face.
+
+They hang off the matrices `writePerson` has already worked out, so a face
+cannot drift from the head it is on — that matrix already carries the person's
+build, their crouch, the bob of their walk and which way they are looking, and
+the eyes are placed in the head's own space.
+
+The failure mode is not cost but bookkeeping: a face left on somebody you
+stopped following, or never put on at all. One flag says whether anybody wore it
+this frame, and the moment that is nobody it is put away.
+
+**Done: the face.** Eyes, brows and a mouth. The eyes are most of it at this
+size — a mouth is a line and a brow is a shadow, but eyes are what make a head
+look at you.
+
+**The fist**, which is free and everybody's. Whether a hand is closed is already
+a fact about the world — carrying something, holding a spear, working — and
+closing it is a scale on the box every person already has. It is the one piece
+of hand detail that survives being thirty metres away, which is why it was worth
+doing before the fingers.
+
+**Joints**, in the near set: a ball at the elbow, the wrist and the knee. The
+limbs are capsules, so a bend already has no corner in it — what was missing was
+the joint reading as a *joint* rather than as the place two capsules happen to
+meet. Each is placed with the matrix the caller already had, because a joint is
+where the limb hanging from it starts, which is the origin of that limb's own
+space.
+
+**Fingers**, also near set: four and a thumb on each hand, and only when the
+hand is open. A fist is a fist.
+
+The set is twenty-one meshes now, up from five, and that growth broke the
+putting-away: `for (const k in nearParts)` reached the face and not the ten
+fingers nested a level down, so a face could come off while the hands stayed on
+the world. It is walked properly now, however deep it nests.
 
 ## Bodies
 
@@ -1710,6 +2461,19 @@ unwatched.
 
 ## Camera
 
+**Two views, and they are the two questions anybody actually has:** where is
+this, and who is that. Orbit is a rig you point at a place; Follow is a person
+you go with. `C` swaps them.
+
+Fly and Walk are gone. They were a free camera with WASD and the same free
+camera pinned to eye height, and what they were for — getting somewhere in order
+to look at it — is what clicking the map does, in one gesture, without flying
+across an island in real time. What they cost was real: a branch in every camera
+path, a movement block only they used, `W` and `S` bound to moving the camera in
+modes where `W` and `S` also mean things to the person you are steering, and a
+`travelTo` that had to ask which of four rigs it was landing and keep a height
+for each. Travelling lands one rig now.
+
 Three modes, cycled with `C` or picked on the panel. **Fly** is the default.
 
 **There is no move speed to adjust.** One speed, and `DAY_LENGTH` sets it — see
@@ -1776,6 +2540,27 @@ island falloff that ends the map in water rather than at a cliff. Vertex
 coloured by height and slope: sand at the shore, grass, rock on anything steep,
 snow on the peaks. Seeds are deterministic — the same number rebuilds the same
 island.
+
+**The falloff is a fraction of the map, not a number of metres.** It used to be
+`smoothstep(540, 820, d)` — tuned on a 1600 m island, and so what it went on
+meaning: asking for a bigger world gave you the same island in more water. 23%
+of a 3200 m map was land against 56% of a 1600 m one, and only 29% of the disc
+anybody is allowed to walk in. It is written against the half-width now and
+pushed outward, which puts the shoreline at about 0.92 of it — exactly where
+`canStand` stops you, so the edge of where you can walk is the water's edge
+rather than an invisible wall with beach carrying on past it.
+
+| | 1600 | 2400 | 3200 | 4800 |
+|---|---|---|---|---|
+| land, before | 56% | 33% | 23% | 17% |
+| land, after | **66%** | **66%** | **63%** | **67%** |
+| of the walkable disc, after | 87% | 88% | 86% | 87% |
+
+The band is the same fraction of the map it always was, so the coast falls at
+the same gradient rather than becoming a ring of cliffs — measured over three
+seeds the shoreline too steep to walk went *down*, 14% → 12% at 1600 m and
+24% → 9% at 3200 m, because on a bigger island the same fall is spread over
+more metres.
 
 **Creeks** — water that runs downhill and cuts the ground on the way, in three
 passes and no other order: trace a path by stepping downhill across the height
@@ -1982,10 +2767,20 @@ child into an empty store**, which is what ties the population to the seasons
 and the hunting rather than to a birth-rate constant.
 
 An `InstancedMesh` cannot be resized, so the meshes are allocated with headroom
-— four times the starting number — and the population is capped there. Every
-slot is given a skin, garment and hair colour up front, including the empty
-ones, because a child born on day forty has to look like a person the instant
-it exists.
+— **for everybody the island can feed**, which is 195 people per square
+kilometre: 499 on the default 1600 m map, 1997 at 3200, and 4000 at the top.
+Every slot is given a skin, garment and hair colour up front, including the
+empty ones, because a child born on day forty has to look like a person the
+instant it exists.
+
+It used to be four times the starting number, which meant `PEOPLE=16` stopped
+the world at 64 however much food there was — and it stopped by refusing
+births rather than by anybody going hungry, which is a ceiling with nothing in
+the world behind it. Allocating for the crowd instead costs a matrix per empty
+slot and no drawing at all, because the draw count is turned down to the band
+that exists: about a kilobyte a person across the seventeen pieces, so room for
+two thousand is a couple of megabytes and no frames. What stops a band now is
+the island — the ground it forages, the winters, and how many fires fit on it.
 
 `FERTILITY` scales the birth rate; zero is a band that will not replace itself.
 

@@ -8,7 +8,8 @@ import {
   camera, controls, renderer, starUniforms, streamMaterial, sunLight, waterUniforms,
   windUniforms
 } from './scene.js';
-import {
+import { roleWeight } from './skills.js';
+import { nearestRock,
   HIDDEN, _m4, _q, _s, _v, buildGrass, buildRocks, buildTerrain, buildTrees, buildWater,
   disposeGroup, disposeWorld, fauna, floraGroup, grassGroup, grassTiles, rockGroup,
   setDirtyTiles, setGrassTiles, stats, terrainGroup, updateTiles, world
@@ -20,10 +21,11 @@ import {
 } from './wildlife.js';
 import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
 import {
-  CAMP_CLEARING, buildCamps, buildGraves, buildPeople, campParts, camps, chooseCampSites, inCamp, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
+  CAMP_CLEARING, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
+import { buildPaths, tread } from './paths.js';
 import {
-  DUSK_AT, FOOD, GROUND, ORCHARD, PLAGUE, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, campIsIll, craftChoice, findPrey, forageRichness, groundOf, huntReach, nearestFruit, otherCamp, personAge, pickFruit, practise, tryKill, updateEconomy
+  DUSK_AT, FISH, FOOD, GROUND, ORCHARD, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, nearestFruit, otherCamp, personAge, nearestShore, pickFishing, pickFruit, practise, raidTarget, resolveRaid, takeForage, tryKill, updateEconomy
 } from './life.js';
 import { followIdx, leadRunning, syncLookFromCamera } from './chronicle.js';
 import { renderMapBase } from './map.js';
@@ -81,6 +83,12 @@ export function stepPerson(p, step) {
   const tryAt = (a, flat) => {
     const nx = p.x + Math.sin(a) * step, nz = p.z + Math.cos(a) * step;
     if (!canStand(nx, nz, flat)) return false;
+    /* Where the wear goes in, and the only place it can: this is the one
+       function in the world that moves a person, so a path is exactly the
+       ground people got across — not the ground they aimed at. Somebody who
+       spends the whole errand blocked by a spur wears the way round it, which
+       is what a path round a spur is. */
+    tread(p.x, p.z, nx, nz);
     p.x = nx; p.z = nz; p.yaw = a;
     p.phase += (step / (PERSON.stride * p.scale)) * Math.PI * 2;
     return true;
@@ -218,8 +226,16 @@ export function pickForage(p, camp, range) {
        their fire is not worth the basket. A hungry band stops caring, which is
        exactly when the two of them start to be a problem for each other. */
     const theirs = groundOf(x, z, camp) ? GROUND.shy * (1 - camp.hunger) : 0;
-    const value = (FOOD.gather * forageRichness(x, z) + fruit) * (1 - theirs) * known
-      - (away / 100) * FORAGE.farCost;
+    /* A guess at what it is worth, not a measurement of it. Two foragers
+       leaving the same fire at the same moment read the same numbers off the
+       same ground and walked to the same spot, every time, for ever — which is
+       a band with one opinion rather than twenty people. The jitter is small
+       enough that a good patch still usually wins and large enough that a
+       close second sometimes does, which is the difference between a band that
+       works a hillside and a band that works one bush. */
+    const guess = 0.78 + luck() * 0.44;
+    const value = ((FOOD.gather * forageRichness(x, z) + fruit) * (1 - theirs) * known
+      - (away / 100) * FORAGE.farCost) * guess;
     if (value > best) { best = value; bx = x; bz = z; found = true; }
   };
 
@@ -257,6 +273,48 @@ export function pickWork(p) {
     : p.job === 'gather' ? [26 * (p.child ? FORAGE.childRange : 1), 95 * far]
     : p.job === 'tend' ? FIRESIDE : [2, 9];
   if (p.job === 'gather') return pickForage(p, camp, range);
+  /* The water's edge. Found once for the camp rather than per trip — a coast
+     does not move, and searching for it every time somebody feels like fishing
+     is forty samples an errand for an answer that was the same yesterday. */
+  if (p.job === 'fish') {
+    const at = pickFishing(camp, luck);
+    if (at) {
+      p.targetX = at.x + (luck() - 0.5) * 6;
+      p.targetZ = at.z + (luck() - 0.5) * 6;
+      return true;
+    }
+    p.job = 'gather';                     // landlocked: the hillside then
+  }
+  /* Somebody else's fire. The same walk a visit is, and deliberately so: it is
+     the same hill, the same daylight and the same distance, and the only thing
+     that differs is what happens on arrival. */
+  if (p.job === 'raid') {
+    const mark = raidTarget(camp);
+    if (mark) {
+      p.raiding = mark;
+      p.targetX = mark.x + (luck() - 0.5) * 6;
+      p.targetZ = mark.z + (luck() - 0.5) * 6;
+      return true;
+    }
+    p.job = 'gather';                     // nobody worth it: eat instead
+  }
+  /* An outcrop. Read off the rocks that are actually scattered in the world
+     rather than a spot invented for the purpose — a quarry somebody walks to is
+     a rock you can see them standing at, and the ones near camp go first
+     because they are the ones worth walking to. */
+  if (p.job === 'quarry') {
+    const at = nearestRock(camp.x, camp.z, QUARRY_TRIP.reach);
+    if (at) { p.targetX = at.x; p.targetZ = at.z; return true; }
+    p.job = 'craft';                      // no rock within reach: something else
+  }
+  /* The stones, and a step short of them: standing among the graves rather than
+     at the edge of them is the difference between visiting and trampling. */
+  if (p.job === 'mourn' && camp.barrow) {
+    const a = luck() * Math.PI * 2, r = 2.5 + luck() * 2.5;
+    p.targetX = camp.barrow.x + Math.cos(a) * r;
+    p.targetZ = camp.barrow.z + Math.sin(a) * r;
+    return true;
+  }
   for (let t = 0; t < 14; t++) {
     const a = luck() * Math.PI * 2;
     const r = range[0] + luck() * (range[1] - range[0]);
@@ -272,19 +330,25 @@ export function pickWork(p) {
 }
 
 export function chooseJob(p, day) {
+  /* What they were at before this one. Kept for the caption and nothing else:
+     "walking to the fire" says where somebody is going and leaves out the half
+     you can see them doing, which is coming back from somewhere. One field, set
+     in the one place a job is chosen. */
+  if (p.job) p.came = p.job;
   if (day < 0.25) {
     // Night: the fire, or a hut.
     p.job = luck() < 0.55 ? 'sleep' : 'tend';
-    p.targetX = p.job === 'sleep' ? p.hut.x : p.camp.x + (luck() - 0.5) * 4;
-    p.targetZ = p.job === 'sleep' ? p.hut.z : p.camp.z + (luck() - 0.5) * 4;
+    // Their own hearth, not the village's middle — see homeFire.
+    p.targetX = p.job === 'sleep' ? p.hut.x : homeFire(p).x + (luck() - 0.5) * 4;
+    p.targetZ = p.job === 'sleep' ? p.hut.z : homeFire(p).z + (luck() - 0.5) * 4;
     p.hasSpear = false;
     return;
   }
   if (p.sick) {
     // Nobody ill goes out. They lie up, and the band carries them.
     p.job = luck() < 0.6 ? 'sleep' : 'tend';
-    p.targetX = p.job === 'sleep' ? p.hut.x : p.camp.x + (luck() - 0.5) * 4;
-    p.targetZ = p.job === 'sleep' ? p.hut.z : p.camp.z + (luck() - 0.5) * 4;
+    p.targetX = p.job === 'sleep' ? p.hut.x : homeFire(p).x + (luck() - 0.5) * 4;
+    p.targetZ = p.job === 'sleep' ? p.hut.z : homeFire(p).z + (luck() - 0.5) * 4;
     p.hasSpear = false;
     p.prey = null;
     return;
@@ -360,7 +424,35 @@ export function chooseJob(p, day) {
         ? (0.35 + 0.40 * Math.min(ill / 3, 1)) * (1 - hunger) * rested
           * (p.traits?.sociable ?? 1) : 0],
       ['visit', canVisit ? VISIT.chance * rested * (p.traits?.sociable ?? 1) : 0],
+      /* Going back to the stones. Only where there are any — a band that has
+         buried nobody has nowhere to go — and never on an empty store: this is
+         the first thing a hungry band stops doing, and the fact that it is the
+         first thing to go is most of what makes it worth having. */
+      ['mourn', p.camp.buried > 0 && !p.child ? MOURN.chance * (1 - hunger) * rested : 0],
+      /* Going to the rocks. Not while hungry — stone does not feed anybody
+         today — and not while the pile is already high, because a band with
+         forty stones does not need a forty-first. It is the errand a comfortable
+         band sends people on, which is what it should be. */
+      ['quarry', !p.child && (p.camp.stone || 0) < SKILL.stoneMax
+        ? QUARRY_TRIP.chance * (1 - hunger) * rested : 0],
+      /* Going to take it. Only past the hunger at which a band would rather
+         walk over and ask, only if there is somebody near enough holding
+         enough, and only if this band has not just tried — see RAID. A warrior
+         is who goes, but a starving band sends whoever it has. */
+      /* Standing in the water. Worth it when the ground is poor, which is
+         most of what a coast is for: a band whose hillside is picked over or
+         under snow still has the sea. */
+      ['fish', p.camp.shore ? FISH.chance * (0.4 + 0.9 * hunger) * rested : 0],
+      ['raid', !p.child && hunger > RAID.hungry && rested > 0.4
+        && simDay - (p.camp.lastRaid ?? -99) > RAID.every && raidTarget(p.camp)
+        ? RAID.chance * hunger * rested * (p.role === 'warrior' ? 2.5 : 1) : 0],
     ];
+    /* A role leans the whole list before anything is rolled: it multiplies the
+       job it belongs to and zeroes the ones it refuses, so the chief does not
+       spend the morning on the hill and the knapper is usually knapping. A band
+       too small or too hungry to afford roles has none, and this does nothing
+       at all — see assignRoles. */
+    if (p.role) for (const w of weights) w[1] *= roleWeight(p, w[0]);
     let roll = luck() * weights.reduce((a, w) => a + w[1], 0);
     p.job = weights.find(([, w]) => (roll -= w) <= 0)?.[0] || 'gather';
   }
@@ -430,7 +522,18 @@ export function setOut(p) {
    of people not being drawn — with a full store the weights put better than a
    third of a band on it. Sitting at the fire is the most visible thing anybody
    in a camp does. */
-const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play', 'tend', 'led']);
+/* Going back to the stones. Rarer than tending the fire and commoner than
+   walking to the next band — it is an errand of an afternoon, not a ceremony,
+   and what makes it read as one is that it happens often enough to see and
+   stops the moment a band is hungry. */
+export const MOURN = { chance: 0.10 };
+
+/* Going to the rocks. Rarer than most errands and further than any of them
+   except a visit: an outcrop is where it is, and 220 metres is about as far as
+   anybody will go for a stone. */
+export const QUARRY_TRIP = { chance: 0.12, reach: 220 };
+
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish']);
 
 /* Where somebody at the fire actually sits: inside the ring of tents and
    outside the ring of stones. The huts stand 6.5-9.1m out and are a couple of
@@ -454,6 +557,20 @@ export function indoorsNow(p) {
 /* Whose turn it is this frame. Reused rather than rebuilt, because this runs
    every frame and it is the only allocation the loop would make. */
 export const _turns = [];
+
+/* Whether the near set found a wearer this frame — see the end of updatePeople. */
+let nearShown = false;
+
+/* One joint, at the top of the limb hanging from it. Every caller has the
+   limb's matrix already — the joint is where that limb starts, which is the
+   origin of its own space, so there is nothing to work out. */
+function nearJoint(mesh, i, mat) {
+  if (!mesh || i !== followIdx || P.view !== 'follow') return;
+  mesh.matrixAutoUpdate = false;
+  mesh.matrix.copy(mat);
+  mesh.visible = true;
+  nearShown = true;
+}
 
 export function updatePeople(dt, day) {
   if (!personParts) return;
@@ -523,8 +640,11 @@ export function updatePeople(dt, day) {
       p.state = 'return';
       p.prey = null;
       p.visiting = null;
-      p.targetX = p.camp.x + (luck() - 0.5) * 4;
-      p.targetZ = p.camp.z + (luck() - 0.5) * 4;
+      /* Nearest, not theirs. Everything else about going home is about where
+         you live; this is about getting behind a fire before it reaches you. */
+      const run = nearestFire(p.camp, p.x, p.z);
+      p.targetX = run.x + (luck() - 0.5) * 4;
+      p.targetZ = run.z + (luck() - 0.5) * 4;
       p.timer = travelTimeout(p);
     }
 
@@ -557,6 +677,11 @@ export function updatePeople(dt, day) {
               * baskets * (p.child ? FORAGE.childHaul : 1);
             p.haul += got;
             p.carry = 1;
+            /* And the ground is that much barer. Taken where the trip actually
+               ended rather than where it was aimed, which is the same place the
+               yield was read from — a patch somebody gave up halfway to is not
+               a patch anybody stripped. */
+            takeForage(p.x, p.z);
             /* Written up from what it actually gave, not from what it looked
                like on the way out — and faded a little first, so a patch that
                is being picked over slides down the list on its own. */
@@ -574,8 +699,68 @@ export function updatePeople(dt, day) {
                rose either, and every band in every world stalled at exactly 14%
                for ever. Practice has to teach the hands doing it. */
             const key = craftChoice(p.camp);
+            /* Toolmaking spends what somebody quarried. craftChoice will not
+               pick it without stone in the camp, so this cannot go negative —
+               and taking it here rather than there keeps the choosing free of
+               side effects, which is what lets it be asked twice. */
+            if (key === 'tools') p.camp.stone = Math.max(0, p.camp.stone - SKILL.stonePerTool);
             practise(p.camp, key, SKILL.perCraft * (p.traits?.quick ?? 1));
             p.knows[key] = Math.max(p.knows[key] || 0, p.camp.skill[key]);
+          }
+          /* Time spent at the stones, which is the whole of what the seventh
+             skill is learned by. Worth a fifth of an afternoon's knapping, so
+             it is a thing a band grows into over years rather than a thing one
+             person does on a slow afternoon — and it is learned by the person
+             as well as the band, like every other skill, or nobody's memory
+             ever rises and the cap never moves. */
+          /* A trip to the rocks: stone in the pile, and the band a little
+             better at getting it. The pile is capped — a camp is not a
+             warehouse — and the cap is why quarrying stops being chosen. */
+          /* Arrived, and only if they actually got there — the same rule the
+             visit follows, and for the same reason: you cannot raid a camp you
+             turned back from. Resolved for the party rather than the person, so
+             five people arriving is one raid and not five. */
+          if (p.job === 'raid' && p.raiding) {
+            const mark = p.raiding;
+            p.raiding = null;
+            if (Math.hypot(p.x - mark.x, p.z - mark.z) < CAMP_CLEARING * 1.6) {
+              const party = people.filter((q) => q.camp === p.camp
+                && Math.hypot(q.x - mark.x, q.z - mark.z) < CAMP_CLEARING * 2);
+              resolveRaid(party, mark);
+            }
+          }
+          /* A catch. The same shape as a foraging trip and deliberately so —
+             it lands in the same haul, in the same units, and takes off the
+             same ground that runs down. Baskets carry fish as well as berries;
+             a band good at weaving brings more of both home. */
+          if (p.job === 'fish') {
+            const baskets = 1 + SKILL.basketHaul * p.camp.skill.baskets;
+            const got = fishRichness(p.x, p.z, p.camp) * baskets
+              * (1 + p.camp.skill.fishing) * (p.child ? FORAGE.childHaul : 1);
+            p.haul += got;
+            p.carry = 1;
+            takeForage(p.x, p.z);
+            practise(p.camp, 'fishing', SKILL.perCatch);
+            p.knows.fishing = Math.max(p.knows.fishing || 0, p.camp.skill.fishing);
+          }
+          if (p.job === 'quarry') {
+            p.camp.stone = Math.min(SKILL.stoneMax,
+              (p.camp.stone || 0) + SKILL.stonePerTrip * (1 + p.camp.skill.mining));
+            practise(p.camp, 'mining', SKILL.perQuarry);
+            p.knows.mining = Math.max(p.knows.mining || 0, p.camp.skill.mining);
+          }
+          if (p.job === 'mourn') {
+            practise(p.camp, 'rites', SKILL.perVisit);
+            p.knows.rites = Math.max(p.knows.rites || 0, p.camp.skill.rites);
+            /* And an afternoon at the stones is an afternoon spent on them: the
+               ones who go back are the ones who raise things. Less than a
+               craft session, because this is carrying and setting rather than
+               knapping, and it only counts where there is a ground to do it
+               on. */
+            if (p.camp.barrow) {
+              practise(p.camp, 'art', SKILL.perStone);
+              p.knows.art = Math.max(p.knows.art || 0, p.camp.skill.art);
+            }
           }
           /* Only if they actually arrived. This case is reached both by
              arriving and by giving up on the way, which is right for foraging —
@@ -590,8 +775,8 @@ export function updatePeople(dt, day) {
             }
           }
           p.state = 'return';
-          p.targetX = p.camp.x + (luck() - 0.5) * 6;
-          p.targetZ = p.camp.z + (luck() - 0.5) * 6;
+          p.targetX = homeFire(p).x + (luck() - 0.5) * 6;
+          p.targetZ = homeFire(p).z + (luck() - 0.5) * 6;
           // The walk back from the next band is the same walk, in reverse.
           p.timer = travelTimeout(p);
           break;
@@ -616,10 +801,10 @@ export function updatePeople(dt, day) {
        already standing at, and nobody ever idles long enough to choose a night
        job. A whole band walked in circles round its own camp all night. */
     if (!p.led && day < 0.25 && p.job !== 'sleep' && p.job !== 'tend' && p.state !== 'return') {
-      if (Math.hypot(p.x - p.camp.x, p.z - p.camp.z) > 12) {
+      if (Math.hypot(p.x - homeFire(p).x, p.z - homeFire(p).z) > 12) {
         p.state = 'return';
-        p.targetX = p.camp.x + (luck() - 0.5) * 5;
-        p.targetZ = p.camp.z + (luck() - 0.5) * 5;
+        p.targetX = homeFire(p).x + (luck() - 0.5) * 5;
+        p.targetZ = homeFire(p).z + (luck() - 0.5) * 5;
         p.timer = travelTimeout(p);
       } else {
         p.state = 'idle';                    // already home: pick a night job now
@@ -632,8 +817,8 @@ export function updatePeople(dt, day) {
     if (p.prey && p.state === 'goto') {
       if (tryKill(p, slice) || !p.prey) {
         p.state = 'return';
-        p.targetX = p.camp.x + (luck() - 0.5) * 6;
-        p.targetZ = p.camp.z + (luck() - 0.5) * 6;
+        p.targetX = homeFire(p).x + (luck() - 0.5) * 6;
+        p.targetZ = homeFire(p).z + (luck() - 0.5) * 6;
         p.timer = travelTimeout(p);
       } else if (Math.hypot(p.prey.animal.x - p.x, p.prey.animal.z - p.z) > huntReach(p.camp)) {
         p.prey = null;                     // it outran us
@@ -654,10 +839,15 @@ export function updatePeople(dt, day) {
           // Sleep has to outlast the night. Give it the same 10-30 seconds as
           // every other task and people shuttle in and out of the huts until
           // dawn instead of sleeping in them.
-          p.timer = p.job === 'hunt' ? 8 + luck() * 14
-                  : p.job === 'gather' ? 6 + luck() * 10
+          /* And tools are what make the work quick. Everything but sleeping,
+             because a good axe does not shorten a night — at mastery an errand
+             takes a little over half as long, so a day holds nearly twice the
+             errands of a band with nothing but its hands. */
+          const quick = 1 - SKILL.toolSpeed * (p.camp.skill?.tools || 0);
+          p.timer = p.job === 'hunt' ? (8 + luck() * 14) * quick
+                  : p.job === 'gather' ? (6 + luck() * 10) * quick
                   : p.job === 'sleep' ? 600
-                  : 10 + luck() * 20;
+                  : (10 + luck() * 20) * quick;
         } else {
           if (p.haul > 0) {
             p.camp.food += p.haul;
@@ -703,7 +893,11 @@ export function updatePeople(dt, day) {
     const rate = energyRate(effort, PERSON_STAMINA, p.asleep ? SLEEP_SECONDS : RECOVERY_SECONDS);
     // Rest does a sick person much less good than it does a well one.
     const heal = p.sick ? PLAGUE.drag : 1;
-    p.energy = clamp(p.energy + (rate > 0 ? rate * fed * heal : rate) * slice, 0, 1);
+    /* And a camp with hides, bedding and somewhere dry to keep them is a camp
+       people rest in properly. Only on the way up: home goods make a night
+       worth more, they do not make a chase cost less. */
+    const comfort = 1 + SKILL.wareRest * (p.camp.skill?.wares || 0);
+    p.energy = clamp(p.energy + (rate > 0 ? rate * fed * heal * comfort : rate) * slice, 0, 1);
 
     /* Starvation is a ceiling coming down, not a drain.
 
@@ -763,16 +957,38 @@ export function updatePeople(dt, day) {
        start disagreeing. */
     p.hidden = hidden;
     if (hidden) {
-      for (const key in personParts) {
-        const per = partsPer(key);
-        for (let k = 0; k < per; k++) personParts[key].setMatrixAt(i * per + k, HIDDEN);
+      /* Parked out of sight — but only when there is a sight to be out of.
+
+         The guard below was on the half that draws somebody and not on the half
+         that hides them, so a fast-forward spent its time writing seventeen
+         zeroed matrices per person per step for a scene nobody was looking at:
+         six percent of a run, on people who were asleep in their huts. The
+         first drawn frame afterwards walks this same branch and parks them
+         properly, which is why skipping it costs nothing.
+
+         Exactly the mistake the herds had and were fixed for — everything above
+         this is somebody deciding, everything below is somebody being drawn. */
+      if (drawingWorld) {
+        for (const key in personParts) {
+          const per = partsPer(key);
+          for (let k = 0; k < per; k++) personParts[key].setMatrixAt(i * per + k, HIDDEN);
+        }
       }
       continue;
     }
 
     if (drawingWorld) writePerson(p, i);
   }
-  for (const key in personParts) personParts[key].instanceMatrix.needsUpdate = true;
+  /* Put the face away unless somebody wore it this frame. One flag rather than
+     a second pass: the near set belongs to whoever `writePerson` last put it
+     on, and the moment that stops being anybody it has to stop being anywhere. */
+  if (!nearShown) hideNearParts();
+  nearShown = false;
+
+  // Nothing was written if nothing is being drawn, so nothing has to be uploaded.
+  if (drawingWorld) {
+    for (const key in personParts) personParts[key].instanceMatrix.needsUpdate = true;
+  }
 }
 
 export function writePerson(p, i) {
@@ -846,10 +1062,43 @@ export function writePerson(p, i) {
     _mOff.setPosition(0, -S.upperArm[1], 0);
     _mLower.multiplyMatrices(_mUpper, _mOff);
     personParts.foreArm.setMatrixAt(i * 2 + side, _mLower);
+    /* The elbow itself. The limbs are capsules, so a bend has no corner in it —
+       what is missing is the joint reading as a joint rather than as the place
+       two capsules happen to meet. A ball at the seam is what an elbow is. */
+    nearJoint(nearParts?.elbow?.[side], i, _mLower);
 
     _mOff.makeTranslation(0, -S.foreArm[1], 0);
     _mChain.multiplyMatrices(_mLower, _mOff);
+    /* Open or closed. A hand round a spear shaft or under a basket is a fist,
+       and a fist is shorter and thicker than a hand hanging — which is the one
+       piece of finger detail that survives being thirty metres away, and it
+       costs nothing at all: everybody already has this box, and closing it is a
+       scale on it.
+
+       The fingers themselves are in the near set, on the one person you are
+       looking at, and they only exist when the hand is open. A fist is a fist. */
+    const closed = p.carry || (p.hasSpear && side === 0) || p.state === 'work';
+    if (closed) _mChain.scale(FIST);
+    if (i === followIdx) p.handOpen = !closed;
     personParts.hand.setMatrixAt(i * 2 + side, _mChain);
+    nearJoint(nearParts?.wrist?.[side], i, _mChain);
+    if (nearParts && i === followIdx && P.view === 'follow' && !closed) {
+      /* Four fingers and a thumb, hung off the hand's own matrix. Two hands is
+         ten meshes and they are drawn for one person, which is the whole
+         argument for the near set. */
+      const F = nearParts.fingers[side];
+      for (let k = 0; k < 4; k++) {
+        _mLocal.makeTranslation((k - 1.5) * S.hand[0] * 0.26, -S.hand[1] * 0.62, 0);
+        F.digit[k].matrixAutoUpdate = false;
+        F.digit[k].matrix.multiplyMatrices(_mChain, _mLocal);
+        F.digit[k].visible = true;
+      }
+      _mLocal.makeTranslation(-dir * S.hand[0] * 0.46, -S.hand[1] * 0.30, S.hand[2] * 0.30);
+      F.thumb.matrixAutoUpdate = false;
+      F.thumb.matrix.multiplyMatrices(_mChain, _mLocal);
+      F.thumb.visible = true;
+      nearShown = true;
+    }
 
     /* Leg: hip, then knee, then a foot kept level with the ground. A knee bends
        through the swing and not through the stance, which is what stops a walk
@@ -878,6 +1127,7 @@ export function writePerson(p, i) {
     _mOff.setPosition(0, -S.thigh[1], 0);
     _mLower.multiplyMatrices(_mUpper, _mOff);
     personParts.shin.setMatrixAt(i * 2 + side, _mLower);
+    nearJoint(nearParts?.knee?.[side], i, _mLower);
 
     // Undo both joints so the sole stays parallel to the ground it is on.
     _mOff.makeRotationX(-(leg + knee));
@@ -895,14 +1145,72 @@ export function writePerson(p, i) {
     personParts.spear.setMatrixAt(i, HIDDEN);
   }
 
+  /* And the face, on whoever you are behind. Placed in the head's own space, so
+     it carries the build, the crouch, the bob of the walk and which way they are
+     looking without any of that being worked out twice. */
+  if (nearParts && i === followIdx && P.view === 'follow') {
+    const H = S.head;
+    const put = (mesh, x, y, z) => {
+      _mLocal.makeTranslation(x, y, z);
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.multiplyMatrices(_mHead, _mLocal);
+      mesh.visible = true;
+    };
+    // Eyes two thirds up the face and a little proud of it, so they catch light.
+    put(nearParts.eyeL, -H[0] * 0.22, H[1] * 0.10, H[2] * 0.46);
+    put(nearParts.eyeR, H[0] * 0.22, H[1] * 0.10, H[2] * 0.46);
+    put(nearParts.browL, -H[0] * 0.22, H[1] * 0.22, H[2] * 0.44);
+    put(nearParts.browR, H[0] * 0.22, H[1] * 0.22, H[2] * 0.44);
+    put(nearParts.mouth, 0, -H[1] * 0.20, H[2] * 0.46);
+    nearShown = true;
+  }
+
   if (p.carry) {
+    /* What they are carrying, in the shape of the thing.
+
+       It was one box whatever it was: berries, a joint of meat and a morning's
+       fish all came home as the same brown block, which is the one moment of a
+       forager's day you can actually watch pay off and it said nothing about
+       what they had been doing. One geometry still — a person is seventeen
+       instanced pieces and a fourth load mesh is another two thousand slots —
+       so the shape is in the scale and the kind is in the colour.
+
+       A basket is round and reddish, a joint is blocky and dark, and a catch is
+       long, flat and pale. At thirty metres the silhouette is the difference
+       between somebody coming back from the hill and somebody coming up from
+       the water. */
+    const kind = LOADS[p.job] || LOADS.gather;
     _mLocal.makeTranslation(0, S.shoulderY - 0.24, 0.30);
     _mChain.multiplyMatrices(_mTorso, _mLocal);
+    _mChain.scale(kind.scale);
     personParts.load.setMatrixAt(i, _mChain);
+    /* Only when it changes hands. The colour of a load is a fact about the
+       errand, not about the frame, and writing it every frame is an upload of
+       the whole instance colour buffer for every carrier in the world. */
+    if (p.loadKind !== p.job) {
+      p.loadKind = p.job;
+      personParts.load.setColorAt(i, _cLoad.setHex(kind.hex));
+      if (personParts.load.instanceColor) personParts.load.instanceColor.needsUpdate = true;
+    }
   } else {
     personParts.load.setMatrixAt(i, HIDDEN);
+    p.loadKind = null;
   }
 }
+
+/* Berries, meat and fish, in the only two channels an instanced mesh has left:
+   how big it is and what colour. `quarry` is here because stone comes home the
+   same way — grey, heavy and squared off. */
+export const LOADS = {
+  gather: { scale: new THREE.Vector3(1.0, 0.95, 1.0), hex: 0x7b4a3c },
+  hunt:   { scale: new THREE.Vector3(0.85, 1.15, 0.85), hex: 0x6e3630 },
+  fish:   { scale: new THREE.Vector3(1.5, 0.45, 0.7), hex: 0x8fa2ac },
+  quarry: { scale: new THREE.Vector3(0.8, 0.8, 0.8), hex: 0x7a746a },
+};
+export const _cLoad = new THREE.Color();
+
+/* A closed hand: shorter, thicker, squarer. The box is the same box. */
+export const FIST = new THREE.Vector3(1.25, 0.72, 1.45);
 
 /* The fire, its light, and its smoke. */
 export function updateCamps(dt, t, day) {
@@ -914,11 +1222,22 @@ export function updateCamps(dt, t, day) {
     const flick = 0.78 + 0.22 * Math.sin(t * 11 + camp.flicker) + 0.12 * Math.sin(t * 27.3 + camp.flicker * 2);
     // Barely there in daylight, the only light in the world after dark.
     camp.light.intensity = (4 + night * 62) * flick;
-    _v.set(camp.x, camp.y + 0.05, camp.z);
-    _q.identity();
-    _s.set(0.85 + flick * 0.25, 0.8 + flick * 0.45, 0.85 + flick * 0.25);
-    _m4.compose(_v, _q, _s);
-    campParts.fire.setMatrixAt(i, _m4);
+    /* Every hearth the band has lit, and each on its own beat — one flicker
+       shared by five fires is five flames doing the same thing at the same
+       moment, which reads as a mechanism rather than as fire. The unlit ones
+       are left where dressCamp parked them. */
+    for (let f = 0; f < (camp.hearths || 0); f++) {
+      const at = camp.fireAt?.[f];
+      if (!at) continue;
+      const own = f === 0 ? flick
+        : 0.78 + 0.22 * Math.sin(t * 11 + camp.flicker + f * 2.1)
+          + 0.12 * Math.sin(t * 27.3 + camp.flicker * 2 + f * 1.3);
+      _v.set(at.x, at.y + 0.05, at.z);
+      _q.identity();
+      _s.set(0.85 + own * 0.25, 0.8 + own * 0.45, 0.85 + own * 0.25);
+      _m4.compose(_v, _q, _s);
+      campParts.fire.setMatrixAt(i * HEARTHS + f, _m4);
+    }
   }
   campParts.fire.instanceMatrix.needsUpdate = true;
 
@@ -1158,6 +1477,10 @@ export function buildWorld() {
   seedSim(P.seed);
   disposeWorld();
   buildField(q.seg);
+  // Nobody has walked anywhere yet, and this is the only place that is true.
+  buildPaths();
+  // Nor picked anything: the ground starts as full as the noise says it is.
+  buildForaged();
   // Before the mesh: the creeks cut the field the terrain is then built from,
   // so their valleys are real ground that everything else can read.
   traceStreams(P.counts.streams | 0);
@@ -1173,6 +1496,7 @@ export function buildWorld() {
   buildCamps();
   buildGraves();
   buildPeople(P.counts.people | 0);
+  buildNearParts();
   buildAnimals();
   buildGrass(q.grid, P.counts.grass | 0);
 
@@ -1261,7 +1585,7 @@ export function applyShadowSettings(q = QUALITY[P.quality]) {
    well; it is not any more, and only the world-building calls it. */
 export function placeCamera() {
   const y = sampleHeight(0, 0);
-  camera.position.set(0, y + (P.view === 'walk' ? 1.7 : 13), P.view === 'walk' ? 0 : 46);
+  camera.position.set(0, y + 13, 46);
   controls.target.set(0, y + 2.5, 0);
   camera.lookAt(controls.target.x, controls.target.y, controls.target.z);
   syncLookFromCamera();
@@ -1289,7 +1613,7 @@ export function placeCamera() {
    eye height, no vertical, feet on the terrain.
    ------------------------------------------------------------------------- */
 
-export const VIEW_MODES = ['fly', 'walk', 'orbit', 'follow'];
+export const VIEW_MODES = ['orbit', 'follow'];
 
 /* The key list. It lives in the markup and only needs showing, hiding, and
    telling which view is current. */

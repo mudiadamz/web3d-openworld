@@ -7,13 +7,14 @@ import {
   updateTimeOfDay, windUniforms
 } from './scene.js';
 import {
-  drainDirtyTiles, stats, updateGrassDetail, updateTiles, wireWorld
+  drainDirtyTiles, refillWornTiles, stats, updateGrassDetail, updateTiles, wireWorld
 } from './world.js';
+import { flushPaths } from './paths.js';
 import { loadModels, recountAnimals, updateAnimals } from './wildlife.js';
 import { FF_STEP, NIGHT_SKIP_BASE, PACE_MAX_STEP, clockRate, ffStep, nightIdle, pace, rateIndex, setDrawingWorld, setWorldClock, skipping, tickWorldStep, worldClock } from './clock.js';
 import { camps, paintPeople, people } from './people.js';
 import {
-  bornCount, chronicle, diedCount, drawTribeChart, loadChronicle, logEvent, onNewDay, personAge, regrowFruit, renderChronicle, renderTribes, repopulate, setSimDay, simDay, startRun, updateEconomy, updateGround, updateLives
+  bornCount, chronicle, diedCount, drawTribeChart, isMilestone, loadChronicle, logEvent, onNewDay, personAge, recoverForage, regrowFruit, renderChronicle, renderTribes, repopulate, setSimDay, simDay, startRun, updateEconomy, updateGround, updateLives
 } from './life.js';
 import { buildWorld, placeCamera, recountBlades, updateCamps, updatePeople } from './move.js';
 import {
@@ -24,7 +25,7 @@ import {
   setNextSave, ui
 } from './save.js';
 import { updateAudio } from './audio.js';
-import { drawMap } from './map.js';
+import { onMapResize, drawMap } from './map.js';
 import {
   codeChip, ensureCurrentWorld, hhmm, setRate, syncLabels, toast, tribeChips, updateToast
 } from './ui.js';
@@ -49,6 +50,8 @@ export function updateHud() {
 }
 
 export function onResize() {
+  // The full-page map is the window, so it is re-measured with it.
+  onMapResize();
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
@@ -119,6 +122,8 @@ export function stepWorld(dt) {
     const owed = bookDue;
     bookDue = 0;
     regrowFruit(owed);
+    // The ground people picked over comes back, on the same books as the fruit.
+    recoverForage(owed);
     updateEconomy(owed);
     updateGround(owed);
     updateLives(owed);
@@ -201,10 +206,17 @@ export function showAheadProgress() {
     /* The chronicle as it is written. A run of years is not a progress bar with
        nothing behind it — it is births, deaths, a band learning to cure meat,
        another one breaking away — and all of that is happening whether or not
-       anybody is shown it. */
-    $('aheadLog').innerHTML = chronicle.slice(0, 8).map((e) =>
+       anybody is shown it.
+
+       Milestones only, which is the same filter the panel has had all along and
+       for the same reason: eight lines is what fits, a year is hundreds of
+       them, and unfiltered those eight were whichever kills and hungry nights
+       happened to be most recent. A band breaking away would appear for a
+       fraction of a second and be gone. */
+    const worth = chronicle.filter(isMilestone).slice(0, 8);
+    $('aheadLog').innerHTML = worth.map((e) =>
       `<div>${codeChip(e.seed)}<span>d${e.day}</span>${tribeChips(e.text)}</div>`).join('')
-      || '<div>nothing has happened yet</div>';
+      || '<div>nothing worth telling yet</div>';
   }
   const spent = (Date.now() - ahead.started) / 1000;
   const elapsedYears = (simDay - ahead.from) / P.yearLength;
@@ -219,9 +231,17 @@ export function showAheadProgress() {
   const doneSteps = ahead.total - ahead.left;
   const left = doneSteps > 400 && spent > 0.25
     ? ` · about ${ago(ahead.left / (doneSteps / spent))} left` : '';
+  /* How many of them there are, which is the number the whole run is about.
+     A progress bar says how long there is to wait; this says whether waiting is
+     worth it — a band climbing from sixteen to sixty reads completely
+     differently from one going the other way, and until now you found out which
+     when it finished. Camps beside it, because a band that has split is the
+     other thing worth stopping for. */
+  const alive = `${people.length} ${people.length === 1 ? 'person' : 'people'}`
+    + ` · ${camps.filter((c) => !c.gone).length} camps`;
   $('aheadNote').textContent =
-    `year ${elapsedYears.toFixed(1)} of ${ahead.years} · day ${Math.floor(simDay)}`
-    + ` · ${ago(spent)}${left}`;
+    `${alive} · year ${elapsedYears.toFixed(1)} of ${ahead.years}`
+    + ` · day ${Math.floor(simDay)} · ${ago(spent)}${left}`;
 }
 
 export function runAhead() {
@@ -382,8 +402,14 @@ export function tick() {
   // scatter maths measures ~0.26ms a tile, so three a frame clears a row in
   // three frames and never costs more than about a millisecond of one.
   updateTiles(false);
+  // Paths that appeared under a tile already on screen ask for it to be
+  // scattered again; they queue behind whatever updateTiles just dirtied.
+  refillWornTiles();
   drainDirtyTiles(3);
   updateGrassDetail();
+  // And the ground itself is repainted at most twice a second, however much
+  // walking has gone on since.
+  flushPaths(elapsed);
   updateAnimals(paced, elapsed);
   const daylight = smoothstep(-0.10, 0.14, sunDir.y);
   const simDays = dt / P.dayLength;

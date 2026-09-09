@@ -1,21 +1,26 @@
 import * as THREE from 'three';
 
-import {
-  MAP_SCALE, P, PEOPLE_CEILING, SEA, SNOW
-} from './params.js';
+import { MAP_SCALE, P, PEOPLE_CEILING, SEA, SNOW, WORLD } from './params.js';
 import { clamp, fbm, flatnessAt, lerp, mulberry32, sampleHeight } from './noise.js';
 import { forageSeason, seasonName, seasonUniforms } from './scene.js';
-import { HIDDEN, _c, orchard, stats } from './world.js';
+import { ORCHARD_BUCKET, HIDDEN, _c, orchard, stats } from './world.js';
 import {
   NAME_ONSET, lineage, packs, recordDeath, recordMove, recordPerson, recountAnimals, takePersonId, tribeVoice, uniqueName
 } from './wildlife.js';
 import { luck, partsPer } from './clock.js';
+/* Used here as well as passed through — a re-export binds nothing locally. */
 import {
-  BUILDS, GARMENT, HAIR, SKIN, buryPerson, campCapacity, camps, dressCamp, layoutCamp, paintPeople, people, personParts
+  ROLES, SKILL, SKILLS, SKILL_RUNGS, announceSkill, assignRoles, craftChoice, emptySkills,
+  fadeSkills, knowsFrom, practise, skillTier,
+} from './skills.js';
+import { FISH, forageRichness, nearestShore } from './larder.js';
+import {
+  BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, drawGraves, layoutCamp, paintPeople, people, personParts
 } from './people.js';
+import { PATH, fadePaths } from './paths.js';
 import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
-import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, tribeChips, worldCode, worlds } from './ui.js';
+import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
 
 /* -------------------------------------------------------------------------
@@ -93,7 +98,13 @@ export function logEvent(kind, text, x = 0, z = 0) {
   chronicle.unshift(entry);
   if (chronicle.length > CHRONICLE_MAX) chronicle.pop();
   pendingEvents.push(entry);
-  saveChronicle();
+  /* Marked rather than written. `saveChronicle` serialises up to a thousand
+     lines and hands them to localStorage, and it was doing that on every line
+     logged — which was 1.6% of a fast-forward and rising, because everything
+     added this session logs something. The record is flushed on the day's books
+     and when the tab goes away, and losing the last few lines of a session that
+     ended in a crash is not worth a millisecond of every simulated hour. */
+  chronicleDirty = true;
   renderChronicle();
 }
 
@@ -103,7 +114,17 @@ export function worldNameNow() {
   return here ? here.name : nameForSeed(P.seed);
 }
 
+let chronicleDirty = false;
+
+/** Writes it if anything has been logged since the last time. */
+export function flushChronicle() {
+  if (!chronicleDirty) return;
+  chronicleDirty = false;
+  saveChronicle();
+}
+
 export function saveChronicle() {
+  chronicleDirty = false;
   try {
     localStorage.setItem(CHRONICLE_STORE, JSON.stringify(chronicle.slice(0, CHRONICLE_MAX)));
   } catch { /* private window, or storage off */ }
@@ -277,6 +298,10 @@ export async function postSample() {
   } catch { /* the day's row is not worth a retry queue */ }
 }
 
+/* Sim-days of grass regrowth owed. Kept here rather than in paths.js because
+   this is the only thing that knows a day has passed. */
+let fadeDue = 0;
+
 export function onNewDay() {
   // Each tribe's own line, kept to a rolling window so a long run does not grow
   // an unbounded array behind the chart.
@@ -286,212 +311,51 @@ export function onNewDay() {
     c.history.push({ day: Math.floor(simDay), pop, kids, food: Math.round(c.food) });
     if (c.history.length > HISTORY_DAYS) c.history.shift();
   }
+  /* Who does what, worked out once a day rather than per person per errand:
+     the shares are a fact about the band, and a day is the cadence everything
+     else about a band already moves on. */
+  for (const c of camps) {
+    if (c.gone) continue;
+    chiefOf(c);                       // the roles are handed out around one
+    assignRoles(c, people.filter((p) => p.camp === c));
+  }
   postTribes();
 
   const food = camps.reduce((a, c) => a + c.food, 0);
   const days = camps.length ? (food / camps.reduce((a, c) => a + campDailyNeed(c), 0)) : 0;
   logEvent('day', `day ${Math.floor(simDay)} · ${people.length} people · `
     + `${days.toFixed(1)} days of food`, 0, 0);
+  // And the record goes to the browser once a day rather than once a line.
+  flushChronicle();
+  // Grass comes back over a path nobody is walking any more, in batches — see
+  // PATH.fadeEvery for why it is not every day.
+  fadeDue++;
+  if (fadeDue >= PATH.fadeEvery) { fadePaths(fadeDue); fadeDue = 0; }
   postSample();
   flushEvents();
 }
 
-/* -------------------------------------------------------------------------
-   What a band knows
 
-   Until now a band on day one and the same band fifty years later were the same
-   band: nothing it did ever added up to anything. Knapping was an animation.
+/* Where food comes from lives in larder.js now — the ground and the water, and
+   what happens to either when somebody takes from it. Same reason as the
+   skills, and passed through the same way. */
+export {
+  FISH, FORAGED, buildForaged, fishRichness, forageRichness, foragedStats, nearestShore,
+  pickFishing, recoverForage, takeForage,
+} from './larder.js';
 
-   Three things it can get better at, each of which changes a number the food
-   economy already reads. They are held by the camp, but they are CAPPED by what
-   the living remember — a camp can practise a little past its best memory and
-   no further, so a hard winter that takes the elders takes the drying racks
-   with them, and the grandchildren have to work it out again. That is the whole
-   point: an arrow of time, and two bands on one map that diverge.
-   ------------------------------------------------------------------------- */
+/* What a band knows lives in skills.js now — life.js had grown past the length
+   of the page it was split out of, and the skills were one subject with one
+   edge, which is what made them the piece to move.
 
-export const SKILLS = {
-  spears: { label: 'spears', of: 'knapping' },
-  baskets: { label: 'baskets', of: 'weaving' },
-  drying: { label: 'drying', of: 'curing' },
-  /* Three more, and the reason for them is that three was not enough to make
-     two bands different from each other. With three, every band that lasted
-     learned all of them and the interesting question — what is this band good
-     at? — had one answer. Six is enough that a century leaves two bands with
-     different histories: one that has buried a lot of people and knows how to
-     treat a fever, one that has been hungry and can find a deer at three
-     hundred metres.
-
-     Each does something the simulation already had a number for. A skill that
-     only shows on a readout is a readout, not a skill. */
-  herbs: { label: 'herbs', of: 'healing' },
-  tracking: { label: 'tracking', of: 'tracking' },
-  fire: { label: 'fire', of: 'fire-keeping' },
-};
-
-/* Every skill at nothing. Built from SKILLS rather than written out, because it
-   was written out in five places and adding a seventh skill should not be a
-   hunt through the file for the ones that were missed. */
-export const emptySkills = () => Object.fromEntries(Object.keys(SKILLS).map((k) => [k, 0]));
-
-/* What one person remembers, read back off a save.
-
-   Saves written before there were six skills carry three, in order, as an
-   array. Reading that as an object gives everybody nothing; reading the new
-   object as an array gives the same. So: both shapes, and the old one is
-   mapped by the order it was written in rather than by position in whatever
-   SKILLS happens to say today — insert a skill in the middle and an ordered
-   read would hand everybody's knapping to the weavers. */
-export const SAVED_SKILL_ORDER = ['spears', 'baskets', 'drying'];
-
-export function knowsFrom(kn) {
-  const out = emptySkills();
-  if (Array.isArray(kn)) {
-    SAVED_SKILL_ORDER.forEach((k, i) => { if (k in out) out[k] = Number(kn[i]) || 0; });
-  } else if (kn && typeof kn === 'object') {
-    for (const k in out) out[k] = Number(kn[k]) || 0;
-  }
-  return out;
-}
-
-export const SKILL = {
-  perCraft: 0.028,     // mastery gained by one completed session
-  teach: 0.86,         // how much of the camp's level a child grows up with
-  step: 0.14,          // how far past the best living memory a camp can go
-  fade: 0.010,         // mastery lost per sim-day with nobody practising
-  /* What mastery is worth. Deliberately large: the difference between a band
-     that has been going a century and one that started last spring should be
-     the difference between eating and not. */
-  spearChance: 1.20,   // kill chance, at mastery
-  basketHaul: 0.90,    // what a foraging trip brings home
-  dryKeep: 0.65,       // how much less of the store spoils
-  /* Healing. The sickness was the leading cause of death and the only one
-     nobody could do anything about; this is the something. Not a cure — 0.55
-     of the mortality at mastery still leaves a plague worth fearing — but it is
-     the difference between a band that comes through one and a band that does
-     not, and it is the only skill you can watch pay off in a week. */
-  herbCure: 0.55,      // how much less a sickness kills
-  /* Tracking. Hunters look for prey inside FOOD.searchRadius; at mastery they
-     look half as far again. Reach is what turns hunting from a thing that works
-     when a deer wanders past into a thing a band does on purpose. */
-  trackFar: 0.50,      // further a hunter will find something
-  /* Fire-keeping. A tiger will not come within PANIC.safe of a fire, and a
-     better-kept fire pushes that out — see safeGround in wildlife.js, where the
-     metres live next to the tiger that respects them. */
-};
-
-/** The best any living adult of this camp actually remembers. */
-export function bestKnown(camp, key) {
-  let best = 0;
-  for (const p of people) {
-    if (p.camp !== camp || p.child) continue;
-    const k = p.knows?.[key] || 0;
-    if (k > best) best = k;
-  }
-  return best;
-}
-
-/* Practice, bounded by memory. A camp can push a little past what its best
-   hand remembers and no further, which is what makes losing people cost
-   something later rather than only at the funeral. */
-export function practise(camp, key, amount) {
-  const was = camp.skill[key];
-  const cap = Math.min(1, bestKnown(camp, key) + SKILL.step);
-  camp.skill[key] = clamp(camp.skill[key] + amount, 0, Math.max(cap, was));
-  announceSkill(camp, key);
-}
-
-/* Quarters, so the chronicle says something when a band crosses a threshold
-   and nothing while it inches along.
-
-   With hysteresis, and it is not optional. A band that has mastered something
-   sits exactly on 1.0: practice pushes it to the cap and the fade pulls it a
-   hair under, every frame — and comparing before against after announced
-   "has mastery of curing" and "has forgotten how to cure meat" in the same
-   minute, for ever. What is announced is compared against what was LAST
-   ANNOUNCED, and it takes a clear margin to move — a small one to climb, a
-   wider one to fall, because losing a skill is the louder claim. */
-export const SKILL_STEPS = [0.25, 0.5, 0.75, 1];
-export const SKILL_WORDS = ['', 'the beginnings of', 'a fair hand at', 'real skill at', 'mastery of'];
-/* The same five rungs as a label. SKILL_WORDS is written to sit in the middle
-   of a sentence — "has a fair hand at knapping" — and a column in a table wants
-   the words on their own. */
-export const SKILL_RUNGS = ['not yet', 'beginnings', 'a fair hand', 'real skill', 'mastery'];
-export const SKILL_RISE = 0.02;
-export const SKILL_FALL = 0.06;
-export const FORGET_WORDS = {
-  knapping: 'knap', weaving: 'weave', curing: 'cure meat',
-  healing: 'treat the sick', tracking: 'track', 'fire-keeping': 'keep a fire',
-};
-
-/* Which rung a mastery is standing on, given the rung it was last said to be
-   on. Pulled out of announceSkill because the restore needs the same answer
-   without saying anything: `told` is derived from `skill` and is not saved, so
-   it has to be worked out again on the way back in. */
-export function skillTier(v, told = 0) {
-  let tier = told;
-  while (tier < SKILL_STEPS.length && v >= SKILL_STEPS[tier] + SKILL_RISE) tier++;
-  while (tier > 0 && v < SKILL_STEPS[tier - 1] - SKILL_FALL) tier--;
-  return tier;
-}
-
-export function announceSkill(camp, key) {
-  const v = camp.skill[key];
-  const told = camp.told[key] || 0;
-  const tier = skillTier(v, told);
-  if (tier === told) return;
-  camp.told[key] = tier;
-  // The rack goes up, or comes down, the moment drying crosses the line.
-  if (key === 'drying') dressCamp(camp);
-  logEvent(tier > told ? 'learned' : 'lost',
-    tier > told
-      ? `[${camp.code}] ${camp.name} has ${SKILL_WORDS[tier]} ${SKILLS[key].of}`
-      : `[${camp.code}] ${camp.name} has forgotten how to ${FORGET_WORDS[SKILLS[key].of]}`,
-    camp.x, camp.z);
-}
-
-/* Nobody practising, and it slips — and it can never sit above what the living
-   remember, so a camp that buries its last elder loses the difference that
-   evening rather than gradually. */
-export function fadeSkills(days) {
-  for (const camp of camps) {
-    for (const key in SKILLS) {
-      const cap = Math.min(1, bestKnown(camp, key) + SKILL.step);
-      camp.skill[key] = Math.max(0, Math.min(camp.skill[key] - SKILL.fade * days, cap));
-      announceSkill(camp, key);
-    }
-  }
-}
-
-/* What a band works on is what it needs. Hungry, and it makes spears and
-   baskets; comfortable, and it finally has the afternoon spare to build a
-   drying rack — which is why the racks arrive in a good year and pay for
-   themselves in a bad one. */
-export function craftChoice(camp) {
-  const h = camp.hunger;
-  /* How much of the band is ill, which is what makes anybody think about
-     medicine. It is the nicest of these: a band learns to treat a fever because
-     it has been having fevers, so the bands that are good at healing are the
-     ones that have been through something — and you can read that off the card
-     years later. */
-  let pop = 0, ill = 0;
-  for (const q of people) {
-    if (q.camp !== camp) continue;
-    pop++;
-    if (q.sick) ill++;
-  }
-  const sick = pop ? ill / pop : 0;
-  const weights = [
-    ['spears', 0.25 + 0.5 * h],
-    ['baskets', 0.25 + 0.5 * h],
-    ['drying', 0.20 + 0.7 * (1 - h)],
-    ['tracking', 0.16 + 0.45 * h],
-    ['fire', 0.14 + 0.40 * (1 - h)],
-    ['herbs', 0.10 + 1.10 * sick],
-  ];
-  let roll = luck() * weights.reduce((a, w) => a + w[1], 0);
-  return weights.find(([, w]) => (roll -= w) <= 0)?.[0] || 'spears';
-}
+   Re-exported rather than repointed. Eight modules import these names from
+   here, and a move that is invisible to all of them is a move that cannot break
+   any of them: the alternative was eight import lists edited by hand for no
+   change in behaviour. Anything new should import from './skills.js' directly. */
+export {
+  FORGET_WORDS, LEAN, ROLES, ROLE_AT, SKILL, SKILLS, SKILL_RUNGS, announceSkill, assignRoles,
+  bestKnown, craftChoice, emptySkills, fadeSkills, knowsFrom, practise, roleWeight, skillTier,
+} from './skills.js';
 
 /* -------------------------------------------------------------------------
    The bands, meeting
@@ -530,6 +394,118 @@ export const VISIT = {
 };
 
 /* -------------------------------------------------------------------------
+   Taking it instead
+
+   A band with a full pile and a hungry neighbour is a fact about the world
+   before it is a fact about either of them. Until now the neighbour could only
+   walk over and ask, and a band with nothing to spare said no by having nothing
+   — which is the whole of what one band could do about another.
+
+   A raid is the other answer, and everything about it is built out of what was
+   already there: hunger decides whether it is worth it, `war` decides how it
+   goes, the store and the stone pile are what changes hands, and the toll and
+   the chronicle say what it cost. There is no new resource and no new place —
+   it is the same walk over the hill with a different reason.
+
+   It is a thing bands do when they are desperate, not a thing they do when they
+   are strong. `RAID.hungry` is past `VISIT.begFrom`: a band that could still
+   walk over and ask, asks. That ordering is the whole ethics of it and it is
+   one comparison.
+   ------------------------------------------------------------------------- */
+export const RAID = {
+  hungry: 0.80,        // hungrier than a band that would go and beg
+  worth: 4,            // days of food at the neighbour's, to be worth the walk
+  takesFood: 0.35,     // share of their store carried off, if it goes well
+  takesStone: 0.40,    // and of their pile, which does not spoil
+  home: 1.35,          // what defending your own camp is worth
+  hurt: 0.10,          // chance the losing side loses somebody, per raid
+  every: 2.0,          // sim-days before a band will try again
+  chance: 0.55,        // weight against the other jobs, for a band that would
+};
+
+/** What a band is holding that somebody else could want. */
+export function wealthOf(camp) {
+  return Math.max(0, camp.food - camp.need * FOOD.comfortable) + (camp.stone || 0);
+}
+
+/* How hard a band is to take anything from. Warriors count for more than
+   people, practice counts for more than numbers, and a band asleep in its huts
+   counts for what is standing in it — which is why a raid is a raid and not an
+   arithmetic problem. */
+export function strengthOf(camp, folk) {
+  let n = 0;
+  for (const p of folk) {
+    if (p.camp !== camp || p.child || p.sick) continue;
+    n += 0.4 + 0.6 * p.energy + (p.role === 'warrior' ? 0.8 : 0);
+  }
+  return n * (1 + SKILL.warEdge * (camp.skill?.war || 0));
+}
+
+/* Somebody worth raiding: near enough to reach, holding enough to be worth it.
+   Nearest first, because a raid is a hungry band's errand and hunger does not
+   walk past one camp to reach another. */
+export function raidTarget(camp) {
+  let best = null, bestD = Infinity;
+  for (const c of camps) {
+    if (c === camp || c.gone) continue;
+    if (daysOfFood(c) < RAID.worth && (c.stone || 0) < SKILL.stoneMax * 0.3) continue;
+    const d = Math.hypot(c.x - camp.x, c.z - camp.z);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+/* What happens when a raiding party arrives. Both sides are counted as they
+   actually stand — who is well, who is rested, who is a warrior — and the
+   defenders get their own camp behind them.
+
+   Nothing here is a coin toss. The odds are the two strengths, so a raid on a
+   camp of forty by a party of five fails and both bands learn something; a raid
+   on three people asleep by a practised party takes what it came for. What
+   makes it a gamble rather than an arithmetic problem is that a hungry band
+   cannot see how the other one has been eating. */
+export function resolveRaid(party, host) {
+  const home = party[0]?.camp;
+  if (!home || !host || host.gone) return;
+  const mine = strengthOf(home, party) ;
+  const theirs = strengthOf(host, people) * RAID.home;
+  const won = mine > theirs * (0.7 + luck() * 0.6);
+
+  /* Both sides get better at it, which is the uncomfortable part and the true
+     one: a band that has been raided knows how to hold a camp. */
+  practise(home, 'war', SKILL.perRaid);
+  practise(host, 'war', SKILL.perRaid);
+  home.lastRaid = simDay;
+
+  if (won) {
+    const food = Math.max(0, host.food) * RAID.takesFood;
+    const stone = (host.stone || 0) * RAID.takesStone;
+    host.food -= food;
+    home.food += food;
+    host.stone = (host.stone || 0) - stone;
+    home.stone = Math.min(SKILL.stoneMax, (home.stone || 0) + stone);
+    logEvent('raid', `[${home.code}] ${home.name} took food from [${host.code}] ${host.name}`,
+      host.x, host.z);
+  } else {
+    logEvent('raid', `[${host.code}] ${host.name} drove off [${home.code}] ${home.name}`,
+      host.x, host.z);
+  }
+
+  /* And somebody may not come back. The losing side pays it, which is the only
+     part of this that had to be invented — everything else is a number moving
+     between two camps. */
+  if (luck() < RAID.hurt) {
+    const losers = (won ? people.filter((q) => q.camp === host && !q.child)
+      : party.filter((q) => !q.child));
+    const who_ = losers[(luck() * losers.length) | 0];
+    if (who_) {
+      const i = people.indexOf(who_);
+      if (i >= 0) killPerson(i, 'raid');
+    }
+  }
+}
+
+/* -------------------------------------------------------------------------
    Marrying out, and why it is not here
 
    A band of eight is too small a sample for a coin. Sex is decided per birth,
@@ -556,11 +532,23 @@ export const VISIT = {
    ------------------------------------------------------------------------- */
 
 /** The nearest other camp, or nobody if this world has only one band. */
+/* Which band somebody walks to. Weighted by what is there — see SKILL.artDraw:
+   a band that has raised stones over its dead is a band the neighbours have a
+   reason to come to, and visiting is how everything anybody knows travels. */
+export function campPull(host) {
+  return 1 + SKILL.artDraw * (host.skill?.art || 0);
+}
+
 export function otherCamp(camp) {
   let best = null, bestD = Infinity;
   for (const c of camps) {
-    if (c === camp) continue;
-    const d = Math.hypot(c.x - camp.x, c.z - camp.z);
+    if (c === camp || c.gone) continue;
+    /* Nearest, but a band with a monument counts as nearer than it is. The walk
+       is the cost of a visit and this is what makes it worth paying: a gathering
+       place is somewhere people go past somewhere closer to reach. At mastery a
+       band pulls from three times as far, which is the difference between the
+       next valley and the one after it. */
+    const d = Math.hypot(c.x - camp.x, c.z - camp.z) / campPull(c);
     if (d < bestD) { bestD = d; best = c; }
   }
   return best;
@@ -597,9 +585,34 @@ export function arriveAtCamp(p, host) {
 
   /* Food goes the way it is needed. A camp with a comfortable store gives some
      of the surplus away; a camp with nothing gets what it can carry. */
+  /* A visit is a dealing whether or not anything is spared for it, so the walk
+     itself teaches a little and a gift teaches properly. Both bands learn: you
+     cannot trade with somebody who is not also trading. */
+  practise(home, 'trade', SKILL.perCall);
+  practise(host, 'trade', SKILL.perCall);
+  p.knows.trade = Math.max(p.knows.trade || 0, home.skill.trade);
+
+  /* And stone goes the same way food does, which is what makes it a good worth
+     trading rather than a number in a camp: it does not spoil, so a band with a
+     pile and a neighbour with none has something to deal with that keeps. What
+     moves with it is the toolmaking — a band that is handed stone by somebody
+     who knows what to do with it learns faster than one that is handed stone. */
+  const spareStone = (home.stone || 0) - SKILL.stonePerTool * 4;
+  if (spareStone > 0 && (host.stone || 0) < SKILL.stoneMax * 0.5) {
+    const moved = spareStone * VISIT.gift * (1 + SKILL.tradeGift * home.skill.trade);
+    home.stone -= moved;
+    host.stone = Math.min(SKILL.stoneMax, (host.stone || 0) + moved);
+    practise(home, 'trade', SKILL.perDeal);
+    practise(host, 'trade', SKILL.perDeal);
+  }
+
   const surplus = home.food - home.need * FOOD.comfortable;
   if (surplus > 0 && host.hunger > 0.5) {
-    const gift = surplus * VISIT.gift;
+    /* How much of it actually moves. A band that is good at this gives more
+       away, which reads backwards for about a second and then does not: the
+       band with a name for dealing is the band that has dealt. */
+    const dealt = VISIT.gift * (1 + SKILL.tradeGift * ((home.skill.trade + host.skill.trade) / 2));
+    const gift = surplus * Math.min(dealt, 1);
     home.food -= gift;
     host.food += gift;
     /* Once a season, not once a trip. A band with a full store and a hungry
@@ -607,6 +620,8 @@ export function arriveAtCamp(p, host) {
        so every time is a chronicle nobody can read. */
     if (simDay - (host.lastGift || -99) > P.yearLength / 4) {
       host.lastGift = simDay;
+      practise(home, 'trade', SKILL.perDeal);
+      practise(host, 'trade', SKILL.perDeal);
       logEvent('trade', `[${home.code}] ${home.name} sent food to [${host.code}] ${host.name}`,
         host.x, host.z);
     }
@@ -721,7 +736,22 @@ export function daysOfFood(camp) {
    ------------------------------------------------------------------------- */
 
 export const SPLIT = {
-  at: 17,              // people in one camp before it is too many
+  /* People in one camp before it is too many — and what "too many" means is a
+     fact about the camp, not about bands. It was seventeen because a camp was
+     one fire and one ring of fourteen tents: past that the ring was full and
+     everybody over shared the last tent, so a band that kept growing simply
+     looked wrong.
+
+     A camp is a village now. Fifty tents in five clusters, each round its own
+     hearth, and a band lights the next fire when the last one is full rather
+     than crowding round the first — so sixty people is somewhere to live rather
+     than a crowd, and the thing that eventually sends half of them over the
+     hill is the walk to the foraging rather than the room by the fire.
+
+     Sixty is about twenty-five households, half the tents a village has. The
+     rest is headroom for the years when a band is doing well and nobody has
+     died yet. */
+  at: 60,              // people in one camp before it is too many
   takes: 0.42,         // share of them who go
   /* Three and a half days is not a surplus, it is next week's dinner. Splitting
      on it turned one band that was coping into two that were not — measured
@@ -794,7 +824,12 @@ export function updateGround(days) {
       && Math.hypot(c.x - camp.x, c.z - camp.z) < GROUND.range * 1.7);
     const squeezed = rival && camp.hunger > GROUND.squeeze;
     camp.pressed = Math.max(0, (camp.pressed || 0) + (squeezed ? days : -days * 2));
-    if (!squeezed || camp.pressed < GROUND.patience) continue;
+    /* A band with its dead in the next field takes longer to give up its
+       ground. This is the whole of what belief does, and it cuts both ways: it
+       is sometimes why a band comes through a squeeze that would have scattered
+       it, and sometimes why it starves where it stands. */
+    const patience = GROUND.patience * (1 + SKILL.holdGround * (camp.skill?.rites || 0));
+    if (!squeezed || camp.pressed < patience) continue;
 
     // The smaller band is the one that goes.
     const adults = (c) => people.reduce((n, p) => n + (p.camp === c && !p.child ? 1 : 0), 0);
@@ -979,19 +1014,25 @@ export function splitCamp(parent) {
   if (!site) return false;
 
   const voice = tribeVoice(rng);
+  // The name first, because the code is a shorthand for it.
+  const name = uniqueName(rng, 2 + ((rng() * 2) | 0), voice);
   const camp = {
     index: camps.length, x: site.x, z: site.z, y: sampleHeight(site.x, site.z),
-    rng, voice, name: uniqueName(rng, 2 + ((rng() * 2) | 0), voice),
-    code: worldCode((P.seed ^ 0x1d3f) + camps.length * 6151),
+    rng, voice, name,
+    code: takeTribeCode(name),
     get color() { return codeColor(this.code); },
     // Nothing in the store, so: hungry. See the note in people.js.
     food: 0, pop: 0, need: 0, hunger: 1, wasEmpty: false,
+    /* A band that walks away carries nothing but what it knows. The stone stays
+       in the pile it was quarried into, which is the right answer and the
+       harsh one: a daughter camp starts at the rocks again. */
+    stone: 0,
     /* What the leavers remember between them, which is where the new band
        starts. A camp founded by somebody who knew how to cure meat does not
        have to work it out again. */
     skill: emptySkills(),
     told: emptySkills(),
-    toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0 },
+    toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 },
     born: 0, peak: 0, founded: simDay, gone: false, history: [],
   };
   camp.chief = chief.id;
@@ -1300,13 +1341,26 @@ export function pickFruit(x, z, reach = ORCHARD.reach, takes = ORCHARD.takes) {
   if (!orchard) return 0;
   const r2 = reach * reach;
   let taken = 0;
-  for (let i = 0; i < orchard.on.length && taken < takes; i++) {
-    if (!orchard.on[i]) continue;
-    const b = i * 16;
-    const dx = orchard.home[b + 12] - x, dz = orchard.home[b + 14] - z;
-    if (dx * dx + dz * dz > r2) continue;
-    setFruit(i, false);
-    taken++;
+  /* Only the fruit hanging near enough to matter. This walked every fruit on
+     the island — and walked all of them precisely when there were none within
+     reach, which is most trips. See the note where the buckets are built. */
+  const cell = ORCHARD_BUCKET;
+  const i0 = Math.floor((x - reach) / cell), i1 = Math.floor((x + reach) / cell);
+  const j0 = Math.floor((z - reach) / cell), j1 = Math.floor((z + reach) / cell);
+  for (let bi = i0; bi <= i1 && taken < takes; bi++) {
+    for (let bj = j0; bj <= j1 && taken < takes; bj++) {
+      const here = orchard.buckets?.get(`${bi},${bj}`);
+      if (!here) continue;
+      for (let n = 0; n < here.length && taken < takes; n++) {
+        const i = here[n];
+        if (!orchard.on[i]) continue;
+        const b = i * 16;
+        const dx = orchard.home[b + 12] - x, dz = orchard.home[b + 14] - z;
+        if (dx * dx + dz * dz > r2) continue;
+        setFruit(i, false);
+        taken++;
+      }
+    }
   }
   if (taken) logFruit(taken, x, z);
   return taken * ORCHARD.worth;
@@ -1368,14 +1422,6 @@ export function regrowFruit(days) {
   strippedSince = 0;
 }
 
-/* How rich the ground is to forage. The same noise that decides where flowers
-   grow decides where there is something worth picking, which means the good
-   foraging is visibly the flowery ground. */
-export function forageRichness(x, z) {
-  // Ground richness times the time of year. Winter yields about a third of high
-  // summer, which is the whole reason a store is worth keeping.
-  return (0.55 + fbm(x * 0.010, z * 0.010, 2, P.seed + 707)) * forageSeason;
-}
 
 /* -------------------------------------------------------------------------
    Lives
@@ -1496,6 +1542,7 @@ export const DEATH_WORDS = {
      death. Nobody has ever died of walking here: effort alone cannot reach
      zero, because a spent person drops to a walk and a walk pays for itself. */
   exhaustion: (p, age) => `grew too weak with hunger, ${describeAge(age)}`,
+  raid: (p, age) => `was killed in a raid, ${describeAge(age)}`,
   sickness: (p, age) => `died of the sickness, ${describeAge(age)}`,
   tiger: (p, age) => `was taken by a tiger, ${describeAge(age)}`,
 };
@@ -1511,6 +1558,7 @@ export function tollOf(camp) {
 export const TOLL_WORDS = {
   age: 'old age', infancy: 'infancy', hunger: 'hunger',
   exhaustion: 'weakness from hunger', sickness: 'the sickness', tiger: 'tigers',
+  raid: 'a raid',
 };
 
 /* Why a band is not there any more. Written the moment the last of them dies,
@@ -1538,6 +1586,10 @@ export function killPerson(i, cause) {
   const say = (DEATH_WORDS[cause] || DEATH_WORDS.age)(p, age);
   logEvent('death', `${who(p)} ${say}`, p.x, p.z);
   buryPerson(p);
+  /* The band is a little more what it is for having done this. A burial is rare
+     and worth five afternoons at the stones — which is the right way round: the
+     rite comes from the death, and going back is the keeping of it. */
+  practise(p.camp, 'rites', SKILL.perBurial);
   p.camp.lost = (p.camp.lost || 0) + 1;
   p.camp.toll[cause] = (p.camp.toll[cause] || 0) + 1;
   recordDeath(p, cause);

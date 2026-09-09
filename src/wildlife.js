@@ -713,11 +713,19 @@ export const PANIC = {
   runs: 14,            // seconds they keep running once they have
   safe: 9,             // metres from the fire a tiger will not come
   /* ...and how much further out a band that keeps its fire well pushes that.
-     At mastery the sanctuary is 23 metres, which is about the size of the
-     trampled ground round a camp — so a well-kept fire makes the whole clearing
-     somewhere you are safe rather than a place you have to reach the middle
-     of. It is the difference between getting home and getting nearly home. */
-  fireSafe: 14,
+     At mastery the sanctuary is the size of the trampled ground round a camp —
+     so a well-kept fire makes the whole clearing somewhere you are safe rather
+     than a place you have to reach the middle of. It is the difference between
+     getting home and getting nearly home.
+
+     Which means it has to move when the camp does. A band is a village now: up
+     to five hearths spread thirteen metres out with their own rings of tents
+     round them, and `CAMP_CLEARING` grew from 17 to 26 to cover it. At 14 this
+     stayed 23, and the ground that gained was the outer third of every village
+     — somebody would reach their own tent, be inside the camp by every other
+     rule in the world, and be taken there. The test that caught it compares
+     these two numbers directly, which is why it caught it. */
+  fireSafe: 17,
 };
 
 /** The ground round this band's fire that a tiger will not cross. */
@@ -1521,6 +1529,10 @@ export function ancestry(p, limit = 12) {
 }
 
 export const usedNames = new Set();
+/* And the two characters each of those names is shortened to. Kept beside the
+   names because they are derived from them and have to be unique for the same
+   reason: the chronicle says whose line a line is with one of these. */
+export const usedCodes = new Set();
 
 export function uniqueName(rng, syllables, onsets) {
   for (let t = 0; t < 40; t++) {

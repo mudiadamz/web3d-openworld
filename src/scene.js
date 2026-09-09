@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 
-import { FOG_DENSITY, P, SNOW } from './params.js';
+import { FOG_DENSITY, P, SNOW, WORLD } from './params.js';
 import { fbm, lerp, mulberry32, smoothstep } from './noise.js';
 import { logEvent, simDay } from './life.js';
+import { pathUniforms } from './paths.js';
 
 /* -------------------------------------------------------------------------
    Renderer, scene, camera
@@ -277,29 +278,57 @@ export const grassUniforms = {
    the shader instead, weighted by how grassy each vertex was — bare rock and
    sand do not turn gold in autumn, and the snow line is free to move down the
    mountain as the year turns. */
+/* The terrain browns where it has been walked. The wear is a texture rather
+   than vertex colours because the vertices are metres apart — at HIGH a terrain
+   triangle is seven metres of hillside, and a path is one and a half. */
 export const terrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
 terrainMaterial.onBeforeCompile = (shader) => {
-  Object.assign(shader.uniforms, seasonUniforms);
+  Object.assign(shader.uniforms, seasonUniforms, pathUniforms);
+  shader.uniforms.uWorldSize = { value: WORLD };
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `
       #include <common>
       attribute float aGreen;
       varying float vGreen;
-      varying float vWorldY;`)
+      varying float vWorldY;
+      varying vec2 vWorldXZ;`)
     .replace('#include <begin_vertex>', `
       #include <begin_vertex>
       vGreen = aGreen;
-      vWorldY = (modelMatrix * vec4(transformed, 1.0)).y;`);
+      vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
+      vWorldY = worldPos.y;
+      vWorldXZ = worldPos.xz;`);
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <common>', `
       #include <common>
       uniform vec3 uSeasonTint;
       uniform float uSnowLine;
+      uniform sampler2D uPaths;
+      uniform vec3 uPathColor;
+      uniform float uPathDeep;
+      uniform float uWorldSize;
       varying float vGreen;
-      varying float vWorldY;`)
+      varying float vWorldY;
+      varying vec2 vWorldXZ;`)
+    /* The path goes on before the season and the snow, and only over living
+       ground. Trodden earth does not turn with the year and does not need to be
+       told that a beach is already bare — `vGreen` is exactly "how much of this
+       was growing", so multiplying by it means a path fades out where there was
+       never anything to wear away. */
     .replace('#include <color_fragment>', `
       #include <color_fragment>
-      diffuseColor.rgb *= mix(vec3(1.0), uSeasonTint, vGreen);
+      float worn = texture2D(uPaths, vWorldXZ / uWorldSize + 0.5).r;
+      /* Where the ground actually browns. It started at 0.10, which painted
+         every faint smear anybody had ever walked across — and since the wear
+         field is sampled with a linear filter, a track one cell wide paints a
+         tent three metres across before the threshold trims it. Measured: a
+         route walked twenty times came out 3.8 m across at 88 percent, which is
+         a road. Starting at 0.45 and reaching full at 0.88 cuts the base off
+         that tent and leaves the middle of it: 2.6 m, which is a path people
+         have worn rather than one somebody laid. */
+      float tread = smoothstep(0.45, 0.88, worn) * uPathDeep * vGreen;
+      diffuseColor.rgb = mix(diffuseColor.rgb, uPathColor, tread);
+      diffuseColor.rgb *= mix(vec3(1.0), uSeasonTint, vGreen * (1.0 - tread));
       float seasonSnow = smoothstep(uSnowLine, uSnowLine + 30.0, vWorldY);
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.90, 0.93, 0.96), seasonSnow * 0.92);`);
 };

@@ -1,6 +1,6 @@
 import { P } from './params.js';
 import { clamp, mulberry32 } from './noise.js';
-import { NAME_CODA, NAME_VOWEL, setLineage, tribeVoice } from './wildlife.js';
+import { NAME_CODA, NAME_VOWEL, setLineage, tribeVoice, usedCodes } from './wildlife.js';
 import { RATES, rateIndex, setRateIndex } from './clock.js';
 import {
   CHRONICLE_STORE, chronicle, milestonesOnly, pendingEvents, renderChronicle, renderTribes, runId,
@@ -10,8 +10,10 @@ import {
 import { buildWorld, placeCamera } from './move.js';
 import {
   chronPage, closeChronicle, closeTribe, openChronicle, openTribe, orderJob, renderChronPage,
-  renderTribeCard, setChronFind, setChronPage, setTribeTab, showKeys, toggleKeys
+  renderTribeCard, setChronFind, setChronPage, setTribeTab, showKeys, toggleKeys, tribeShown
 } from './chronicle.js';
+import { camps } from './people.js';
+import { travelTo } from './map.js';
 import { $, STATE_STORE, clearSavedState, ui } from './save.js';
 import { elapsed, seeAhead, stopAhead, updateHud } from './main.js';
 
@@ -47,7 +49,7 @@ export function updateToast() {
   if (el && !el.hidden && elapsed > toastUntil) el.hidden = true;
 }
 
-export const VIEW_NAMES = { fly: 'Fly', walk: 'Walk', orbit: 'Orbit', follow: 'Follow' };
+export const VIEW_NAMES = { orbit: 'Orbit', follow: 'Follow' };
 
 /* -------------------------------------------------------------------------
    Worlds
@@ -83,6 +85,56 @@ export function worldCode(seed) {
     + CODE_LETTERS[(rng() * CODE_LETTERS.length) | 0];
 }
 
+/* A band's two characters, taken out of its own name.
+
+   They used to be a hash of a seed, which made them unique and meaningless:
+   "Tsekash" was 3X because of arithmetic, so the chip on the map and the name on
+   the panel were two unrelated facts about the same band and you learned the
+   pairing by rote. Read off the name they are a shorthand for it — Tsekash is
+   TS — and the map stops needing to be memorised.
+
+   Uniqueness still has to hold, because the code is what the chronicle uses to
+   say whose line a line is. So the second character is the first of these that
+   nobody has taken:
+
+     · the name's second letter          Tribe    -> TR
+     · the start of its last syllable    Tribetwo -> TT   (TR being gone)
+     · any other letter in it            Tsotsa   -> TO
+     · any letter at all, which cannot run out inside one island
+
+   Every one of those is still *from the name* until the last, which is the
+   whole point: a code you cannot derive is a code you have to look up. */
+export function tribeCode(name, taken = new Set()) {
+  const up = String(name || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (!up) return worldCode(taken.size + 1);
+  const first = up[0];
+  const vowel = (c) => 'AEIOU'.includes(c);
+
+  const tries = [];
+  if (up.length > 1) tries.push(up[1]);
+  /* Syllable starts, last first. "Tribetwo" is TT rather than TB because the
+     end of a name is the part that makes it that name — the beginnings are
+     shared by everything the same band ever founded. */
+  for (let i = up.length - 1; i > 1; i--) {
+    if (!vowel(up[i]) && vowel(up[i - 1])) tries.push(up[i]);
+  }
+  for (let i = 1; i < up.length; i++) tries.push(up[i]);
+  for (const c of CODE_LETTERS) tries.push(c);
+
+  for (const c of tries) {
+    const code = first + c;
+    if (!taken.has(code)) return code;
+  }
+  return first + CODE_LETTERS[taken.size % CODE_LETTERS.length];
+}
+
+/** Claims one, so no two bands on an island answer to the same two letters. */
+export function takeTribeCode(name) {
+  const code = tribeCode(name, usedCodes);
+  usedCodes.add(code);
+  return code;
+}
+
 /* Light and saturated: the chip carries dark text, and neighbouring worlds want
    to be told apart at a glance rather than merely to look different. */
 export function worldColor(seed) {
@@ -95,10 +147,22 @@ export function worldColor(seed) {
    the right colour years later: the line carries "[TK]" as plain text, and the
    colour is worked out from those two characters at the moment it is drawn.
    Nothing has to be stored, and nothing can drift. */
+/* Scattered rather than summed, and the codes being meaningful is what forced
+   it. `h * 31 + c` moves the hue by one degree per step of the last character,
+   which was invisible but harmless while codes were random and spread over the
+   whole space. Now they are initials: half the bands on an island can share a
+   first letter, and TR and TS would have come out two degrees apart — the same
+   colour, on the dots the map uses to tell them apart.
+
+   FNV with a finalizer, so one character's difference is a different hue rather
+   than an adjacent one. */
 export function codeColor(code) {
-  let h = 0;
-  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) | 0;
-  return `hsl(${((h % 360) + 360) % 360} 70% 70%)`;
+  let h = 2166136261;
+  for (let i = 0; i < code.length; i++) {
+    h = Math.imul(h ^ code.charCodeAt(i), 16777619);
+  }
+  h ^= h >>> 15; h = Math.imul(h, 2246822519); h ^= h >>> 13;
+  return `hsl(${(h >>> 0) % 360} 70% 70%)`;
 }
 
 /** Marks up every [XX] in a line of chronicle as the band it belongs to. */
@@ -318,6 +382,37 @@ $('tribes').addEventListener('click', (ev) => {
 });
 $('tribeNow').addEventListener('click', () => { setTribeTab('now'); renderTribeCard(); });
 $('tribeWas').addEventListener('click', () => { setTribeTab('was'); renderTribeCard(); });
+$('tribeLog').addEventListener('click', () => { setTribeTab('log'); renderTribeCard(); });
+/* Go and stand there — and get out of the way, which is the whole gesture.
+
+   This left the card open at first, on the reasoning that the reason to go is
+   to look at what the card is describing. That was exactly backwards: `#tribe`
+   is `position: fixed; inset: 0` with a dimmed, blurred backdrop over the whole
+   window, so the camera moved and you were left looking at the overlay. It read
+   as a button that did nothing, which is the worst way for a thing to work.
+
+   Clicking a band on the *map* still opens the card, and that is not the same
+   gesture: there you are asking who they are, here you are asking to see them.
+   The toast keeps its name on screen either way. */
+$('tribeGo').addEventListener('click', () => {
+  /* Off the button rather than out of a live binding — see renderTribeCard. */
+  const at = Number($('tribeGo').dataset.camp);
+  const camp = camps[Number.isFinite(at) && at >= 0 ? at : tribeShown];
+  /* And it says so rather than doing nothing. A button that fails silently is
+     the same thing on screen as a button that is not connected, which is two
+     completely different bugs to go looking for. */
+  if (!camp) { toast('no band to go to'); return; }
+
+  /* Everything that is over the world comes down. The card is a full-screen
+     backdrop and so is the chronicle, so leaving either up moves the camera to
+     a view of the overlay — which is what "the button does nothing" turned out
+     to mean the first time. */
+  closeTribe();
+  closeChronicle();
+  showKeys(false);
+  travelTo(camp.x, camp.z);
+  toast(camp.name);
+});
 $('tribeClose').addEventListener('click', closeTribe);
 $('tribe').addEventListener('click', (ev) => { if (ev.target === $('tribe')) closeTribe(); });
 
@@ -377,10 +472,22 @@ $('keysClose').addEventListener('click', () => showKeys(false));
 // Clicking the dimmed area behind the card closes it; clicking the card does not.
 $('keys').addEventListener('click', (ev) => { if (ev.target === $('keys')) showKeys(false); });
 
-$('collapse').addEventListener('click', () => {
-  ui.classList.toggle('collapsed');
-  if (!ui.classList.contains('collapsed')) { updateHud(); renderChronicle(); renderTribes(); }
-});
+/* One path for the icon and for H, because they are the same gesture.
+
+   H used to toggle `hidden`, which took the toggle button with it: the pane did
+   not minimise, it left, and the only way back was a key you had to already
+   know. Collapsed, the icon IS the panel — one row, no title, still there. The
+   `hidden` class stays for the one thing it is right for, which is the panel
+   not existing yet while the world is being built. */
+export function togglePanel(collapsed) {
+  const next = collapsed === undefined ? !ui.classList.contains('collapsed') : Boolean(collapsed);
+  ui.classList.toggle('collapsed', next);
+  // Nothing in the pane is redrawn while it is shut, so opening it has to catch up.
+  if (!next) { updateHud(); renderChronicle(); renderTribes(); }
+  return next;
+}
+
+$('collapse').addEventListener('click', () => togglePanel());
 
 export function syncLabels() {
   renderWorlds();

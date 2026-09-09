@@ -13,6 +13,23 @@
 
 export const P = {
   time: 7.5,          // hours, 0..24 — state, not a setting; the clock always runs
+  /* Real seconds for a full 24h, and so the pace of everything: every speed in
+     the world is tuned against an hour-long day and then scaled by how
+     compressed this is — `pace()` is PACE_DAY / dayLength, and it multiplies
+     every walk, flight and camera move in the world.
+
+     So a short day is a fast world, not a hungrier one. The economy does not
+     notice: a day is always PACE_DAY seconds of *activity* however many real
+     seconds it takes, so a forager gets the same trips in either way. What
+     changes is what you are watching. An hour is where the multiplier is 1 and
+     a walk is the 1.35 m/s it is written as; at 2400 that reads as 2.03, at
+     1200 as 4.05, which is a sprint.
+
+     Set to the length walking was tuned against, because "people move like
+     people" is worth more than the minutes it saves — and the night is run
+     through once everybody is asleep, so an hour-long day is about half an hour
+     of watching. The floor is 300, where the multiplier clamps at 12x and the
+     world stops keeping up. */
   dayLength: 3600,    // real seconds for a full 24h
   yearLength: 24,     // simulated days in a year
   map: 1600,          // metres across; the island's extent, set with MAP
@@ -45,7 +62,7 @@ export const P = {
   water: true,
   waves: 1,
   models: 'birds',    // off | birds | all — real glTF geometry for the wildlife
-  view: 'fly',        // fly | walk | orbit | follow
+  view: 'orbit',      // orbit | follow
   followDist: 4.5,
   fov: 58,
   sound: true,

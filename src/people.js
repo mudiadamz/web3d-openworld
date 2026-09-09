@@ -4,12 +4,12 @@ import { CAMP_CEILING, MAP_SCALE, P, PEOPLE_CEILING, QUALITY, SEA, SNOW } from '
 import { clamp, flatnessAt, mulberry32, sampleHeight } from './noise.js';
 import { faunaMaterial, rockMaterial } from './scene.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, stats, world } from './world.js';
-import { recordPerson, setLineage, tribeVoice, uniqueName, usedNames } from './wildlife.js';
+import { recordPerson, setLineage, tribeVoice, uniqueName, usedCodes, usedNames } from './wildlife.js';
 import { PERSON, PERSON_PARTS, partsPer } from './clock.js';
 import {
-  FOOD, LIFE, chiefOf, emptySkills, hidePeopleFrom, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay
+  FOOD, LIFE, chiefOf, emptySkills, hidePeopleFrom, nearestShore, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay
 } from './life.js';
-import { codeColor, worldCode } from './ui.js';
+import { codeColor, takeTribeCode } from './ui.js';
 
 /* -------------------------------------------------------------------------
    Bodies
@@ -107,6 +107,7 @@ export const tribeGroup = new THREE.Group();
 
 export function clearTribe() {
   usedNames.clear();
+  usedCodes.clear();
   camps.length = 0;
   people.length = 0;
   personParts = null;
@@ -150,13 +151,16 @@ export function chooseCampSites(count) {
     if (!best) continue;
     const crng = mulberry32((P.seed ^ 0xc0ffee) + i * 977);
     const voice = tribeVoice(crng);
+    // The name first, because the code is a shorthand for it.
+    const name = uniqueName(crng, 2 + ((crng() * 2) | 0), voice);
     camps.push({
       index: camps.length, x: best.x, z: best.z, y: sampleHeight(best.x, best.z),
-      rng: crng, voice, name: uniqueName(crng, 2 + ((crng() * 2) | 0), voice),
-      /* The same two-characters-and-a-hue the worlds wear, from the camp's own
-         seed. Once a chronicle spans several bands over several worlds, a line
-         has to say whose it is in less space than a name takes. */
-      code: worldCode((P.seed ^ 0x1d3f) + i * 6151),
+      rng: crng, voice, name,
+      /* Two characters and a hue, taken out of the band's own name — Tsekash is
+         TS. Once a chronicle spans several bands over several worlds, a line has
+         to say whose it is in less space than a name takes, and a shorthand you
+         can read is worth more than one you have to memorise. */
+      code: takeTribeCode(name),
       get color() { return codeColor(this.code); },
       /* Hunger 1, not 0. An empty store is maximum hunger — `1 - 0/6` — and
          writing 0 here says the opposite of what `food: 0` on the same line
@@ -167,6 +171,9 @@ export function chooseCampSites(count) {
          one of them, and a brand new band sat down round a fire it had nothing
          to cook on. */
       food: 0, pop: 0, need: 0, hunger: 1, wasEmpty: false,
+      // Nothing quarried yet. Unlike food it does not spoil, so it only ever
+      // goes up until somebody makes something out of it or trades it away.
+      stone: 0,
       // Everything it will ever know, it has to work out.
       skill: emptySkills(),
       told: emptySkills(),
@@ -174,14 +181,18 @@ export function chooseCampSites(count) {
          chronicle says one thing at a time; this is the thing you can only see
          by adding them up — that one camp lost nine to a sickness and the other
          starved. */
-      toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0 },
+      toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 },
       born: 0, peak: 0, founded: simDay, gone: false,
       history: [],
     });
   }
 }
 
-export const CAMP_CLEARING = 17;      // metres of trampled ground around a fire
+/* Metres of trampled ground around a camp — no grass, no trees, and the
+   distance the rest of the simulation means by "at the fire". Grown with the
+   camp: hearths sit 13 m out and their tents 6 to 9 m beyond that, so at 17 the
+   far tents of a village stood in long grass outside their own camp. */
+export const CAMP_CLEARING = 26;
 
 export function inCamp(x, z, extra = 0) {
   for (let i = 0; i < camps.length; i++) {
@@ -243,13 +254,65 @@ export const GRAVE_STONES = 3;       // stones per cairn
 export let graves = [];              // { x, z, y, day, sex }
 export let graveMesh = null;
 
+/* -------------------------------------------------------------------------
+   What a band raises over its dead
+
+   Going back to the stones is `rites`. This is what a band does once going back
+   is not enough — and it is the first mark any of them leaves that is not
+   shelter or a tool.
+
+   The form is the band's own, drawn once off its own stream: a ring, an avenue
+   leading in, or a single raised cairn. Two villages a kilometre apart have
+   raised different things, and neither of them chose to. How much of it is
+   standing follows their `art`, so it goes up over years rather than appearing
+   — a band with a tenth of it has a few stones on end and a band at mastery has
+   the whole ring.
+   ------------------------------------------------------------------------- */
+export const MONUMENT_FORMS = ['ring', 'avenue', 'cairn'];
+export const MONUMENT_MAX = 14;          // stones in the largest of them
+
+export function monumentPlan(camp) {
+  if (!camp.barrow) return [];
+  if (camp.stonesPlan) return camp.stonesPlan;
+  const rng = mulberry32((camp.index + 1) * 7919 ^ (P.seed | 0));
+  const form = MONUMENT_FORMS[(rng() * MONUMENT_FORMS.length) | 0];
+  const { x, z, a } = camp.barrow;
+  const plan = [];
+  for (let i = 0; i < MONUMENT_MAX; i++) {
+    const t = i / MONUMENT_MAX;
+    let px, pz, tall = 1.5 + rng() * 1.1;
+    if (form === 'ring') {
+      const ang = t * Math.PI * 2 + rng() * 0.06;
+      px = x + Math.cos(ang) * 7.5; pz = z + Math.sin(ang) * 7.5;
+    } else if (form === 'avenue') {
+      // Two files leading in to the ground, which is what an avenue is.
+      const side = i % 2 ? 1 : -1, step = Math.floor(i / 2);
+      px = x - Math.cos(a) * (5 + step * 2.6) - Math.sin(a) * side * 2.2;
+      pz = z - Math.sin(a) * (5 + step * 2.6) + Math.cos(a) * side * 2.2;
+    } else {
+      // A cairn: one heap, taller than it is wide, growing inward and up.
+      const ang = rng() * Math.PI * 2, r = 0.5 + t * 2.6;
+      px = x + Math.cos(ang) * r; pz = z + Math.sin(ang) * r;
+      tall = 2.4 - t * 1.4;
+    }
+    plan.push({ x: px, z: pz, y: sampleHeight(px, pz), tall, lean: (rng() - 0.5) * 0.16 });
+  }
+  camp.stonesPlan = plan;
+  camp.stonesForm = form;
+  return plan;
+}
+
 export function buildGraves() {
   const geo = new THREE.DodecahedronGeometry(1, 0);
-  graveMesh = new THREE.InstancedMesh(geo, rockMaterial, GRAVE_MAX * GRAVE_STONES);
+  /* The graves, and behind them whatever each band has raised. One mesh for
+     both because they are the same material and the same shape at different
+     scales — a standing stone is a cairn stone that somebody stood up. */
+  graveMesh = new THREE.InstancedMesh(geo, rockMaterial,
+    GRAVE_MAX * GRAVE_STONES + campCapacity * MONUMENT_MAX);
   graveMesh.castShadow = true;
   graveMesh.receiveShadow = true;
   graveMesh.frustumCulled = false;
-  for (let i = 0; i < GRAVE_MAX * GRAVE_STONES; i++) graveMesh.setMatrixAt(i, HIDDEN);
+  for (let i = 0; i < graveMesh.count; i++) graveMesh.setMatrixAt(i, HIDDEN);
   tribeGroup.add(graveMesh);
   drawGraves();
 }
@@ -275,6 +338,30 @@ export function drawGraves() {
       up += size * 0.72;
     }
   }
+  /* And what each band has raised, standing behind its own graves. How many of
+     the planned stones are up follows their `art`, so a monument goes up over
+     years — and it comes back down if a band forgets what it was for, which is
+     the only way any of this is ever lost. */
+  let at = GRAVE_MAX * GRAVE_STONES;
+  for (const camp of camps) {
+    const plan = camp.gone ? [] : monumentPlan(camp);
+    const up = Math.round(plan.length * (camp.skill?.art || 0));
+    for (let i = 0; i < MONUMENT_MAX; i++) {
+      const stone = i < up ? plan[i] : null;
+      if (stone) {
+        _e.set(stone.lean, i * 1.7, stone.lean * 0.7);
+        _q.setFromEuler(_e);
+        _v.set(stone.x, stone.y + stone.tall * 0.5, stone.z);
+        _s.set(0.42, stone.tall, 0.30);
+        graveMesh.setMatrixAt(at, _m4.compose(_v, _q, _s));
+        graveMesh.setColorAt(at, _c.setHex(0x8f877b));
+      } else {
+        graveMesh.setMatrixAt(at, HIDDEN);
+      }
+      at++;
+    }
+  }
+
   for (let i = n * GRAVE_STONES; i < GRAVE_MAX * GRAVE_STONES; i++) {
     graveMesh.setMatrixAt(i, HIDDEN);
   }
@@ -288,10 +375,27 @@ export function drawGraves() {
    record and the right way round for a view: the cairns you can still find are
    the ones from living memory. The chronicle keeps the rest. */
 export function buryPerson(p) {
+  /* Carried back rather than left. Somebody who dies out on the hill is buried
+     with the rest of their band — which is the whole difference between a
+     grave and a place where somebody died.
+
+     Laid in rows off the ground's own line, so a burial ground of thirty reads
+     as arranged rather than as thirty accidents in the same field. The row grows
+     outward with the count, so the oldest stones are at the middle: a band's
+     history has a shape you can walk along. */
+  const ground = p.camp?.barrow;
+  let x = p.x, z = p.z;
+  if (ground) {
+    const n = (p.camp.buried = (p.camp.buried || 0) + 1) - 1;
+    const row = Math.floor(n / 5), seat = (n % 5) - 2;
+    const ax = Math.cos(ground.a), az = Math.sin(ground.a);
+    x = ground.x + (-az * seat * 1.6) + ax * row * 1.5;
+    z = ground.z + (ax * seat * 1.6) + az * row * 1.5;
+  }
   graves.push({
-    x: Math.round(p.x * 100) / 100,
-    z: Math.round(p.z * 100) / 100,
-    y: sampleHeight(p.x, p.z),
+    x: Math.round(x * 100) / 100,
+    z: Math.round(z * 100) / 100,
+    y: sampleHeight(x, z),
     day: Math.floor(simDay),
     sex: p.sex,
   });
@@ -301,7 +405,54 @@ export function buryPerson(p) {
 
 /* Tents per camp. Six was a band; a camp that grows into a village needs one
    tent per family and there can be a dozen families round one fire. */
-export const CAMP_PIECES = { huts: 14, stones: 9, logs: 4, poles: 3 };
+/* -------------------------------------------------------------------------
+   A camp is a village that has not grown yet
+
+   Fourteen tents in one ring around one fire is a camp, and it is the only
+   thing a band could ever be: past that the ring was full, everybody left over
+   shared the last tent, and the band split rather than getting any bigger.
+
+   Now the tents come in clusters and every cluster has its own hearth. A band
+   of four families is one fire and four tents and looks exactly as it always
+   did; a band of forty is five fires with their own rings of tents around
+   them, which is what a village is — not one crowd around one hearth, but
+   several hearths far enough apart to sit at.
+
+   `perHearth` is the number that decides it: how many households one fire can
+   hold before the next one is lit.
+   ------------------------------------------------------------------------- */
+export const HEARTHS = 5;
+export const HUTS_PER_HEARTH = 10;
+export const CAMP_PIECES = {
+  huts: HEARTHS * HUTS_PER_HEARTH,
+  // Nine stones and four logs *per hearth*: a fire nobody can sit at is a
+  // bonfire, not a hearth.
+  stones: 9 * HEARTHS,
+  logs: 4 * HEARTHS,
+  poles: 3,
+  /* No `fires` here, and the crash that put this comment in is the reason:
+     `buildCamps` walks this object and parks every slot of the mesh named by
+     each key, so a key with no `campParts` mesh behind it is a TypeError on the
+     first frame of the first world. The fires have their own mesh and their own
+     count — `HEARTHS` — because there is one per hearth rather than a fixed
+     number per camp. This object is the pieces that come in bulk. */
+};
+
+/** How many fires a band of this many households is sitting around. */
+export function hearthsFor(families) {
+  return clamp(Math.ceil((families || 1) / HUTS_PER_HEARTH), 1, HEARTHS);
+}
+
+/* Where a camp's hearths are. The first is the camp itself — a band of one
+   family has its fire where its camp is, and always has. The rest are spread
+   round it far enough that the tents of one do not stand in the next. */
+export function hearthAt(camp, i) {
+  if (i === 0) return { x: camp.x, z: camp.z };
+  const a = (i / HEARTHS) * Math.PI * 2 + (camp.hearthTurn || 0);
+  const r = HEARTH_SPACING;
+  return { x: camp.x + Math.cos(a) * r, z: camp.z + Math.sin(a) * r };
+}
+export const HEARTH_SPACING = 13;
 export let campCapacity = 0;
 
 /* Everything a camp is made of, written into its own slots. Called once per
@@ -380,9 +531,38 @@ export function assignHuts(camp) {
   const families = familiesOf(camp);
   camp.families = families.length;
   families.forEach((f, i) => {
-    const hut = camp.huts[Math.min(i, camp.huts.length - 1)];
-    for (const p of [...f.adults, ...f.kids]) p.hut = hut;
+    const at = Math.min(i, camp.huts.length - 1);
+    const hut = camp.huts[at];
+    /* And the fire that tent stands round. Without this a village was five
+       hearths and one crowd: everything that means "go home" — the night
+       coming on, an errand ending, a job by the fire — aimed at `camp.x`, which
+       is hearth nought, so sixty people walked past four burning fires to stand
+       at the first one. The hearths were furniture.
+
+       It comes off the tent rather than off the person, so a household sits at
+       one fire: the same rule that put their tents beside each other. */
+    const fire = camp.fireAt?.[Math.floor(at / HUTS_PER_HEARTH)];
+    for (const p of [...f.adults, ...f.kids]) { p.hut = hut; p.hearth = fire; }
   });
+}
+
+/** The fire somebody lives at, rather than the middle of the village. */
+export function homeFire(p) {
+  return p.hearth || p.camp;
+}
+
+/* And the one they would run to, which is whichever is nearest — a person with
+   a tiger behind them takes the fire in front of them, not the one they happen
+   to sleep at. */
+export function nearestFire(camp, x, z) {
+  let best = camp, near = Infinity;
+  for (let f = 0; f < (camp.hearths || 0); f++) {
+    const at = camp.fireAt?.[f];
+    if (!at) continue;
+    const d = Math.hypot(at.x - x, at.z - z);
+    if (d < near) { near = d; best = at; }
+  }
+  return best;
 }
 
 export function dressCamp(camp) {
@@ -403,6 +583,36 @@ export function dressCamp(camp) {
     else campParts.huts.setMatrixAt(slot, HIDDEN);
   }
   campParts.huts.instanceMatrix.needsUpdate = true;
+
+  /* And a fire for every ring of tents that has anybody in it. A hearth with
+     no tents round it is a fire nobody is sitting at, which reads as a camp
+     twice the size of the band living in it — the thing lighting them all
+     unconditionally would do. */
+  camp.hearths = here === 0 ? 0 : hearthsFor(want);
+  const perFireStones = P0.stones / HEARTHS, perFireLogs = P0.logs / HEARTHS;
+  for (let f = 0; f < HEARTHS; f++) {
+    const lit = f < camp.hearths;
+    const at = camp.fireAt?.[f];
+    if (lit && at) {
+      _v.set(at.x, at.y + 0.05, at.z); _q.identity(); _s.setScalar(1);
+      campParts.fire.setMatrixAt(index * HEARTHS + f, _m4.compose(_v, _q, _s));
+    } else {
+      campParts.fire.setMatrixAt(index * HEARTHS + f, HIDDEN);
+    }
+    for (let i = 0; i < perFireStones; i++) {
+      const k = f * perFireStones + i;
+      campParts.stones.setMatrixAt(index * P0.stones + k,
+        lit && camp.stoneAt?.[k] ? camp.stoneAt[k] : HIDDEN);
+    }
+    for (let i = 0; i < perFireLogs; i++) {
+      const k = f * perFireLogs + i;
+      campParts.logs.setMatrixAt(index * P0.logs + k,
+        lit && camp.logAt?.[k] ? camp.logAt[k] : HIDDEN);
+    }
+  }
+  campParts.fire.instanceMatrix.needsUpdate = true;
+  campParts.stones.instanceMatrix.needsUpdate = true;
+  campParts.logs.instanceMatrix.needsUpdate = true;
 
   /* The rack. Standing only if somebody in the band knows what it is for. */
   const knows = (camp.skill?.drying || 0) >= RACK_KNOWN;
@@ -426,12 +636,57 @@ export function layoutCamp(camp, index) {
      decided by dressCamp, and changes as the band does. Laying them out once
      matters because the layout comes off the camp's own rng, and re-running it
      every time somebody is born would shuffle the whole camp around them. */
+  camp.hearthTurn = rng() * Math.PI * 2;
+
+  /* -----------------------------------------------------------------------
+     Where the dead go
+
+     They used to be buried where they fell, which is defensible and reads as
+     nothing: a stone in the long grass eight hundred metres out is scenery, and
+     forty of them scattered across an island are litter. A band that buries its
+     people in one place has somewhere — you can walk to it, it grows, and the
+     size of it is how long they have been here.
+
+     Just outside the trampled ground rather than in it: far enough that the
+     village is not built on its own dead, near enough to be theirs. On flat
+     ground, out of the water, and downwind of nothing in particular — the site
+     is picked the same way a camp is, and once, off the camp's own stream, so
+     it does not wander when somebody dies.
+     ----------------------------------------------------------------------- */
+  /* The water's edge this band goes to, found once with the camp. A coast does
+     not move, and a band either has one within walking distance or is inland —
+     which is a fact about where its founders stopped, and one of the few things
+     that makes two camps on one island live differently. */
+  camp.shore = nearestShore(camp.x, camp.z);
+  camp.raft = false;
+
+  camp.barrow = null;
+  for (let t = 0; t < 60 && !camp.barrow; t++) {
+    const a = rng() * Math.PI * 2;
+    const r = CAMP_CLEARING + 6 + rng() * 12;
+    const x = camp.x + Math.cos(a) * r, z = camp.z + Math.sin(a) * r;
+    if (sampleHeight(x, z) < SEA + 1.5) continue;
+    if (flatnessAt(x, z) < 0.88) continue;
+    camp.barrow = { x, z, y: sampleHeight(x, z), a };
+  }
+  // Nowhere flat and dry within reach: keep them close rather than nowhere.
+  if (!camp.barrow) {
+    const x = camp.x + CAMP_CLEARING + 4, z = camp.z;
+    camp.barrow = { x, z, y: sampleHeight(x, z), a: 0 };
+  }
   for (let i = 0; i < P0.huts; i++) {
     const slot = index * P0.huts + i;
-    // A ring of shelters facing the fire, which is what a camp actually is.
-    const a = (i / P0.huts) * Math.PI * 2 + rng() * 0.5;
+    /* A ring of shelters facing a fire, which is what a camp actually is — and
+       one ring per fire, which is what a village is. Tents fill their own
+       hearth's ring before the next hearth is used at all, so a band that grows
+       lights a second fire and puts its next tents round that, rather than
+       packing more of them into the first ring. */
+    const mine = (i / HUTS_PER_HEARTH) | 0;
+    const seat = i % HUTS_PER_HEARTH;
+    const fire = hearthAt(camp, mine);
+    const a = (seat / HUTS_PER_HEARTH) * Math.PI * 2 + rng() * 0.5;
     const r = 6.5 + rng() * 2.6;
-    const x = camp.x + Math.cos(a) * r, z = camp.z + Math.sin(a) * r;
+    const x = fire.x + Math.cos(a) * r, z = fire.z + Math.sin(a) * r;
     const sc = 0.85 + rng() * 0.4;
     camp.huts.push({ x, z });
     _e.set(0, -a, 0); _q.setFromEuler(_e);
@@ -464,25 +719,37 @@ export function layoutCamp(camp, index) {
     campParts.huts.setColorAt(slot, _c.setHex(0x6d5740 + ((rng() * 0x101010) | 0)));
   }
 
-  for (let i = 0; i < P0.stones; i++) {          // the fire ring
-    const a = (i / P0.stones) * Math.PI * 2;
-    const x = camp.x + Math.cos(a) * 1.15, z = camp.z + Math.sin(a) * 1.15;
-    const sc = 0.7 + rng() * 0.7;
-    _e.set(rng() * 3, rng() * 3, rng() * 3); _q.setFromEuler(_e);
-    _v.set(x, sampleHeight(x, z) + 0.06, z);
-    _s.set(sc, sc * 0.8, sc);
-    campParts.stones.setMatrixAt(index * P0.stones + i, _m4.compose(_v, _q, _s));
-    campParts.stones.setColorAt(index * P0.stones + i, _c.setHex(0x6e6862));
-  }
-
-  for (let i = 0; i < P0.logs; i++) {            // logs to sit on
-    const a = (i / P0.logs) * Math.PI * 2 + 0.4 + rng() * 0.3;
-    const x = camp.x + Math.cos(a) * 2.6, z = camp.z + Math.sin(a) * 2.6;
-    _e.set(0, -a + Math.PI / 2, 0); _q.setFromEuler(_e);
-    _v.set(x, sampleHeight(x, z) + 0.17, z);
-    _s.setScalar(0.9 + rng() * 0.3);
-    campParts.logs.setMatrixAt(index * P0.logs + i, _m4.compose(_v, _q, _s));
-    campParts.logs.setColorAt(index * P0.logs + i, _c.setHex(0x5b4630));
+  /* Every hearth gets its own ring of stones and its own logs, laid out where
+     the fire is rather than where the camp is. Kept like the tents are, because
+     dressCamp puts back the ones belonging to hearths that are lit and hides
+     the rest. */
+  camp.stoneAt = []; camp.logAt = [];
+  const perFireStones = P0.stones / HEARTHS, perFireLogs = P0.logs / HEARTHS;
+  for (let f = 0; f < HEARTHS; f++) {
+    const fire = hearthAt(camp, f);
+    for (let i = 0; i < perFireStones; i++) {    // the fire ring
+      const a = (i / perFireStones) * Math.PI * 2;
+      const x = fire.x + Math.cos(a) * 1.15, z = fire.z + Math.sin(a) * 1.15;
+      const sc = 0.7 + rng() * 0.7;
+      _e.set(rng() * 3, rng() * 3, rng() * 3); _q.setFromEuler(_e);
+      _v.set(x, sampleHeight(x, z) + 0.06, z);
+      _s.set(sc, sc * 0.8, sc);
+      const at = f * perFireStones + i;
+      campParts.stones.setMatrixAt(index * P0.stones + at, _m4.compose(_v, _q, _s));
+      camp.stoneAt[at] = _m4.clone();
+      campParts.stones.setColorAt(index * P0.stones + at, _c.setHex(0x6e6862));
+    }
+    for (let i = 0; i < perFireLogs; i++) {      // logs to sit on
+      const a = (i / perFireLogs) * Math.PI * 2 + 0.4 + rng() * 0.3;
+      const x = fire.x + Math.cos(a) * 2.6, z = fire.z + Math.sin(a) * 2.6;
+      _e.set(0, -a + Math.PI / 2, 0); _q.setFromEuler(_e);
+      _v.set(x, sampleHeight(x, z) + 0.17, z);
+      _s.setScalar(0.9 + rng() * 0.3);
+      const at = f * perFireLogs + i;
+      campParts.logs.setMatrixAt(index * P0.logs + at, _m4.compose(_v, _q, _s));
+      camp.logAt[at] = _m4.clone();
+      campParts.logs.setColorAt(index * P0.logs + at, _c.setHex(0x5b4630));
+    }
   }
 
   // A drying rack: two uprights and a crossbar, the oldest furniture there is.
@@ -509,16 +776,23 @@ export function layoutCamp(camp, index) {
   camp.rackAt[pole - index * P0.poles] = _m4.clone();
   campParts.poles.setColorAt(pole, _c.setHex(0x7d6446));
 
-  _e.set(0, 0, 0); _q.setFromEuler(_e);
-  _v.set(camp.x, camp.y + 0.05, camp.z);
-  _s.setScalar(1);
-  const fire = _m4.clone().compose(_v, _q, _s);
-  campParts.fire.setMatrixAt(index, fire);
-  campParts.fireBase[index] = fire;
+  camp.fireAt = [];
+  for (let f = 0; f < HEARTHS; f++) {
+    const at = hearthAt(camp, f);
+    _e.set(0, 0, 0); _q.setFromEuler(_e);
+    _v.set(at.x, sampleHeight(at.x, at.z) + 0.05, at.z);
+    _s.setScalar(1);
+    campParts.fire.setMatrixAt(index * HEARTHS + f, _m4.compose(_v, _q, _s));
+    camp.fireAt[f] = { x: at.x, y: sampleHeight(at.x, at.z), z: at.z };
+  }
 
-  /* The fire is the only light in the world that is not the sky. It earns a
-     real point light: at night it is what the camp is lit by. */
-  const light = new THREE.PointLight(0xff8b3a, 0, 42, 2);
+  /* One point light for the village rather than one per hearth, and this is a
+     cost decision rather than a lighting one: a real light is the most
+     expensive thing a camp owns, there can be a hundred and forty camps, and
+     five apiece is seven hundred lights in a scene that manages with the sun.
+     One at the middle of the village lights the whole of it — the fires
+     themselves are emissive, so every hearth still reads as burning. */
+  const light = new THREE.PointLight(0xff8b3a, 0, 48, 2);
   light.position.set(camp.x, camp.y + 0.9, camp.z);
   tribeGroup.add(light);
   camp.light = light;
@@ -548,18 +822,24 @@ export function buildCamps() {
      splits, and the half that leaves needs somewhere to put its huts. */
   /* Twelve was a small island's worth. A camp splits when it outgrows its fire
      and the half that leaves needs somewhere to put its tents, so the ceiling
-     has to be what the map can hold rather than what it started with. */
-  campCapacity = Math.round(clamp(camps.length * 3, 4, CAMP_CEILING));
+     has to be what the map can hold rather than what it started with — and
+     three times the number of fires it started with is still the second thing.
+     Starting two camps capped an island at six of them whatever its size.
+
+     Where a camp may actually go is a fact about the ground and is decided
+     there: sites need 260 m between them, so the island refuses the twenty-first
+     band by having nowhere to put it, which is a reason. Running out of huts is
+     not. */
+  campCapacity = Math.max(camps.length, CAMP_CEILING);
 
   campParts = {};
   campParts.huts = instancedFrom(hutGeo, campCapacity * CAMP_PIECES.huts, tribeGroup);
   campParts.stones = instancedFrom(stoneGeo, campCapacity * CAMP_PIECES.stones, tribeGroup);
   campParts.logs = instancedFrom(logGeo, campCapacity * CAMP_PIECES.logs, tribeGroup);
   campParts.poles = instancedFrom(poleGeo, campCapacity * CAMP_PIECES.poles, tribeGroup);
-  campParts.fire = new THREE.InstancedMesh(fireGeo, fireMaterial, campCapacity);
+  campParts.fire = new THREE.InstancedMesh(fireGeo, fireMaterial, campCapacity * HEARTHS);
   campParts.fire.frustumCulled = false;
   tribeGroup.add(campParts.fire);
-  campParts.fireBase = [];
 
   /* Everything is parked out of sight first, so the slots belonging to camps
      that have not been founded yet are not drawn as a heap at the origin. */
@@ -567,7 +847,7 @@ export function buildCamps() {
     for (let i = 0; i < campCapacity * per; i++) campParts[key].setMatrixAt(i, HIDDEN);
     campParts[key].setColorAt(0, _c.setHex(0x808080));
   }
-  for (let i = 0; i < campCapacity; i++) campParts.fire.setMatrixAt(i, HIDDEN);
+  for (let i = 0; i < campCapacity * HEARTHS; i++) campParts.fire.setMatrixAt(i, HIDDEN);
 
   camps.forEach((camp, i) => layoutCamp(camp, i));
   buildSmoke();
@@ -627,10 +907,15 @@ export function resetSmoke(i, life = 0) {
     smoke.geometry.attributes.aLife.array[i] = 0;
     return;
   }
+  /* Shared out between the fires that are lit rather than all coming off the
+     middle of the village. The budget is per camp and does not grow with the
+     hearths — five columns of a fifth of the smoke each, which is what five
+     small fires look like against one big one. */
+  const at = camp.fireAt?.[i % Math.max(1, camp.hearths || 1)] || camp;
   const p = smoke.geometry.attributes.position.array;
-  p[i * 3] = camp.x + (Math.random() - 0.5) * 0.4;
-  p[i * 3 + 1] = camp.y + 0.6;
-  p[i * 3 + 2] = camp.z + (Math.random() - 0.5) * 0.4;
+  p[i * 3] = at.x + (Math.random() - 0.5) * 0.4;
+  p[i * 3 + 1] = (at.y ?? camp.y) + 0.6;
+  p[i * 3 + 2] = at.z + (Math.random() - 0.5) * 0.4;
   smoke.geometry.attributes.aLife.array[i] = life;
 }
 
@@ -731,14 +1016,27 @@ export function buildPeople(count) {
   setLineage([]);
 
   personParts = {};
-  /* Room to grow into. The slider says how many the band starts with; births
-     and deaths decide the rest, and an InstancedMesh cannot be resized, so it
-     is allocated with headroom and the population is capped there. */
-  /* Room to grow into, and the ceiling is what the island can hold rather than
-     what the first band needs. A cap of 240 is a large village and nowhere near
-     the thousands a big map can feed — and an InstancedMesh cannot be resized
-     once built, so this is decided here or not at all. */
-  setPeopleCapacity(Math.round(clamp(count * 4, 12, PEOPLE_CEILING)));
+  /* Room for everybody the island can feed, not four times the band that
+     happens to start on it.
+
+     An InstancedMesh cannot be resized, so this number is decided here or not
+     at all — which is why it used to be tied to the starting count: allocating
+     for a crowd that might never arrive looked like paying for nothing. It is
+     not. Only the people who exist are ever submitted (`hidePeopleFrom` turns
+     the draw count down to the living band), so an empty slot costs its matrix
+     and no drawing at all — about a kilobyte each across the seventeen pieces.
+     Room for two thousand is a couple of megabytes and no frames.
+
+     What it was costing instead was the run: PEOPLE=16 meant the world stopped
+     at 64 however much food there was, and it stopped by refusing births rather
+     than by anybody going hungry — a ceiling with no reason in the world behind
+     it, which is the one kind this simulation should not have. Now the only
+     thing that stops a band growing is the island: the ground it forages, the
+     winters, and how many fires fit on it.
+
+     `count` still floors it, because somebody may start more people than the
+     ground would carry and they have to be drawable on the first frame. */
+  setPeopleCapacity(Math.max(count, PEOPLE_CEILING));
   const n = peopleCapacity;
   const GEOMETRY = {
     torso: torsoGeo, neck: neckGeo, head: headGeo, hair: hairGeo,
@@ -786,11 +1084,99 @@ export function buildPeople(count) {
     // Nobody arrives at a brand-new camp starving.
     c.food = c.need * FOOD.startingDays;
   }
+  /* Households, tents and hearths, before anybody takes a step.
+
+     This used to happen only when the band changed — a birth, a death, somebody
+     leaving — because that is when the tents standing in a camp change. But it
+     is also what decides which fire a person lives at, and until it has run
+     nobody has one: a world spent its first day with every hut hidden and its
+     whole band walking to the middle of the village, and then quietly came
+     right the first time somebody was born. Founding a band is a change to it,
+     and the largest one there is. */
+  dressCamps();
   stats.people = count;
 }
 
 /* personParts lives here and is written from elsewhere. An imported binding is
    read-only, so the write has to come back to the module that owns it. */
+/* -------------------------------------------------------------------------
+   The near set: detail for the one person you are actually looking at
+
+   A face is legible at about four metres. So is a knuckle. Everything a person
+   is made of is an InstancedMesh sized to the whole island — eighteen pieces
+   times room for two thousand people — so putting eyes on everybody costs four
+   thousand instances to be seen on one figure, and a hand of fingers costs
+   twenty thousand.
+
+   This is the other way round: plain meshes, one set of them, moved onto
+   whoever is being followed and hidden the rest of the time. The cost is fixed
+   and does not care how many people there are — a village of four hundred draws
+   exactly the same face as a band of nine, because it is the same face.
+
+   They hang off the matrices `writePerson` has already worked out, so a face
+   cannot drift from the head it is on: the head's matrix carries the person's
+   build, their crouch, the bob of their walk and which way they are looking,
+   and the eyes are placed in the head's own space.
+   ------------------------------------------------------------------------- */
+export let nearParts = null;
+
+export function buildNearParts() {
+  const S = PERSON;
+  const mk = (geo, hex) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: hex }));
+    m.visible = false;
+    m.frustumCulled = false;
+    tribeGroup.add(m);
+    return m;
+  };
+  /* Eyes are the whole of a face at this size. A mouth is a line and a brow is
+     a shadow; the eyes are what make a head look at you. */
+  const eye = new THREE.SphereGeometry(S.head[0] * 0.085, 6, 5);
+  const brow = roundBox(S.head[0] * 0.30, S.head[1] * 0.035, S.head[2] * 0.06);
+  const mouth = roundBox(S.head[0] * 0.28, S.head[1] * 0.028, S.head[2] * 0.05);
+  /* A joint is a ball at the seam between two capsules, sized off the thinner
+     of the two so it never stands proud of the limb it belongs to. */
+  const ball = (w) => new THREE.SphereGeometry(w * 0.5, 7, 5);
+  const digit = roundBox(S.hand[0] * 0.22, S.hand[1] * 0.52, S.hand[2] * 0.7);
+  const thumb = roundBox(S.hand[0] * 0.24, S.hand[1] * 0.40, S.hand[2] * 0.7);
+  const skin = 0xb08a68;
+  const hand = () => ({
+    digit: [mk(digit, skin), mk(digit, skin), mk(digit, skin), mk(digit, skin)],
+    thumb: mk(thumb, skin),
+  });
+  nearParts = {
+    eyeL: mk(eye, 0x241c16), eyeR: mk(eye, 0x241c16),
+    browL: mk(brow, 0x3a2c22), browR: mk(brow, 0x3a2c22),
+    mouth: mk(mouth, 0x4a3128),
+    /* Two of each, indexed by side the way every other limb is. */
+    elbow: [mk(ball(S.foreArm[0]), skin), mk(ball(S.foreArm[0]), skin)],
+    wrist: [mk(ball(S.hand[0] * 0.9), skin), mk(ball(S.hand[0] * 0.9), skin)],
+    knee: [mk(ball(S.shin[0]), skin), mk(ball(S.shin[0]), skin)],
+    fingers: [hand(), hand()],
+  };
+}
+
+/** Nobody is being followed, or they are out of sight: put it all away. */
+/* Every mesh in the set, however deep it is nested. The set grew a hand of
+   fingers and a `for (const k in nearParts)` stopped reaching half of it — a
+   face put away while ten fingers stayed on the world. */
+export function eachNearPart(fn) {
+  if (!nearParts) return;
+  const walk = (v) => {
+    if (!v) return;
+    if (v.isMesh) fn(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (typeof v === 'object') Object.values(v).forEach(walk);
+  };
+  walk(nearParts);
+}
+
+export function hideNearParts() {
+  eachNearPart((m) => { m.visible = false; });
+}
+
+export function setNearParts(v) { nearParts = v; }
+
 export function setPersonParts(v) { personParts = v; }
 
 /* graves lives here and is written from elsewhere. An imported binding is

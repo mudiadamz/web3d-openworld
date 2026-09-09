@@ -8,7 +8,8 @@ import {
   trunkMaterial, waterMaterial
 } from './scene.js';
 import { clearFauna, pick } from './wildlife.js';
-import { clearTribe, inCamp, setGraveMesh, setGraves, tribeGroup } from './people.js';
+import { clearTribe, inCamp, setGraveMesh, setGraves, setNearParts, tribeGroup } from './people.js';
+import { PATH, PATH_EARTH, clearPaths, takeWornTiles, tileFromKey, wearAt } from './paths.js';
 import { isWet, setWet, streams } from './move.js';
 import { updateHud } from './main.js';
 
@@ -26,6 +27,18 @@ export const world = new THREE.Group();
 export const terrainGroup = new THREE.Group();
 export const floraGroup = new THREE.Group();
 export const rockGroup = new THREE.Group();
+/* Every rock worth quarrying, in world coordinates. Rebuilt with the world. */
+export const outcrops = [];
+
+/** The nearest one to here, or nothing if they are all too far to be worth it. */
+export function nearestRock(x, z, within) {
+  let best = null, near = within;
+  for (const r of outcrops) {
+    const d = Math.hypot(r.x - x, r.z - z);
+    if (d < near) { near = d; best = r; }
+  }
+  return best;
+}
 export const grassGroup = new THREE.Group();
 export const fauna = new THREE.Group();
 /* Hung together once main says everything exists. Doing it as the module
@@ -62,12 +75,18 @@ export function disposeWorld() {
      walked on. */
   setGraves([]);
   setGraveMesh(null);
+  /* The near set's meshes go with tribeGroup below, so the only thing left to
+     drop is the handle on them — a world must not start holding the last one's
+     face, however briefly. */
+  setNearParts(null);
   stats.graves = 0;
   for (const g of [terrainGroup, floraGroup, rockGroup, grassGroup, fauna, tribeGroup]) disposeGroup(g);
   grassTiles = [];
   dirtyTiles = [];
+  outcrops.length = 0;
   streams.length = 0;
   setWet(null);
+  clearPaths();
   clearFauna();
   clearTribe();
 }
@@ -228,6 +247,10 @@ export const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
    one number per tile per frame, and it can follow the camera as it walks.
    ------------------------------------------------------------------------- */
 
+/* Metres a fruit bucket covers. A little wider than anybody's reach, so a pick
+   looks at four buckets at most and usually finds its fruit in the first. */
+export const ORCHARD_BUCKET = 12;
+
 export const GRASS_NEAR = 1.5;        // tiles: full density out to here
 export const GRASS_FAR = 4.5;         // tiles: thinnest beyond here
 export const GRASS_THIN = 0.28;       // what is left at the far edge
@@ -275,6 +298,13 @@ export function fillTile(tile, ix, iz) {
   let live = 0;
   for (let i = 0; i < BLADES; i++) {
     const lx = rng() * TILE, lz = rng() * TILE;
+    /* Drawn for every blade, before anything can reject one, and that ordering
+       is the whole trick. The wear under a tile changes while you are standing
+       on it, and a random number drawn only by survivors would mean the rest of
+       the tile's blades came off a different part of the stream every time a
+       path crossed a threshold — the grass fifty metres away shuffling because
+       somebody walked past. Draw it always and the layout is fixed. */
+    const thin = rng();
     const wx = ox + lx, wz = oz + lz;
     const h = sampleHeight(wx, wz);
     const flat = flatnessAt(wx, wz);
@@ -282,10 +312,24 @@ export function fillTile(tile, ix, iz) {
     // Grass does not grow in the sea, on a cliff, above the snow line, or on
     // ground a camp has trampled flat.
     if (h < SEA + 0.8 || h > SNOW || flat < 0.80 || inCamp(wx, wz) || isWet(wx, wz)) continue;
+
+    /* And it gives up where it is walked. Thinning between the two thresholds
+       rather than switching off at one: the edge of a path is where it stops
+       looking like a line somebody drew. */
+    const worn = wearAt(wx, wz);
+    if (worn >= PATH.bare) continue;
+    if (worn > PATH.showing
+      && thin < (worn - PATH.showing) / (PATH.bare - PATH.showing)) continue;
+
     const i2 = live;
     live++;
 
-    const height = 0.42 + rng() * 0.66;
+    /* Trodden, not just sparse. A blade on the edge of a path is one that has
+       been stepped on and got up again, so it is shorter than its neighbours —
+       and the ground shows through more of it, which is what carries the line
+       when the thinning alone is too subtle to read. */
+    const trodden = worn > 0 ? Math.min(1, worn / PATH.bare) : 0;
+    const height = (0.42 + rng() * 0.66) * (1 - 0.55 * trodden);
     const width = 0.075 + rng() * 0.045;
     _e.set((rng() - 0.5) * 0.30, rng() * Math.PI * 2, (rng() - 0.5) * 0.30);
     _q.setFromEuler(_e);
@@ -299,6 +343,8 @@ export function fillTile(tile, ix, iz) {
     groundColorAt(wx, wz, h, flat, _c);
     // Blades read brighter and a little more saturated than the soil.
     _c.lerp(C_GRASS_B, 0.35).multiplyScalar(0.85 + rng() * 0.45);
+    // And browner the more they have been walked on.
+    if (trodden > 0) _c.lerp(PATH_EARTH, trodden * 0.55);
     mesh.setColorAt(i2, _c);
   }
   mesh.userData.live = live;
@@ -329,7 +375,10 @@ export function fillFlowers(mesh, ox, oz, rng, wanted, tile) {
     const bloom = fbm(wx * 0.010, wz * 0.010, 2, P.seed + 707);
     if (bloom < 0.46 || rng() > (bloom - 0.42) * 3.2
         || h < SEA + 1.0 || h > SNOW - 12
-        || flatnessAt(wx, wz) < 0.86 || inCamp(wx, wz) || isWet(wx, wz)) continue;
+        || flatnessAt(wx, wz) < 0.86 || inCamp(wx, wz) || isWet(wx, wz)
+        // Nothing blooms in a footpath. Flowers go at the first sign of one,
+        // where the grass hangs on until it is properly worn.
+        || wearAt(wx, wz) > PATH.showing) continue;
     const i2 = live;
     live++;
 
@@ -423,6 +472,25 @@ export function updateTiles(force) {
       t.flowers.visible = false;
       t.dirty = true;
       dirtyTiles.push(t);
+    }
+  }
+}
+
+/* A path that has just appeared under a tile you are standing on has to be
+   scattered again, or the grass keeps growing through it until you walk far
+   enough away for the tile to be recycled. Only tiles on screen are looked
+   for — the rest are refilled when they come round anyway — and only a
+   threshold crossing asks, so an established path stops asking. */
+export function refillWornTiles() {
+  const keys = takeWornTiles();
+  if (!keys) return;
+  for (const key of keys) {
+    const [ix, iz] = tileFromKey(key);
+    for (const t of grassTiles) {
+      if (t.ix !== ix || t.iz !== iz || t.dirty) continue;
+      t.dirty = true;
+      dirtyTiles.push(t);
+      break;
     }
   }
 }
@@ -544,11 +612,31 @@ export function addTreeSet(matrices, trunkGeo, canopyGeo, canopyMat, colorA, col
      at build time so that putting a fruit back is restoring what was there
      rather than recomputing where it should have been — which would have to
      agree with the code above forever, and eventually would not. */
+  /* Bucketed by where they hang, so picking is a look at the ground you are
+     standing on rather than a walk through every fruit on the island.
+
+     `pickFruit` scanned all of them — sixteen thousand on a wooded map — for
+     every completed foraging trip, and when there was nothing within arm's
+     reach it scanned all of them to find that out, which is the common case.
+     It was 5% of a fast-forward before this session and 88% more after it, for
+     no reason except that bands now finish more errands in a day.
+
+     The positions never move, so the index is built once with the trees. */
+  const cell = ORCHARD_BUCKET;
+  const buckets = new Map();
+  const home = fruit.instanceMatrix.array.slice();
+  for (let i = 0; i < fruit.count; i++) {
+    const b = i * 16;
+    const key = `${Math.floor(home[b + 12] / cell)},${Math.floor(home[b + 14] / cell)}`;
+    const at = buckets.get(key);
+    if (at) at.push(i); else buckets.set(key, [i]);
+  }
   orchard = {
     mesh: fruit,
-    home: fruit.instanceMatrix.array.slice(),
+    home,
     on: new Uint8Array(fruit.count).fill(1),
     ripe: fruit.count,
+    buckets,
   };
   stats.fruit = orchard.ripe;
 }
@@ -574,6 +662,11 @@ export function buildRocks(count) {
     _s.set(s * (0.7 + rng() * 0.6), s * (0.5 + rng() * 0.5), s * (0.7 + rng() * 0.6));
     mesh.setMatrixAt(n, _m4.compose(_v, _q, _s));
     mesh.setColorAt(n, _c.setHex(0x7a746a).multiplyScalar(0.62 + rng() * 0.6));
+    /* Where they are, kept rather than only drawn. Somebody quarrying has to
+       walk to an outcrop that is actually on the hillside — a spot invented for
+       the errand is a person standing in a field pretending. Only the ones big
+       enough to be worth the walk: a pebble is not a quarry. */
+    if (s > 1.1) outcrops.push({ x, z });
     n++;
   }
   for (let i = n; i < count; i++) mesh.setMatrixAt(i, HIDDEN);

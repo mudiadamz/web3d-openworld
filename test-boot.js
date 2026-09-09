@@ -119,22 +119,51 @@ function makeElement(id) {
     _on: {},
     addEventListener(type, fn) { (this._on[type] ||= []).push(fn); },
     removeEventListener() {},
-    fire(type) { for (const fn of this._on[type] || []) fn({ target: this, code: '', button: 0 }); },
+    /* Extra fields are merged into the event, so a check can say where a
+       pointer was. Without them every pointer event in the page arrives at the
+       same coordinates, which is exactly the case a drag has to be told from. */
+    fire(type, extra) {
+      for (const fn of this._on[type] || []) {
+        fn({ target: this, code: '', button: 0, pointerId: 1, preventDefault() {}, ...extra });
+      }
+    },
     setPointerCapture() {}, releasePointerCapture() {},
+    /* The scale bar writes into two children of its own box. Returning a fresh
+       stub each time is enough for "did it try", which is the question. */
+    querySelector() { return this._kids || (this._kids = { style: {}, textContent: '' }); },
     getBoundingClientRect() { return { left: 0, top: 0, width: 384, height: 384 }; },
     getContext() { return context2d; },
   };
   return el;
 }
 
+/* The 2d context swallowed everything, which is fine for "does the map draw
+   without throwing" and useless for "what colour did it draw that in". It keeps
+   the current fill and records one entry per filled arc — the shape the map's
+   markers are — so a check can ask what was actually painted. Nothing else is
+   recorded: an entry per fillRect would be one per animal per frame. */
 const context2d = {
   createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
-  putImageData() {}, drawImage() {}, beginPath() {}, closePath() {}, arc() {},
-  moveTo() {}, lineTo() {}, stroke() {}, fill() {}, fillRect() {}, clearRect() {},
-  fillText() {}, strokeText() {}, measureText: () => ({ width: 0 }),
+  putImageData() {}, drawImage() {}, closePath() {}, setTransform() {},
+  moveTo() {}, lineTo() {}, stroke() {}, fillRect() {}, clearRect() {},
+  texts: [],
+  fillText(t, x, y) { if (this.recording) this.texts.push({ t: String(t), x, y, fill: this._fill }); },
+  strokeText() {}, measureText: () => ({ width: 0 }),
   set font(v) {}, set textAlign(v) {},
-  set fillStyle(v) {}, set strokeStyle(v) {}, set lineWidth(v) {},
+  set strokeStyle(v) {}, set lineWidth(v) {},
   set lineCap(v) {}, set lineJoin(v) {},
+
+  /* Off by default. The map draws a dot per person per camp about fourteen
+     times a second, and thirty thousand frames of that kept forever is a
+     million objects nobody reads. A check turns it on for the frames it cares
+     about. */
+  recording: false,
+  _fill: null, _arc: null, arcs: [],
+  set fillStyle(v) { this._fill = v; },
+  get fillStyle() { return this._fill; },
+  beginPath() { this._arc = null; },
+  arc(x, y, r) { this._arc = { x, y, r }; },
+  fill() { if (this.recording && this._arc) this.arcs.push({ ...this._arc, fill: this._fill }); },
 };
 
 globalThis.document = {
@@ -216,6 +245,25 @@ const extra = JSON.parse(process.env.BOOT_CONFIG || '{}');
     return clock;
   };
 
+  /* KNOWN LIMIT, and it will cost somebody a day if it is not written down.
+
+     This makes the stream repeatable; it does not make it comparable between
+     two versions of the page. The world these measurements run in is one the
+     page minted for itself with a random seed, so which island they land on
+     depends on how far along this stream the page had got by then — and three
+     draws four times from it for every UUID, which is once per geometry, per
+     material and per texture. Allocate one more object anywhere on the way and
+     every probe below measures a different island.
+
+     Measured: four extra draws in buildWorld take a three-year population curve
+     from 16→25→35 to 16→16→16, and eight take it to 16→26→33. Nothing about the
+     simulation changed either time.
+
+     So a probe result is a fact about one tree, not a number to diff against
+     another tree that allocates differently. To show a change is inert, run it
+     against itself with the change switched off — same page, same allocations,
+     same island. Reseeding here is not the fix: the seed is minted after a
+     world has been built, and building it draws once per object in it. */
   let a = ((extra.seed ?? 1) | 0) ^ 0x6d2b79f5;
   Math.random = () => {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -370,6 +418,13 @@ export class OrbitControls {
     this.enabled = true; this.enableDamping = false; this.dampingFactor = 0;
     this.minDistance = 0; this.maxDistance = 0; this.zoomSpeed = 1;
     this.minPolarAngle = 0; this.maxPolarAngle = Math.PI;
+    /* Reachable, so a check can ask what the orbit is pointed at — which is
+       what "the scene is focused on that camp" means. Note that update() is a
+       no-op here: the real one recomputes its spherical from the camera's
+       current offset on every call, so writing the position directly is
+       respected — but nothing in this stub can prove or disprove that.
+       No backticks in this comment: the whole stub is a template literal. */
+    globalThis.__controls = this;
   }
   update() {} dispose() {} addEventListener() {}
 }
@@ -472,6 +527,8 @@ function check(label, ok, detail = '') {
   if (!ok) failures.push(`${label}${detail ? ' — ' + detail : ''}`);
   mark(label);
 }
+
+let followReport = 'F not driven';
 
 /* Asked of the DOM, not of the cache of what the page has touched. The cache is
    empty until the page asks for an element, so a page that fails to boot left
@@ -883,6 +940,47 @@ let nightReport = 'not watched';
     visibleCount() === before, `${visibleCount()} vs ${before}`);
   check('and the shadow map comes back with it',
     globalThis.__renderer?.shadowMap.enabled === true);
+}
+
+/* -------------------------------------------------------------------------
+   H minimises the pane; it does not take it away
+
+   It used to toggle `hidden`, which took the toggle button with it. The pane
+   did not shrink, it left — and the way back was a key you had to already know,
+   with nothing on screen to say so. Now it toggles `collapsed`, which is the
+   state the icon in the corner already meant, so the way back is the thing you
+   can see. `hidden` is left to the one case it is right for: the pane not
+   existing yet, while the world is still being built.
+
+   Both halves are worth checking. That it shuts is the easy half; that the
+   toggle survives shutting it is the bug.
+
+   Every class this touches is put back, and no frame is driven: the checks
+   below read a panel that redraws only while it is open, so a block that leaves
+   it in the other state moves failures around after it and reads like a
+   regression somewhere else entirely. This one found that out the hard way. */
+{
+  const panel = document.getElementById('ui');
+  const was = { hidden: panel.classList.contains('hidden'), collapsed: panel.classList.contains('collapsed') };
+  // The world has booted by here; `hidden` is the build-time state.
+  panel.classList.toggle('hidden', false);
+  panel.classList.toggle('collapsed', false);
+
+  pressKey('KeyH');
+  check('H shuts the world panel', panel.classList.contains('collapsed'));
+  check('and leaves it on screen to be opened again',
+    !panel.classList.contains('hidden'), 'the pane went away with its own toggle');
+
+  pressKey('KeyH');
+  check('H opens it again', !panel.classList.contains('collapsed'));
+
+  // The icon in the corner is the same gesture, and has to agree with it.
+  document.getElementById('collapse').fire('click');
+  check('and the icon shuts the same pane the key does',
+    panel.classList.contains('collapsed') && !panel.classList.contains('hidden'));
+
+  panel.classList.toggle('hidden', was.hidden);
+  panel.classList.toggle('collapsed', was.collapsed);
 }
 
 
@@ -1913,8 +2011,8 @@ if (measuring('survive')) {
   pressKey('KeyF');
   for (let i = 0; i < 3; i++) stepFrame(0);
 
-  let picks = 0, indoors = 0, everHidden = 0;
-  for (const p of PP.people) if (p.hidden) everHidden++;
+  let picks = 0, indoors = 0, everHidden = 0, everOut = 0;
+  for (const p of PP.people) if (p.hidden) everHidden++; else everOut++;
   for (let i = 0; i < 100; i++) {
     pressKey('KeyF');
     stepFrame(0);
@@ -1924,12 +2022,61 @@ if (measuring('survive')) {
     if (p.hidden) indoors++;
   }
   check('F was actually asked', picks > 90, `${picks} of 100 landed on somebody`);
+  /* And on somebody worth watching. A third of a fed band is under fourteen and
+     what a child does is play, run about, sit at the fire and sleep — F landed
+     on one four times out of five, which reads as F not working. Counted over a
+     hundred presses, and skipped when the band has nobody else to offer,
+     because that is the fallback doing its job rather than failing. */
+  {
+    /* Declared here rather than with the other report lines at the end of the
+       file: this check runs three hundred lines above them, and a `let` read
+       before its declaration is a ReferenceError rather than an undefined.
+
+       And the case is arranged rather than waited for. Left to itself this run
+       reached here with nobody worth following at all — every one of sixteen a
+       child, indoors or sitting down — so the checks below were skipped and the
+       measurement said nothing. Two people are put out on the hill on purpose;
+       everybody else stays as they are, which is what makes the count mean
+       something. */
+    let kids = 0, idle = 0, could = 0;
+    const out = PP.people.slice(0, 2);
+    for (const q of out) {
+      q.child = false; q.asleep = false; q.sick = 0;
+      q.job = 'gather'; q.state = 'goto';
+      q.x = q.camp.x + 60; q.z = q.camp.z + 60;
+    }
+    for (let k = 0; k < 3; k++) stepFrame(16);
+    for (const q of PP.people) {
+      if (!q.hidden && !q.child && !['play', 'tend', 'sleep'].includes(q.job)) could++;
+    }
+    for (let i = 0; i < 100; i++) {
+      pressKey('KeyF');
+      stepFrame(0);
+      const q = CH.followedPerson();
+      if (!q) continue;
+      if (q.child) kids++;
+      if (['play', 'tend', 'sleep'].includes(q.job)) idle++;
+    }
+    followReport = `${kids} children and ${idle} idle in 100 presses,`
+      + ` from ${could} of ${PP.people.length} worth following`;
+    if (could > 0) {
+      check('and never on a child while there is an adult on an errand', kids === 0, followReport);
+      check('nor on anybody sitting still', idle === 0, followReport);
+    }
+  }
   /* Only meaningful if somebody was indoors to be picked wrongly — say so
      rather than passing on an empty band. */
   check('and there was somebody indoors to pick by mistake', everHidden > 0,
     `${everHidden} of ${PP.people.length} under a roof`);
-  check('but F never picked one of them', indoors === 0,
-    `${indoors} of ${picks} picks were indoors`);
+  /* And only meaningful if somebody was outdoors to be picked instead. F falls
+     back to whoever it can find when the whole camp is under a roof — a wet
+     afternoon, or three in the morning — because refusing to pick anybody is
+     worse than picking badly. Without this guard the check reads "F is broken"
+     on any run that happens to reach here at night, which is what it did: 100
+     of 100 picks indoors, out of a band that was 16 of 18 indoors. */
+  check('but F never picked one of them', everOut === 0 || indoors === 0,
+    `${indoors} of ${picks} picks were indoors, with ${everOut} of `
+    + `${PP.people.length} outdoors to choose from`);
 }
 
 /* -------------------------------------------------------------------------
@@ -2137,6 +2284,521 @@ if (measuring('survive')) {
     `${spots.size} distinct of 20`);
 }
 
+/* Everything below here runs after every other check and every probe, and it
+   has to.
+
+   Reaching into the page's own modules means an `await`, and an await in this
+   file is not free: the page boots through nested animation frames and a couple
+   of promise chains, so a microtask drain dropped in among the checks lets more
+   of that run than the checks below it were written against. Measured three
+   times — imports at the top, one check driving a second of frames, and the
+   block sitting in front of the probes — and every time a handful of failures
+   moved that had nothing to do with what was being added. The last of those
+   took a day of looking for a simulation bug that was not there: the tally of
+   the dead came out differently, and what had changed was when a promise
+   resolved.
+
+   So: last. Nothing runs after this, so there is nothing for it to disturb. */
+/* The live module, not a copy of it. Imports are cached, so this is the same
+   `camps` the page is drawing from — the map check below needs the bands the
+   world actually built, and there is nowhere in the DOM that says what colour
+   one is. Only the split-out shape has it; the inline-script shape has no
+   module to reach into. */
+let liveCamps = [], livePeople = [];
+let mapModule = null, pathsModule = null, moveModule = null, cameraRef = null, lifeModule = null;
+let peopleModule = null, chronicleModule = null;
+if (srcFiles.length) {
+  try {
+    ({ camps: liveCamps, people: livePeople } = await import(pathToFileURL(join(stubDir, 'people.js')).href));
+    lifeModule = await import(pathToFileURL(join(stubDir, 'life.js')).href);
+    peopleModule = await import(pathToFileURL(join(stubDir, 'people.js')).href);
+    chronicleModule = await import(pathToFileURL(join(stubDir, 'chronicle.js')).href);
+    mapModule = await import(pathToFileURL(join(stubDir, 'map.js')).href);
+    pathsModule = await import(pathToFileURL(join(stubDir, 'paths.js')).href);
+    moveModule = await import(pathToFileURL(join(stubDir, 'move.js')).href);
+    ({ camera: cameraRef } = await import(pathToFileURL(join(stubDir, 'scene.js')).href));
+  } catch { /* the boot check above already said so */ }
+}
+
+/* -------------------------------------------------------------------------
+   A dot on the map is a band, not "a camp"
+
+   Every camp was the same red. That reads as "somebody lives here" and stops:
+   on an island of ten bands, working out which fire belongs to the name on the
+   panel meant counting dots. They carry `camp.color` now — the same hue the
+   two-character chip beside the name is filled with — so the two are one band
+   by looking.
+
+   Checked through the real canvas calls rather than by reading the source: the
+   fake 2d context records what it was asked to fill, so this asks the map what
+   colour it actually painted.
+
+   The map is asked to draw directly instead of being given frames to draw in.
+   A second of wall time here moved every check after it — the world does not
+   stop while the map is being looked at — and the map redraws on a throttle, so
+   "enough frames" was a second. Nothing below this line should be able to tell
+   that this ran, and putting the throttle back is part of that. */
+if (liveCamps.length && mapModule) {
+  context2d.arcs.length = 0;
+  context2d.recording = true;
+  mapModule.drawMap(1e9);                 // far past the redraw throttle
+  context2d.recording = false;
+  mapModule.setMapSize(mapModule.mapSize); // which this puts back
+
+  const painted = context2d.arcs;
+  const missing = liveCamps.filter((c) => !painted.some((a) => a.fill === c.color));
+  check('every camp is on the map in its own band colour',
+    painted.length > 0 && missing.length === 0,
+    painted.length === 0 ? 'the map painted nothing'
+      : `${missing.length} of ${liveCamps.length}: ${missing.map((c) => `${c.code} wanted ${c.color}`).join(', ')}`);
+  check('and no camp is still the one red they all used to be',
+    !painted.some((a) => a.fill === '#ff2233'));
+}
+
+
+const MAP_STEP_LIMIT = 8;
+
+/* -------------------------------------------------------------------------
+   The full-page map, actually drawn
+
+   Everything else about this map is checked by reading the source, which proves
+   the code was written and nothing about whether it runs. A map that fills the
+   window draws things the corner one never does — band codes, the paths as
+   roads, a scale bar written into two child elements — so this is the check
+   that it does not simply throw the first time somebody presses M twice.
+
+   Drawn directly rather than given frames, and put back afterwards: see the
+   note on the map colour check above, which learned that the hard way. */
+/* The orbit pivot, which is what "the scene is focused on X" actually means. */
+const CONTROLS_TARGET = () => globalThis.__controls?.target || { x: NaN, z: NaN };
+
+let fullMapReport = 'not drawn';
+if (mapModule && liveCamps.length) {
+  const was = mapModule.mapSize;
+  const full = mapModule.MAP_SIZES.findIndex((m) => m.fills);
+
+  /* Through the key, the way somebody gets there. Calling setMapSize directly
+     proves the drawing works and nothing about whether M can reach it — and
+     "the full map has no labels on it" is exactly what it looks like from the
+     outside when M never arrives. */
+  const box = document.getElementById('map');
+  let presses = 0;
+  while (!mapModule.mapIsFull() && presses < MAP_STEP_LIMIT) { pressKey('KeyM'); presses++; }
+  check('M reaches the full-page map', mapModule.mapIsFull(),
+    `${presses} presses left it at ${mapModule.MAP_SIZES[mapModule.mapSize].name}`);
+  check('and the page is told, so the frame and the controls appear',
+    box.classList.contains('full'), `classes: ${box.className || 'none'}`);
+  /* The controls are wired at module load, which is only safe because the
+     script is after the markup. If it moves, these are silently dead. */
+  for (const id of ['mapIn', 'mapOut', 'mapMin']) {
+    const el = document.getElementById(id);
+    check(`the ${id} button is wired`, Boolean(el && (el._on || {}).click?.length),
+      el ? 'no click handler' : 'no element');
+  }
+  const before = mapModule.mapZoom;
+  document.getElementById('mapIn').fire('click');
+  check('and zooming in moves the zoom', mapModule.mapZoom > before,
+    `${before} -> ${mapModule.mapZoom}`);
+  mapModule.drawMap(1e9 - 1);
+  const bar = document.getElementById('mapScale').querySelector('i');
+  check('and the scale bar is given a length',
+    Boolean(bar && bar.style && bar.style.width), `width ${bar?.style?.width || 'unset'}`);
+  document.getElementById('mapOut').fire('click');
+  mapModule.setMapSize(full);
+  let threw = null;
+  context2d.texts.length = 0;
+  context2d.arcs.length = 0;
+  context2d.recording = true;
+  try {
+    mapModule.setMapSize(full);
+    mapModule.stepMapZoom(1);            // and zoomed, which is the other path
+    mapModule.drawMap(1e9);
+  } catch (err) {
+    threw = `${err.constructor.name}: ${err.message}`;
+  }
+  context2d.recording = false;
+  const codes = context2d.texts.map((t) => t.t);
+  mapModule.setMapSize(was);             // which also puts the zoom back
+
+  fullMapReport = threw || `${codes.length} band codes drawn`;
+  check('the full-page map draws without throwing', !threw, threw || '');
+  check('and writes each band code on it',
+    liveCamps.filter((c) => !c.gone).every((c) => codes.includes(c.code)),
+    `drew ${codes.join(' ') || 'nothing'}`);
+  /* The corner map must not: twenty labels on 92 pixels is the pile of names
+     the dots were introduced to get rid of. */
+  context2d.texts.length = 0;
+  context2d.recording = true;
+  mapModule.drawMap(1e9 + 1);
+  context2d.recording = false;
+  check('and the corner map does not', context2d.texts.length === 0,
+    `${context2d.texts.length} labels on a ${mapModule.MAP_DISPLAY}px map`);
+}
+
+/* -------------------------------------------------------------------------
+   A drag is not a click
+
+   The same pointer on the same canvas does two things — go there, and look over
+   there — and the only thing between them is how far it moved. Every other
+   check of the map reads the source, which cannot tell whether these two ever
+   actually diverge; this drives the pointer and looks at where the camera
+   ended up.
+
+   Last of the checks for the usual reason, and one of its own: travelling is
+   the one thing here with a lasting effect on the world. */
+if (mapModule && cameraRef) {
+  const canvas = document.getElementById('mapCanvas');
+  const full = mapModule.MAP_SIZES.findIndex((m) => m.fills);
+  mapModule.setMapSize(full);
+  while (mapModule.mapZoom === 1) mapModule.stepMapZoom(1);
+
+  const at = () => `${cameraRef.position.x.toFixed(0)},${cameraRef.position.z.toFixed(0)}`;
+  const before = at();
+  // A drag: down, well past the slop, up. Should move the map, not the camera.
+  canvas.fire('pointerdown', { clientX: 100, clientY: 100 });
+  canvas.fire('pointermove', { clientX: 160, clientY: 130 });
+  canvas.fire('pointerup', { clientX: 160, clientY: 130 });
+  check('dragging a zoomed map does not travel', at() === before, `${before} -> ${at()}`);
+  check('and it moves the map instead', Boolean(mapModule.mapPan),
+    'the view did not pan');
+
+  // A click: down and up in the same place. Should travel.
+  const panned = at();
+  canvas.fire('pointerdown', { clientX: 120, clientY: 90 });
+  canvas.fire('pointerup', { clientX: 121, clientY: 90 });
+  check('but a click on it still travels', at() !== panned, `still at ${at()}`);
+
+  /* And a click on a band goes to that band rather than to the metre of ground
+     the pointer happened to be over. Driven through the real handler, because
+     the hit test is the half of this that can be silently wrong: it converts
+     map units to screen pixels, and getting that conversion backwards gives a
+     target that is never under anybody. */
+  mapModule.setMapSize(mapModule.MAP_SIZES.findIndex((m) => m.fills));
+  mapModule.updateMapView();
+  const target = liveCamps.find((c) => !c.gone);
+  const rect = canvas.getBoundingClientRect();
+  const [mx, my] = mapModule.worldToMap(target.x, target.z);
+  const cx = rect.left + mx / mapModule.MAP_N * rect.width;
+  const cy = rect.top + my / mapModule.MAP_N * rect.height;
+  check('the band under the pointer is the one whose dot is there',
+    mapModule.campUnder(cx, cy) === target,
+    `wanted ${target.code}, got ${mapModule.campUnder(cx, cy)?.code || 'nothing'}`);
+  check('and open ground is nobody',
+    mapModule.campUnder(rect.left + 2, rect.top + 2) === null);
+
+  canvas.fire('pointerdown', { clientX: cx, clientY: cy });
+  canvas.fire('pointerup', { clientX: cx, clientY: cy });
+  const away = Math.hypot(cameraRef.position.x - target.x, cameraRef.position.z - target.z);
+  check('clicking it puts you at their fire', away < 60, `${away.toFixed(0)}m from it`);
+  /* And takes the map off the window. You clicked a band on a map filling the
+     screen; arriving behind that map is arriving nowhere, and it reads as the
+     click having done nothing — the same mistake as leaving the card up, one
+     layer further out. */
+  check('and takes the full-page map down with it', !mapModule.mapIsFull(),
+    `the map is still ${mapModule.MAP_SIZES[mapModule.mapSize].name}`);
+
+  /* That click opened their card, so the card's own controls can be driven from
+     here. Both are new and neither is reachable by reading the source: a tab
+     that renders is a tab whose render did not throw on the first band it was
+     given, and a button that travels is one whose handler found the camp. */
+  const card = document.getElementById('tribe');
+  check('and opens their card', card.hidden === false, 'the card stayed shut');
+
+  document.getElementById('tribeLog').fire('click');
+  const log = document.getElementById('tribeList').innerHTML || '';
+  check('the card has a history tab that renders', log.length > 0,
+    'it rendered nothing at all');
+  /* Either some milestones or the line that says there are none — an empty box
+     reads as something failing to load. */
+  check('and it says something either way',
+    /tribeLogList|nothing worth telling/.test(log), log.slice(0, 80));
+  if (/tribeLogList/.test(log)) {
+    /* Every line names this band — and not "names only this band", because a
+       line can legitimately name two: somebody arriving from the next camp, a
+       band breaking away from its parent. What is being checked is that the
+       filter kept the right ones, not that bands never meet. */
+    const lines = log.split('<div>').slice(2);
+    check('every line it shows is one of this band\'s',
+      lines.length > 0 && lines.every((l) => l.includes(`>${target.code}<`)),
+      `${lines.filter((l) => !l.includes(`>${target.code}<`)).length} of ${lines.length} were not`);
+  }
+
+  /* The pin has to know which band it is for without asking another module at
+     click time, so the card writes it on the button. Checked before it is
+     pressed, because "the button did nothing" and "the button did not know
+     where to go" look identical from outside and are different bugs. */
+  const pin = document.getElementById('tribeGo');
+  check('the card writes the band on the pin', pin.dataset && pin.dataset.camp !== undefined,
+    'the pin was not told which band it is for');
+
+  /* The path the report came in on: full map, click a band, card opens, press
+     the pin. Every one of those is a layer over the world, and the pin has to
+     get through all of them. */
+  mapModule.setMapSize(full);
+  mapModule.updateMapView();
+  canvas.fire('pointerdown', { clientX: cx, clientY: cy });
+  canvas.fire('pointerup', { clientX: cx, clientY: cy });
+  check('opening a band from the full map leaves nothing over the world',
+    !mapModule.mapIsFull(), 'the map stayed up');
+
+  // Away from the camp first, so the button has somewhere to bring you back to.
+  mapModule.travelTo(0, 0);
+  const before2 = Math.hypot(cameraRef.position.x - target.x, cameraRef.position.z - target.z);
+  pin.fire('click');
+  const after2 = Math.hypot(cameraRef.position.x - target.x, cameraRef.position.z - target.z);
+  check('and a button on it goes to their camp', after2 < before2 && after2 < 60,
+    `${before2.toFixed(0)}m -> ${after2.toFixed(0)}m`);
+  /* And it points at them rather than merely standing near them. */
+  const aim = Math.hypot(CONTROLS_TARGET().x - target.x, CONTROLS_TARGET().z - target.z);
+  check('and the view is aimed at the middle of their camp', aim < 2,
+    `${aim.toFixed(1)}m off the fire`);
+  /* Every overlay, not just the card. Any one of them left up puts the camera
+     behind a full-screen backdrop, which is what "it does nothing" meant. */
+  for (const id of ['tribe', 'chron', 'keys']) {
+    check(`and takes down the ${id} overlay`, document.getElementById(id).hidden === true,
+      'it stayed up over the camp you asked to see');
+  }
+  document.getElementById('tribeNow').fire('click');
+
+  // And zooming back out hands the map back to the camera.
+  while (mapModule.mapZoom > 1) mapModule.stepMapZoom(-1);
+  mapModule.updateMapView();
+  check('zooming out gives up the pan', mapModule.mapPan === null);
+  mapModule.setMapSize(0);
+}
+
+/* -------------------------------------------------------------------------
+   Nobody is at a fire they do not live at
+
+   The village had its hearths and everyone stood at the first one, because
+   every "go home" in the world aimed at the middle of the camp. Source checks
+   can show the call sites were changed; only the world can show that people
+   ended up where those calls send them.
+   ------------------------------------------------------------------------- */
+let hearthReport = 'no camps';
+if (liveCamps.length && livePeople.length) {
+  const homed = livePeople.filter((p) => p.hearth);
+  check('everybody living in a camp has a fire of their own',
+    homed.length === livePeople.length,
+    `${livePeople.length - homed.length} of ${livePeople.length} had none`);
+  /* And it has to be one of their own camp's, not a neighbour's — the tent
+     index is turned into a hearth by arithmetic, and arithmetic can land you in
+     the next village. */
+  const stray = homed.filter((p) => !(p.camp.fireAt || []).includes(p.hearth));
+  check('and it is one of the fires in their own camp', stray.length === 0,
+    `${stray.length} were at somebody else's`);
+
+  /* A household is one tent and one fire. */
+  const split = liveCamps.some((c) => {
+    const byHut = new Map();
+    for (const p of livePeople.filter((q) => q.camp === c && q.hut)) {
+      const seen = byHut.get(p.hut);
+      if (seen && seen !== p.hearth) return true;
+      byHut.set(p.hut, p.hearth);
+    }
+    return false;
+  });
+  check('a household sits at one fire, not two', !split);
+
+  /* And where there is more than one fire, more than one is used. Reported
+     rather than required: whether a band in this run ever grew past ten
+     households is a fact about the run, and the check would then be measuring
+     the world instead of the code. */
+  const villages = liveCamps.filter((c) => (c.hearths || 0) > 1);
+  if (villages.length) {
+    const worst = villages.map((c) => {
+      const at = new Set(livePeople.filter((p) => p.camp === c).map((p) => p.hearth));
+      return { c, used: at.size };
+    });
+    hearthReport = worst.map((w) => `${w.c.code} ${w.used}/${w.c.hearths} fires in use`).join(' · ');
+    check('a village with several fires has people at more than one',
+      worst.every((w) => w.used > 1), hearthReport);
+  } else {
+    hearthReport = `no band grew past one hearth (largest ${
+      Math.max(...liveCamps.map((c) => c.families || 0))} households)`;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Where the foraging actually happens
+
+   A patch was worth as much on its thousandth visit as its first, and every
+   forager in a band worked out the same best spot from the same numbers — so
+   the whole band walked to one place for ever. There was no mechanism by which
+   it could have done otherwise.
+
+   Counted rather than argued: where did the trips that finished actually land.
+   ------------------------------------------------------------------------- */
+let forageReport = 'nobody foraged';
+if (livePeople.length && liveCamps.length) {
+  const cell = 24;                    // a tile, which is a reasonable "same place"
+  const spots = new Map();
+  for (const p of livePeople) {
+    for (const q of p.camp.patches || []) {
+      const k = `${Math.round(q.x / cell)},${Math.round(q.z / cell)}`;
+      spots.set(k, (spots.get(k) || 0) + 1);
+    }
+  }
+  /* The ground itself, which is the thing that was not changing: how many
+     patches of it have been worked at all, and how hard the worst-hit one has
+     been hit. A band that goes to one place strips one cell and leaves the rest
+     of the island untouched. */
+  const ground = lifeModule ? lifeModule.foragedStats() : { cells: 0, worst: 0 };
+  forageReport = `${spots.size} patches remembered, ${ground.cells} of the ground worked`
+    + ` (worst ${(ground.worst * 100).toFixed(0)}% picked over)`;
+  check('a band remembers more than one place to forage', spots.size > 1, forageReport);
+  /* More than one place, which is the claim. Not a bigger number than that:
+     how many patches a band works in one short run is a fact about the run —
+     it fell from seven to four the day fishing was added and nothing was
+     wrong, because half the trips were going to the water instead. */
+  check('and the foraging is spread over the ground rather than sunk into one spot',
+    ground.cells > 2, forageReport);
+  /* And no patch is stripped to nothing: it recovers, which is what sends them
+     back to it next week rather than never. */
+  check('no patch is picked to nothing', ground.worst < 0.9, forageReport);
+}
+
+/* -------------------------------------------------------------------------
+   A face, on the one person you are looking at
+
+   Everything a person is made of is an InstancedMesh sized to the whole island,
+   so eyes on everybody cost four thousand instances to be seen on one figure.
+   The near set is plain meshes moved onto whoever is being followed — which
+   means the thing that can go wrong is not the cost but the moving: a face left
+   on somebody you stopped following, or never put on at all.
+   ------------------------------------------------------------------------- */
+let faceReport = 'not tested';
+if (peopleModule?.nearParts && livePeople.length) {
+  const face = peopleModule.nearParts;
+  /* Every mesh in the set, however deep. It grew joints and a hand of fingers,
+     and anything that walks it shallowly puts half of it away — a face hidden
+     while ten fingers stay on the world. */
+  const parts = [];
+  peopleModule.eachNearPart((m) => parts.push(m));
+  check('a face is built with the world', parts.length >= 5);
+  check('and the joints and fingers with it', parts.length >= 20,
+    `${parts.length} pieces in the near set`);
+
+  /* Out of Follow it belongs to nobody. */
+  chronicleModule?.setViewMode('fly' in {} ? 'orbit' : 'orbit');
+  for (let i = 0; i < 3; i++) stepFrame(16);
+  check('and is nobody\'s while you are not behind anybody',
+    parts.every((m) => !m.visible), 'a face was left on the world');
+
+  // Behind somebody, and it should be on them.
+  pressKey('KeyF');
+  for (let i = 0; i < 4; i++) stepFrame(16);
+  const worn = parts.filter((m) => m.visible).length;
+  /* Not all of them at once: fingers only exist on an open hand, and a hand
+     round a spear or under a basket is a fist. */
+  check('some of the set is on them, and not necessarily all of it',
+    worn >= 5 && worn <= parts.length, `${worn} of ${parts.length}`);
+  const p = chronicleModule?.followedPerson?.();
+  faceReport = `${worn} of ${parts.length} pieces on ${p ? p.name : 'nobody'}`;
+  check('and is on them once you are', worn >= 5 && Boolean(p), faceReport);
+  if (p) {
+    /* On the head, not near it. The eyes hang off the head's own matrix, so
+       this is the check that the matrix they hang off is the right one. */
+    const eye = face.eyeL;
+    eye.updateMatrixWorld(true);
+    const at = new (Object.getPrototypeOf(eye.position).constructor)();
+    at.setFromMatrixPosition(eye.matrixWorld);
+    const off = Math.hypot(at.x - p.x, at.z - p.z);
+    check('and on their head rather than somewhere near them', off < 1,
+      `${off.toFixed(2)}m from the person wearing it`);
+  }
+
+  /* Fingers only exist on an open hand, so the open-hand path is one a run can
+     miss entirely — this one did: eleven of twenty-one pieces, because whoever
+     F landed on was carrying something. Empty their hands and look again. */
+  /* Posed directly rather than by driving frames. Setting a state and stepping
+     the world lets the state machine move somebody into `work` before the
+     measurement — and a working hand is a fist, so the check reported a closed
+     hand as a bug in the fingers. `writePerson` is the thing being tested; call
+     it and nothing can race it. */
+  if (p && moveModule?.writePerson && chronicleModule) {
+    const at = chronicleModule.followIdx;
+    const pose = (over) => {
+      Object.assign(p, over);
+      peopleModule.hideNearParts();
+      moveModule.writePerson(p, at);
+      return parts.filter((m) => m.visible).length;
+    };
+    const open = pose({ carry: 0, hasSpear: false, state: 'goto' });
+    const shut = pose({ carry: 1, hasSpear: false, state: 'goto' });
+    check('an open hand has fingers on it', open > shut,
+      `${open} pieces open, ${shut} closed`);
+    check('and a full one is a fist, with none', shut === 11,
+      `${shut} pieces on a closed hand`);
+  }
+
+  // And put away again when you let go.
+  chronicleModule?.setViewMode('orbit');
+  for (let i = 0; i < 3; i++) stepFrame(16);
+  check('and is put away when you let go of them',
+    parts.every((m) => !m.visible), 'the face stayed on the world');
+}
+
+/* -------------------------------------------------------------------------
+   Footpaths, wired to the feet
+
+   test.js walks a synthetic line across the wear field and checks the numbers
+   come out. This is the other half, and it is the half that catches the way
+   this actually breaks: the field is fine and nothing is connected to it.
+
+   So it walks a real person, through `stepPerson` — the one function in the
+   world that moves anybody — and then asks the ground. Everything in between is
+   the product's own, over ground the person was actually able to cross.
+
+   Measured as a rise rather than against a threshold. The band has been walking
+   for thirty thousand frames by the time this runs and some of that is under
+   anybody you pick, so "is this ground worn" says nothing; "did walking it
+   fourteen more times wear it further, and take some of it down to earth" is
+   the claim, and it is the one that fails when nothing is wired up.
+
+   Adding wear here is safe in a way that driving frames is not: nothing in the
+   simulation reads it. Grass and the terrain shader do, and neither of them
+   feeds back into anybody's day.
+
+   The one who does the walking is a stand-in rather than somebody out of the
+   band, and that is not tidiness. `stepPerson` leaves more on a person than a
+   position — which way they chose to dodge, and for how long they are committed
+   to it — so putting a real person's x and z back afterwards puts back the half
+   of them that is easy to see. It cost a check three hundred lines further down
+   that leads somebody to a new point and measures whether they turn round: they
+   turned round holding a dodge from a walk that never happened. */
+let pathReport = 'no wear field';
+if (pathsModule && moveModule && livePeople.length) {
+  const real = livePeople[0];
+  const home = { x: real.x, z: real.z, yaw: real.yaw };
+  const before = pathsModule.pathStats();
+  const under = pathsModule.wearAt(home.x, home.z);
+
+  // The same errand, over and over, which is the only thing a path ever is.
+  for (let trip = 0; trip < 14; trip++) {
+    const walker = { ...home, phase: 0, scale: real.scale || 1 };
+    for (let s = 0; s < 20; s++) moveModule.stepPerson(walker, 0.8);
+  }
+
+  const after = pathsModule.pathStats();
+  const nowUnder = pathsModule.wearAt(home.x, home.z);
+  pathReport = `${before.cells} cells worn, ${before.bare} bare · after one more `
+    + `errand walked fourteen times: ${after.cells} worn, ${after.bare} bare`;
+  /* The count of worn cells is the wrong thing to assert on and it took a full
+     run to find out why: after a band has been about its business for a while,
+     the ground around a camp is already in the field, so fourteen more trips
+     across it wear it deeper without adding a single new cell. What goes up is
+     how worn it is, and how much of it has reached bare earth. */
+  check('walking wears the ground under it', nowUnder > under,
+    `${under.toFixed(3)} before, ${nowUnder.toFixed(3)} after`);
+  check('and walking the same way takes it down to earth', after.bare > before.bare,
+    `${after.bare} bare against ${before.bare}`);
+  /* Somewhere nobody had a reason to be. If the far corner of the island is
+     worn, wear is going in somewhere other than under a foot. */
+  const corner = pathsModule.wearAt(-700, -700);
+  check('and only the ground somebody walked on', corner === 0, `corner reads ${corner}`);
+}
+
 const ms = Date.now() - t0;
 const missing = [...new Set(touched)].filter((id) => !ids.has(id));
 console.log(`\nboot check: the page loaded and built a world in ${ms}ms`);
@@ -2154,6 +2816,12 @@ console.log(`  travel: ${travelReport}`);
 console.log(`  chronicle: ${chronReport}`);
 console.log(`  indoors: ${indoorsReport}`);
 console.log(`  tribe: ${tribeReport}`);
+console.log(`  paths: ${pathReport}`);
+console.log(`  full map: ${fullMapReport}`);
+console.log(`  hearths: ${hearthReport}`);
+console.log(`  forage: ${forageReport}`);
+console.log(`  face: ${faceReport}`);
+console.log(`  F picks: ${followReport}`);
 for (const f of failures) console.log(`  FAILED — ${f}`);
 if (missing.length) {
   console.log(`  FAILED — asked for elements that do not exist: ${missing.join(', ')}`);

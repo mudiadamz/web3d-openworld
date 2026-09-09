@@ -40,7 +40,7 @@ export const SCHEMA = {
   GUST: { path: 'gust', type: 'float', min: 0, max: 1 },
 
   // camera
-  VIEW: { path: 'view', type: 'enum', values: ['fly', 'walk', 'orbit', 'follow'] },
+  VIEW: { path: 'view', type: 'enum', values: ['orbit', 'follow'] },
   FOV: { path: 'fov', type: 'float', min: 30, max: 110 },
 
   // rendering and sound

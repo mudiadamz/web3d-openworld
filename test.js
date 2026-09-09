@@ -696,7 +696,8 @@ for (const [kind, needle] of [['kill', '${who(p)} took a'],
 check('there is exactly one way to name a person',
   (html.match(/function who\(p\) \{/g) || []).length === 1
   && /return `\[\$\{p\.camp\.code\}\] \$\{p\.name\}`;/.test(html));
-check('a tribe code is two characters', /code: worldCode\(/.test(html));
+check('a tribe code is two characters, taken from the band\'s own name',
+  /code: takeTribeCode\(name\)/.test(html));
 check('its colour follows from the code, not from a seed',
   /function codeColor\(code\)/.test(html) && /get color\(\) \{ return codeColor\(this\.code\); \}/.test(html));
 check('and the chronicle colours every code in a line',
@@ -805,8 +806,10 @@ check('the camera speed is not adjustable',
   !/P\.speed/.test(html) && !html.includes("SPEED: { path: 'speed'"));
 check('and the wheel no longer sets one',
   !/toast\(`\$\{Math\.round\(P\.speed\)\} m\/s`/.test(html));
-check('there is one fly speed and one walk speed',
-  /const CAMERA_FLY = \d+;/.test(html) && /const CAMERA_WALK = \d+;/.test(html));
+/* One speed left, for the one view that moves the camera by hand. Fly and Walk
+   are gone and CAMERA_WALK with them. */
+check('there is one camera speed',
+  /const CAMERA_FLY = \d+;/.test(html) && !/CAMERA_WALK/.test(html));
 
 group('energy');
 
@@ -1004,11 +1007,15 @@ check('the ochre is not a colour anybody else can be wearing', (() => {
 })());
 
 check('somebody who dies leaves a cairn', /function buryPerson\(p\)/.test(html)
-  && /buryPerson\(p\);\n  p\.camp\.lost/.test(html));
-check('where they fell, on the ground', (() => {
+  && /buryPerson\(p\);[\s\S]{0,400}?p\.camp\.lost/.test(html));
+/* Carried back to the band's own ground rather than left where they fell. A
+   stone in the long grass eight hundred metres out is scenery, and forty of
+   them scattered across an island are litter — one place you can walk to is
+   somewhere, and how big it is says how long they have been here. */
+check('and is carried back to their band\'s ground rather than left where they fell', (() => {
   const i = html.indexOf('function buryPerson');
-  const fn = html.slice(i, i + 500);
-  return /x: Math\.round\(p\.x \* 100\)/.test(fn) && /y: sampleHeight\(p\.x, p\.z\)/.test(fn);
+  const fn = html.slice(i, i + 1400);
+  return /const ground = p\.camp\?\.barrow;/.test(fn) && /y: sampleHeight\(x, z\)/.test(fn);
 })());
 /* An InstancedMesh cannot grow, so a world left running for a century must not
    be able to spend all of memory on headstones. */
@@ -1139,17 +1146,21 @@ check('and nothing else clones the scratch matrix before filling it', (() => {
 })() === true);
 
 check('an errand either takes you out or it does not',
-  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'play', 'tend', 'led'\]\);/.test(html));
+  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
+/* Standing at the stones happens outdoors, and it is the one job that has
+   nowhere indoors to be mistaken for. */
+check('and going to the stones or the rocks takes you out too',
+  /'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
 /* The one job whose name says where it happens. It was on the indoor side, so
    somebody "at the fire" was hidden inside a tent — the caption said one thing
    and the camp showed another — and with a full store it is better than a third
    of a band, which is most of the people who were never drawn. */
 check('and sitting at the fire is not one of them',
-  /'play', 'tend', 'led'\]\);/.test(html));
+  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
 /* Nor is somebody you are walking about by hand, or they wink out the moment
    you lead them into their own camp. */
 check('and neither is somebody you are leading',
-  /'tend', 'led'\]\);/.test(html));
+  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
 /* Between the stones and the tents: the huts stand 6.5m out and are about two
    metres across, so their inner edge is near 4.1m, and the fire ring is 1.15m. */
 check('somebody at the fire sits between the stones and the tents', (() => {
@@ -1420,7 +1431,13 @@ check('and whoever is left over shares what is spare',
   /for \(let i = 0; i < spare\.length; i \+= 2\)/.test(html));
 check('everybody is put in the tent they belong in',
   /function assignHuts\(camp\)/.test(html)
-  && /for \(const p of \[\.\.\.f\.adults, \.\.\.f\.kids\]\) p\.hut = hut;/.test(html));
+  && /for \(const p of \[\.\.\.f\.adults, \.\.\.f\.kids\]\) \{ p\.hut = hut; p\.hearth = fire; \}/.test(html));
+/* And at the fire that tent stands round. Without it a village was five hearths
+   and one crowd: everything meaning "go home" aimed at camp.x, which is hearth
+   nought, so sixty people walked past four burning fires to stand at the
+   first. */
+check('and at the fire it stands round',
+  /const fire = camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\];/.test(html));
 check('and that happens whenever the band changes', (() => {
   const i = html.indexOf('function dressCamp');
   return i > 0 && /assignHuts\(camp\);/.test(html.slice(i, i + 900));
@@ -1665,9 +1682,16 @@ check('fruit is on the readout', html.includes('${stats.fruit} fruit'));
 
 group('the orchard');
 
+/* Read out of the ORCHARD block, not out of the whole file. This searched every
+   source for `takes:` and `worth:` and took the first of each — which for most
+   of this project's life meant `SPLIT.takes` (0.42) against `ORCHARD.worth`
+   (0.02). The product of two unrelated constants happened to be small, so the
+   check passed, and it was testing nothing. It failed the day a `worth: 4`
+   appeared anywhere above it in the file. */
+const ORCHARD_SRC = (html.match(/ORCHARD = \{([\s\S]*?)\n\};/) || [, ''])[1];
 const ORCHARD = {};
 for (const k of ['reach', 'takes', 'worth', 'regrow']) {
-  const m = html.match(new RegExp(`^\\s*${k}: ([\\d.]+),`, 'm'));
+  const m = ORCHARD_SRC.match(new RegExp(`^\\s*${k}: ([\\d.]+),`, 'm'));
   ORCHARD[k] = m ? Number(m[1]) : NaN;
 }
 check('the orchard constants are readable', Object.values(ORCHARD).every(Number.isFinite),
@@ -1757,7 +1781,7 @@ check('every part of a person is painted', unpainted.length === 0, unpainted.joi
 // The three places the band can change under it.
 for (const [what, re] of [
   ['a birth or death', /hidePeopleFrom\(people\.length\);\n    \/\*[\s\S]{0,400}?paintPeople\(\);/],
-  ['a person being killed', /function killPerson[\s\S]{0,600}?paintPeople\(\);/],
+  ['a person being killed', /function killPerson[\s\S]{0,900}?paintPeople\(\);/],
   ['coming back to a saved session', /hidePeopleFrom\(people\.length\);\n  paintPeople\(\);/],
 ]) {
   check(`${what} repaints the band`, re.test(html));
@@ -1934,7 +1958,83 @@ check('waiting for stragglers covers only the edges of the night',
 group('follow');
 
 check('F both enters follow and finds somebody new',
-  /if \(ev\.code === 'KeyF'\) \{\s*if \(P\.view !== 'follow'\) setViewMode\('follow'\);\s*else pickFollow\(\);/.test(html));
+  /\} else if \(P\.view !== 'follow'\) setViewMode\('follow'\);\s*else pickFollow\(\);/.test(html));
+
+/* F picks at random, so the person you were watching goes when you press it —
+   and you cannot ask for them back by name, because you never chose them. The
+   trail is what makes that keypress undoable. */
+check('shift+F goes back to the one before',
+  /if \(ev\.shiftKey\) \{\s*if \(P\.view !== 'follow'\) setViewMode\('follow'\);\s*if \(!followBack\(\)\)/.test(html));
+check('and it is kept by id, not by index',
+  /followTrail\.push\(p\.id\)/.test(html) && /people\.findIndex\(\(q\) => q\.id === id\)/.test(html));
+/* Indices shift when somebody dies, so a trail of them walks you back to
+   whoever inherited the slot. An id that is gone is simply skipped. */
+check('somebody who died while you were away is skipped',
+  /if \(idx < 0\) continue;/.test(html));
+/* Going back to A must not put B on the trail, or shift+F twice returns you to
+   where you started — two people passing each other rather than a way back. */
+check('stepping back does not put the one you left on the trail',
+  /followPerson\(idx, true, false\)/.test(html)
+  && /function followPerson\(idx, announce = true, remember = true\)/.test(html)
+  && /if \(remember\) rememberFollowed\(\)/.test(html));
+check('and the same person is not on the trail twice',
+  /const at = followTrail\.indexOf\(p\.id\);\s*if \(at >= 0\) followTrail\.splice\(at, 1\);/.test(html));
+check('the trail does not grow without bound',
+  /if \(followTrail\.length > FOLLOW_TRAIL_MAX\) followTrail\.shift\(\)/.test(html));
+
+/* The wheel sets how far back you stand and the drag sets the angle. After a
+   minute of both there was no way back to the view F leaves you in short of
+   finding somebody else to follow. */
+check('V puts the camera back over their shoulder',
+  /if \(ev\.code === 'KeyV'\) \{\s*if \(shoulderView\(\)\)/.test(html));
+check('and that view is one definition, not three copies',
+  /const SHOULDER = \{ pitch: -0\.12, dist: 4\.5 \}/.test(html)
+  && (html.match(/SHOULDER\.pitch/g) || []).length >= 3
+  && !/cam\.pitch = -0\.12/.test(html));
+check('resetting sets the distance too, which is what the wheel moved',
+  /P\.followDist = SHOULDER\.dist/.test(html));
+/* "Behind them" was only ever true for the instant it was set: cam.yaw is a
+   direction in the world, so the moment somebody turned a corner the camera
+   held its bearing and you watched them walk away sideways, then head-on. */
+const chronSrc = moduleSource('chronicle.js');
+check('the shoulder view keeps station behind them as they walk',
+  /if \(cam\.astern\) \{[^]*?cam\.yaw \+= off \* Math\.min\(1, dt \* ASTERN_EASE\)/.test(chronSrc));
+check('and V is what puts you back on it',
+  /P\.followDist = SHOULDER\.dist;\s*cam\.astern = true;\s*return true;/.test(chronSrc));
+check('dragging to look around lets go of their shoulder',
+  /cam\.astern = false;\s*cam\.yaw -= \(ev\.clientX - cam\.lastX\)/.test(chronSrc));
+/* How far back you stand is not an opinion about which way to look. */
+check('but the wheel does not — it only sets how far back you stand',
+  !/cam\.astern = false/.test(chronSrc.slice(chronSrc.indexOf("addEventListener('wheel'"))));
+
+/* Eased rather than welded: the walk code turns somebody a little every few
+   seconds to get round things, and a camera pinned to their heading swings hard
+   at every sidestep. */
+const astern = new Function('cam', 'p', 'dt', 'ASTERN_EASE', `
+  let off = p.yaw - cam.yaw;
+  off = Math.atan2(Math.sin(off), Math.cos(off));
+  cam.yaw += off * Math.min(1, dt * ASTERN_EASE);
+  return cam.yaw;`);
+const EASE = Number((chronSrc.match(/ASTERN_EASE = ([\d.]+)/) || [, 0])[1]);
+check('the ease is a real rate, not a snap', EASE > 0 && EASE < 8, String(EASE));
+/* The one place a bearing has a seam in it: just west of north to just east of
+   it is two degrees, and the long way round is three hundred and fifty-eight. */
+{
+  const cam2 = { yaw: Math.PI - 0.02 };
+  const moved = astern(cam2, { yaw: -Math.PI + 0.02 }, 1, EASE) - (Math.PI - 0.02);
+  check('and it turns the short way across the seam of the compass',
+    Math.abs(moved) < 0.1 && moved > 0, `moved ${moved.toFixed(3)} rad`);
+}
+{
+  // Half a second of a quarter turn should be most of the way there, not all.
+  const cam3 = { yaw: 0 };
+  astern(cam3, { yaw: Math.PI / 2 }, 0.5, EASE);
+  check('a turn is followed rather than snapped to',
+    cam3.yaw > 0.2 && cam3.yaw < Math.PI / 2, `${cam3.yaw.toFixed(2)} of ${(Math.PI / 2).toFixed(2)}`);
+}
+
+check('both new keys are on the keys card',
+  /<kbd>shift<\/kbd>\+<kbd>F<\/kbd>/.test(html) && /<kbd>V<\/kbd>/.test(html));
 check('entering follow picks somebody', /if \(mode === 'follow'\) pickFollow\(false\);/.test(html));
 check('N is gone', !/KeyN/.test(html) && !/<kbd>N<\/kbd>/.test(html));
 check('and the key list says F', /<kbd>F<\/kbd>/.test(html));
@@ -2088,18 +2188,26 @@ check('and arriving just stops them',
    Clicking the ground says where; these say what. Six icons across the bottom
    while you are behind somebody, and nothing at all when you are not.
    ------------------------------------------------------------------------- */
-check('there is a button for each job you can give',
-  /export const ORDERS = \['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit'\];/.test(
-    rawSources[srcFiles.indexOf('chronicle.js')] || ''));
+/* Read out of ORDERS rather than written out again here, so the two cannot
+   disagree about what a band can be told to do. Adding an errand is adding it
+   in one place and putting an icon in the markup. */
+const ORDER_LIST = (rawSources[srcFiles.indexOf('chronicle.js')] || '')
+  .match(/export const ORDERS = \[([^\]]*)\]/)[1]
+  .split(',').map((t) => t.trim().replace(/'/g, '')).filter(Boolean);
+check('there is a button for each job you can give', ORDER_LIST.length >= 8,
+  ORDER_LIST.join(' '));
 check('and one in the markup for each of them', (() => {
-  const list = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit'];
-  const missing = list.filter((j) => !html.includes(`data-order="${j}"`));
+  const missing = ORDER_LIST.filter((j) => !html.includes(`data-order="${j}"`));
   return missing.length ? `no button for ${missing.join(', ')}` : true;
 })() === true);
+/* The two a grown band has and a new one does not. */
+check('including the errands a band only has once it has grown',
+  ORDER_LIST.includes('quarry') && ORDER_LIST.includes('mourn'));
 /* Icons only, which means the words have to be somewhere a pointer and a reader
    can still find them. */
 check('each says what it is without being read',
-  (html.match(/data-order="\w+" aria-label="[^"]+" title="[^"]+"/g) || []).length === 6);
+  (html.match(/data-order="\w+" aria-label="[^"]+" title="[^"]+"/g) || []).length === ORDER_LIST.length,
+  `${(html.match(/data-order="\w+" aria-label="[^"]+" title="[^"]+"/g) || []).length} labelled of ${ORDER_LIST.length}`);
 /* Only while you are behind somebody: a menu bar over an empty world is a menu
    bar over an empty world. */
 check('the row is only there in Follow',
@@ -2251,8 +2359,27 @@ check('and somebody you chose is not handed away while they are indoors',
    kept in — and F would land on them. The caption read "knapping" and the
    screen showed a hut, which is what the mode being broken looks like.
    ------------------------------------------------------------------------- */
-check('F picks from the people who are on screen',
-  /for \(let i = 0; i < people\.length; i\+\+\) if \(!people\[i\]\.hidden\) pool\.push\(i\);/.test(html));
+/* An adult on an errand first, and everybody on screen after that. On a fed
+   island a third of a band is under fourteen, and what a child does is play,
+   run about, sit at the fire and sleep — so F landed on one four times out of
+   five, which is F not working rather than F being unlucky. */
+check('F looks for somebody doing something first',
+  /if \(i !== followIdx && !q\.hidden && !q\.child && !IDLE_JOBS\.has\(q\.job\)\) pool\.push\(i\);/.test(html));
+check('and falls back to anybody on screen',
+  /if \(i !== followIdx && !people\[i\]\.hidden\) pool\.push\(i\);/.test(html));
+/* F is "show me somebody", and showing you the person you are already looking
+   at is F doing nothing — which is what narrowing the pool did the moment a
+   band had exactly one adult on an errand. */
+check('and never on the one you are already behind',
+  (html.match(/i !== followIdx/g) || []).length >= 2);
+/* Not a judgement about the person: somebody asleep is doing the most important
+   thing they will do all day. F is a request to be shown something. */
+check('the errands with nothing to watch are named once',
+  /const IDLE_JOBS = new Set\(\['play', 'tend', 'sleep'\]\);/.test(html));
+/* Sitting with somebody who is ill looks like sitting down and is the most
+   interesting thing in a camp with a sickness in it. */
+check('and sitting with the ill is not one of them',
+  !/IDLE_JOBS = new Set\(\[[^\]]*'nurse'/.test(html));
 check('and asks the draw loop rather than guessing again', (() => {
   const body = bodyOf('pickFollow');
   if (!body) return 'no pickFollow';
@@ -2266,7 +2393,7 @@ check('but it always picks somebody', (() => {
   const body = bodyOf('pickFollow');
   if (!body) return 'no pickFollow';
   const falls = (body.match(/if \(!pool\.length\)/g) || []).length;
-  return falls === 2 ? true : `${falls} fallbacks, wanted 2`;
+  return falls === 3 ? true : `${falls} fallbacks, wanted 3`;
 })() === true);
 check('and the last fallback takes anyone at all',
   /if \(!pool\.length\) for \(let i = 0; i < people\.length; i\+\+\) pool\.push\(i\);/.test(html));
@@ -2859,13 +2986,13 @@ check('a child is born to named parents', /function pickParent\(camp, sex\)/.tes
 check('the names are kept, not just the ids — a parent dies first',
   /motherName: r\.mn \|\| ''/.test(html));
 check('the chronicle says whose child it is', /was born to \$\{mother\.name\}/.test(html));
-/* Descent is reckoned through the father, so that is the parent the caption
-   names — and the line and the generation with it, which is the part that
-   reaches further back than one step. */
-check('and the caption names the father',
-  /son'\} of \$\{p\.fatherName\}/.test(html));
-check('with the line they belong to and how deep they are in it',
-  /\$\{ordinal\(p\.gen\)\} of the \$\{p\.line\} line/.test(html));
+/* Descent is reckoned through the father, and the band card is where it is
+   read. It used to be on the follow caption as well — "daughter of Bresher",
+   "3rd of the Lohae line", and the chain of fathers under them — three ways of
+   saying one thing, on screen whether or not anybody asked, and the half of
+   that caption that cannot change while you watch somebody. */
+check('a child takes its father\'s line', /child\.line = father\.line \|\| father\.name/.test(html));
+check('and is one generation deeper in it', /child\.gen = \(father\.gen \|\| 1\) \+ 1/.test(html));
 check('children look like their parents', /function inheritLooks\(child, mother, father\)/.test(html)
   && /child\.skin = mix\.getHex\(\)/.test(html));
 check('with a little drift, or a family converges on one shade',
@@ -3346,15 +3473,17 @@ check('and the save carries the mastery, not the announcement', (() => {
 
    Three was not enough to make two bands different from each other: every band
    that lasted learned all of them, and "what is this band good at" had one
-   answer. Six is enough that a century leaves two bands with different
-   histories — and each of the new ones moves a number the simulation already
-   had, because a skill that only shows on a readout is a readout.
+   answer. Six was enough that a century leaves two bands with different
+   histories, and the seventh is the one that is not a technique — a band that
+   buries its dead in one place and goes back to it. Each of them moves a number
+   the simulation already had, because a skill that only shows on a readout is a
+   readout.
    ------------------------------------------------------------------------- */
-check('there are six of them', Object.keys(
+check('there are fourteen of them', Object.keys(
   (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
     .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
     .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
-).length === 6);
+).length === 14);
 check('and every one of them does something', (() => {
   const want = [
     ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
@@ -3373,16 +3502,36 @@ check('and every one of them does something', (() => {
 check('a band works on what it has been worrying about',
   /\['herbs', 0\.10 \+ 1\.10 \* sick\]/.test(html)
   && /if \(q\.sick\) ill\+\+;/.test(html));
-check('and there is a weight for every skill', (() => {
-  const m = html.match(/const weights = \[([\s\S]*?)\];/);
-  const listed = m ? (m[1].match(/\['(\w+)',/g) || []).length : 0;
-  return listed === 6 ? true : `${listed} weights for 6 skills`;
-})() === true);
+/* Six weights for eight skills, and that is the shape of it: these are the ones
+   a band gets better at by sitting down and working at them. The other two are
+   learned at the graveyard and nowhere else — going back to it, and raising
+   something over it. */
+/* Out of craftChoice, not out of the file. `const weights = [` also opens the
+   job list in move.js, which sorts earlier — so this was counting the errands a
+   person can choose between and getting the right answer by coincidence. It
+   broke the day a ninth errand was added, which is the only reason anybody
+   found out it had never been reading the skills at all. */
+const CRAFT_WEIGHTS = (() => {
+  const src = moduleSource('skills.js');
+  const at = src.indexOf('function craftChoice');
+  const m = src.slice(at).match(/const weights = \[([\s\S]*?)\];/);
+  return m ? (m[1].match(/\['(\w+)',/g) || []).map((t) => t.slice(2, -2)) : [];
+})();
+check('and there is a weight for every skill worked at',
+  CRAFT_WEIGHTS.length === 8, `${CRAFT_WEIGHTS.length} weights: ${CRAFT_WEIGHTS.join(' ')}`);
+/* Four of the twelve are not worked at the fire: the two learned at the
+   graveyard, trading (learned by trading), and mining (learned at the rock). */
+/* Six of the fourteen are not worked at the fire: the two at the graveyard,
+   trading, mining at a rock, fighting when somebody arrives, and fishing, which
+   is learned standing in the water. */
+check('and the six learned elsewhere are not among them',
+  !CRAFT_WEIGHTS.some((k) => ['rites', 'art', 'trade', 'mining', 'war', 'fishing'].includes(k)),
+  CRAFT_WEIGHTS.join(' '));
 /* Written out in five places before. Adding a seventh should not be a hunt
    through the file for the ones that were missed. */
 check('an empty set of them is built from the list',
   /export const emptySkills = \(\) => Object\.fromEntries\(Object\.keys\(SKILLS\)\.map\(\(k\) => \[k, 0\]\)\);/.test(
-    rawSources[srcFiles.indexOf('life.js')] || ''));
+    rawSources[srcFiles.indexOf('skills.js')] || ''));
 check('and nothing writes the three out by hand any more',
   !/\{ spears: 0, baskets: 0, drying: 0 \}/.test(html));
 /* A save from before the other three has to still mean what it meant. */
@@ -3454,7 +3603,7 @@ check('it says where you are in it', /\$\('chronWhere'\)\.textContent/.test(html
 group('the toll');
 
 check('a band keeps its own tally of what happened to it',
-  /toll: \{ age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0 \}/.test(html));
+  /toll: \{ age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 \}/.test(html));
 /* Every cause a death can have needs a place in the tally and a word for it, or
    a death goes into the count and comes out of the readout as "undefined". */
 const causes = [...html.matchAll(/^\s*(\w+): \(p, age\) =>/gm)].map((m) => m[1]);
@@ -3645,12 +3794,19 @@ check('a death is looked up the same way', /const rec = lineOf\(p\.id\)/.test(ht
 check('and so is an ancestor', /const rec = lineOf\(at\)/.test(html));
 
 /* The whole reason for keeping the dead is being able to name them years after
-   they are gone, so the caption shows the fathers rather than only a depth. */
-check('the caption shows the fathers themselves',
-  /const fathers = ancestry\(p, 4\)/.test(html)
-  && html.includes("fathers.map((r) => " + String.fromCharCode(96) + "← "));
-check('and says when there are more of them than it showed',
-  /fathers\.length === 4 && fathers\[3\]\.f \? ' ←…' : ''/.test(html));
+   they are gone — and that is what the band card is for. The follow caption
+   says who somebody is and what they are doing now; the ancestry it used to
+   recite belongs where there is room to read it. */
+const followCaption = html.slice(html.indexOf('export function updateFollowCaption'),
+  html.indexOf('export function', html.indexOf('export function updateFollowCaption') + 10));
+check('the follow caption does not recite anybody\'s ancestry',
+  !/ancestry\(/.test(followCaption) && !/fatherName/.test(followCaption)
+  && !/ordinal\(/.test(followCaption),
+  followCaption.slice(0, 0) || 'the caption still names a parent or a line');
+check('and the record still keeps who somebody came from',
+  /function lineOf\(id\)/.test(html) && /function ancestry\(p, limit/.test(html)
+  && /g: p\.gen, l: p\.line/.test(html));
+check('and a save carries it out and back', /ln: p\.line \|\| '', gn: p\.gen \|\| 1/.test(html));
 
 /* A visit to the next band is the better part of an hour there and back, and
    dusk sends everybody home from wherever they have got to. Somebody setting
@@ -3697,7 +3853,15 @@ check('trees in fruit are among the spots weighed up',
    tree six times in ten whatever the ground was, and a tree is worth about a
    tenth of a unit against half a unit for good ground. */
 check('and everything is weighed in food, not in preference',
-  /const value = \(FOOD\.gather \* forageRichness\(x, z\) \+ fruit\)/.test(html));
+  /const value = \(\(FOOD\.gather \* forageRichness\(x, z\) \+ fruit\)/.test(html));
+/* Two foragers leaving the same fire read the same numbers and walked to the
+   same spot, every time — a band with one opinion rather than twenty people.
+   The jitter multiplies the whole value, fruit and ground together: applied to
+   one term and not the other it would be precisely the preference this test
+   exists to keep out. */
+check('and the tie is broken on the total, not on one kind of spot',
+  /const guess = 0\.78 \+ luck\(\) \* 0\.44;/.test(html)
+  && /- \(away \/ 100\) \* FORAGE\.farCost\) \* guess;/.test(html));
 check('so a tree on poor ground loses to good ground',
   !/seesFruit/.test(html));
 check('with distance counting against a far one', /farCost: [\d.]+,/.test(html));
@@ -3731,9 +3895,21 @@ check('the window has a chart and a log rather than an explanation',
 check('the chart is the same one the panel uses, pointed elsewhere',
   /function drawTribeChart\(cv = \$\('tribeChart'\)\)/.test(html)
   && /drawTribeChart\(\$\('aheadChart'\)\)/.test(html));
+const aheadSrc = html.slice(html.indexOf('function showAheadProgress'),
+  html.indexOf('function runAhead'));
 check('and the log is the chronicle itself, not a copy of it',
-  /chronicle\.slice\(0, 8\)\.map/.test(
-    html.slice(html.indexOf('function showAheadProgress'), html.indexOf('function runAhead'))));
+  /chronicle\.filter\(isMilestone\)\.slice\(0, 8\)/.test(aheadSrc));
+/* Eight lines is what fits and a year is hundreds of them, so unfiltered those
+   eight were whichever kills and hungry nights happened to be most recent — a
+   band breaking away would show for a fraction of a second and be gone. Same
+   filter the panel has had all along. */
+check('showing only what is worth telling', /isMilestone/.test(aheadSrc));
+/* The number the run is actually about. A progress bar says how long there is
+   to wait; this says whether waiting is worth it. */
+check('and how many people there are while it runs',
+  /people\.length \} \}/.test(aheadSrc) || /\$\{people\.length\}/.test(aheadSrc));
+check('and how many camps they are living in',
+  /camps\.filter\(\(c\) => !c\.gone\)\.length/.test(aheadSrc));
 check('with the band codes coloured, as everywhere else',
   /codeChip\(e\.seed\)/.test(html.slice(html.indexOf('function showAheadProgress'),
     html.indexOf('function runAhead'))));
@@ -3967,6 +4143,1699 @@ const noMen = trySplit(8, 1, 6, 2);
 check('nor one that would strand either camp without men',
   noMen.going === null || (noMen.newM >= 1 && noMen.oldM >= 1),
   noMen.going ? `${noMen.newM} new, ${noMen.oldM} kept` : 'refused');
+
+/* -------------------------------------------------------------------------
+   Footpaths
+
+   The wear field is module state and arithmetic — no DOM, no renderer, nothing
+   that needs a world — so the whole file is instantiated here with its imports
+   stubbed and somebody is walked across it. What is being checked is the thing
+   the numbers in `PATH` claim: that a route walked daily becomes a path, that a
+   walk taken once does not, and that a path nobody uses goes away again.
+   ------------------------------------------------------------------------- */
+
+const PATH_WORLD = 1600;
+const makePaths = new Function('THREE', 'WORLD', 'TILE',
+  moduleSource('paths.js')
+    .replace(/^import .*$/gm, '')
+    .replace(/^export /gm, '')
+  + '\nreturn { PATH, buildPaths, clearPaths, tread, wearAt, fadePaths, pathStats, takeWornTiles };');
+
+/* Only the four things paths.js actually touches. A real three.js here would
+   be measuring three.js. */
+const THREE_STUB = {
+  DataTexture: class { constructor(d, w, h) { this.image = { data: d, width: w, height: h }; } dispose() {} },
+  Color: class { constructor(hex) { this.hex = hex; } },
+  RedFormat: 1, LinearFilter: 2, ClampToEdgeWrapping: 3,
+};
+
+const paths = makePaths(THREE_STUB, PATH_WORLD, 24);
+const { PATH: PATHS, buildPaths, tread, wearAt, fadePaths, pathStats, takeWornTiles } = paths;
+
+/** Walks somebody from one end of a line to the other, in strides. */
+function walkLine(x0, z0, x1, z1, times = 1, stride = 0.9) {
+  const dx = x1 - x0, dz = z1 - z0;
+  const dist = Math.hypot(dx, dz);
+  const steps = Math.max(1, Math.round(dist / stride));
+  for (let t = 0; t < times; t++) {
+    for (let s = 0; s < steps; s++) {
+      const a = s / steps, b = (s + 1) / steps;
+      tread(x0 + dx * a, z0 + dz * a, x0 + dx * b, z0 + dz * b);
+    }
+  }
+}
+
+/* Measured across the track rather than at a point on it, and that is not
+   fussiness: the field is a grid, so a line walked along z = 0 can fall exactly
+   on the boundary between two rows of cells and read half of what it laid down,
+   for ever. Sampling one point made this pass at one map size and hang at
+   another — the wear was fine both times, the ruler was not. */
+const peakAcross = (x) => {
+  let most = 0;
+  for (let d = -3; d <= 3; d += 0.05) most = Math.max(most, wearAt(x, d));
+  return most;
+};
+
+buildPaths();
+walkLine(-20, 0, 20, 0, 1);
+const afterOne = peakAcross(0);
+check('one walk down a line is not a path', afterOne < PATHS.showing,
+  `${afterOne.toFixed(3)} against ${PATHS.showing}`);
+check('but it does leave a mark', afterOne > 0, String(afterOne));
+
+/* How many times it takes, which is the number the comment in paths.js claims.
+   Asserted as a range rather than a value: the point is that it is a week of
+   errands and not one walk or a hundred. */
+buildPaths();
+let crossings = 0;
+while (peakAcross(0) < PATHS.bare && crossings < 200) { walkLine(-20, 0, 20, 0, 1); crossings++; }
+check('a route walked daily is bare ground within a fortnight',
+  crossings >= 4 && crossings <= 20, `${crossings} crossings`);
+
+check('and the ground either side of it is untouched', wearAt(0, 18) === 0,
+  String(wearAt(0, 18)));
+check('wear stops at fully worn however much it is walked',
+  (walkLine(-20, 0, 20, 0, 200), peakAcross(0) <= 1), String(peakAcross(0)));
+
+/* Grass grows back. A path is a record of what people are doing now, not a
+   monument to what they did once — a camp that moves has to leave its paths
+   behind or the island fills up with the ghosts of old errands. */
+/* Faded from a path that has just become bare, not from the saturated one the
+   check above left behind — the claim is about how long a path lasts once
+   nobody is using it, and starting from four times the wear anybody ever needs
+   measures the ceiling instead. */
+buildPaths();
+while (peakAcross(0) < PATHS.bare) walkLine(-20, 0, 20, 0, 1);
+const bareBefore = pathStats().bare;
+fadePaths(PATHS.fadeDays * 1.5);
+check('a path nobody walks grows over', peakAcross(0) < PATHS.showing,
+  `${peakAcross(0).toFixed(3)} left of ${bareBefore} bare cells`);
+fadePaths(PATHS.fadeDays * 40);
+check('and eventually leaves nothing behind at all', pathStats().cells === 0,
+  `${pathStats().cells} cells still worn`);
+
+/* The grass is only re-scattered when a tile crosses a threshold, so the tiles
+   have to be handed over once and then not again — a tile that keeps asking is
+   a tile that gets rebuilt every frame somebody walks on it. */
+buildPaths();
+walkLine(-20, 0, 20, 0, 30);
+const asked = takeWornTiles();
+check('crossing a threshold asks for those tiles to be scattered again',
+  asked && asked.length > 0, String(asked && asked.length));
+check('and asks once, not once a step', takeWornTiles() === null);
+
+/* The map walks through its sizes, and the largest of them is the window
+   itself rather than a bigger corner — a map you are reading is the thing you
+   are looking at. It carries no number, because the number is however much room
+   there is, so it is the one size that has to be measured again on a resize. */
+const mapSrc = moduleSource('map.js');
+check('the map has a full-page size', /\{ name: 'max', px: 0, fills: true \}/.test(mapSrc));
+/* Three states, and the decision is only ever "get it out of the way" or "let
+   me look properly" — 118 and 168 and 236 were four presses to make it. */
+check('and there are three of them: off, a glance, and the window',
+  (mapSrc.match(/\{ name: '\w+'/g) || []).length === 3
+  && !/name: 'xlarge'/.test(mapSrc) && !/name: 'medium'/.test(mapSrc));
+check('sized against the short edge of the window, not a constant',
+  /Math\.min\(innerWidth, innerHeight\)/.test(mapSrc));
+check('and measured again when the window changes',
+  /function onMapResize\(\)/.test(mapSrc)
+  && /MAP_SIZES\[mapSize\]\.fills\) setMapSize\(mapSize\)/.test(mapSrc)
+  && /onMapResize\(\)/.test(moduleSource('main.js')));
+/* `hidden` is px 0 and so is `full`, so the test that decides whether to hide
+   the box cannot be "px is zero" any more. */
+check('a full map is not mistaken for a hidden one',
+  /if \(!at\.fills && at\.px === 0\)/.test(mapSrc));
+check('the keys card lists what M walks through',
+  /the map: off, a corner map, the whole window, and round again/.test(html));
+
+/* -------------------------------------------------------------------------
+   How many the world will hold
+
+   An InstancedMesh cannot be resized, so the room for people is decided when
+   the world is built and never again. It used to be four times the starting
+   band, which meant PEOPLE=16 stopped the world at 64 however much food there
+   was — and it stopped by refusing births rather than by anybody going hungry,
+   which is a ceiling with nothing in the world behind it.
+   ------------------------------------------------------------------------- */
+group('room to grow');
+
+const roomSrc = moduleSource('people.js');
+check('room is made for everybody the island can feed',
+  /setPeopleCapacity\(Math\.max\(count, PEOPLE_CEILING\)\)/.test(roomSrc));
+check('and not for a multiple of the band that happens to start',
+  !/setPeopleCapacity\(Math\.round\(clamp\(count \* 4/.test(roomSrc));
+/* Somebody may start more people than the ground would carry, and they have to
+   be drawable on the first frame. */
+check('a band larger than the island still fits on it',
+  /Math\.max\(count, PEOPLE_CEILING\)/.test(roomSrc));
+check('the ceiling is the island, not a constant',
+  /PEOPLE_CEILING =\s*Math\.round\(Math\.min\(4000, \(WORLD \/ 1000\) \*\* 2 \* PEOPLE_PER_KM2\)\)/
+    .test(moduleSource('params.js')));
+
+/* Same argument for the fires. Starting two camps capped an island at six of
+   them whatever its size, and where a camp may go is decided by the ground —
+   sites need 260 m between them — which is a reason. Running out of huts is
+   not. */
+check('and for as many fires as the map has room for',
+  /campCapacity = Math\.max\(camps\.length, CAMP_CEILING\)/.test(roomSrc));
+check('not three times the number it started with',
+  !/campCapacity = Math\.round\(clamp\(camps\.length \* 3/.test(roomSrc));
+
+/* The reason this is affordable: an empty slot is a matrix and nothing else.
+   The draw count is turned down to the band that exists, so allocating for two
+   thousand costs no frames — which is what made the old ceiling look like a
+   saving when it was not. */
+check('an empty slot is never submitted',
+  /personParts\[key\]\.count = Math\.min\(from \* per, personParts\[key\]\.instanceMatrix\.count\)/
+    .test(moduleSource('life.js')));
+check('and the only thing that refuses a birth is running out of room at all',
+  /if \(people\.length >= peopleCapacity\) break;/.test(html));
+check('and a split, somewhere to put the fire',
+  /if \(camps\.length >= campCapacity\) return false;/.test(html));
+
+/* -------------------------------------------------------------------------
+   How much of the map is land
+
+   The island falloff was `smoothstep(540, 820, d)` — metres, tuned on a 1600 m
+   island, and so what they went on meaning. Asking for a bigger world gave you
+   the same island in more water.
+
+   Run for real rather than read: noise.js is arithmetic with two imports, so it
+   is instantiated here at a few map sizes and the height field is sampled.
+   ------------------------------------------------------------------------- */
+group('land and water');
+
+const makeTerrain = new Function('P', 'WORLD',
+  moduleSource('noise.js').replace(/^import .*$/gm, '')
+  + '\nreturn { rawHeight, settle: () => { hOffset = 0; hOffset = 4 - rawHeight(0, 0); } };');
+
+/** Land, and how much of the ground anybody may walk on is land, per map size. */
+function surveyIsland(WORLD, seed, N = 90) {
+  const t = makeTerrain({ seed }, WORLD);
+  t.settle();
+  let land = 0, reach = 0, reachLand = 0, rim = 0, rimLand = 0;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const x = -WORLD / 2 + (i + 0.5) * WORLD / N;
+      const z = -WORLD / 2 + (j + 0.5) * WORLD / N;
+      const wet = t.rawHeight(x, z) > 0;
+      const d = Math.hypot(x, z);
+      if (wet) land++;
+      // The disc canStand allows, and the corners it never does.
+      if (d < WORLD * 0.46) { reach++; if (wet) reachLand++; }
+      if (d > WORLD * 0.62) { rim++; if (wet) rimLand++; }
+    }
+  }
+  return { land: land / (N * N), reach: reachLand / reach, rim: rimLand / rim };
+}
+
+const islands = [1600, 3200].map((w) => ({ w, ...surveyIsland(w, 20260906) }));
+const pct = (v) => `${(v * 100).toFixed(0)}%`;
+
+/* The whole point: an island is a fraction of its map, not a fixed number of
+   metres sitting in the middle of one. */
+check('a bigger map is a bigger island, not more sea',
+  Math.abs(islands[0].land - islands[1].land) < 0.08,
+  islands.map((r) => `${r.w}: ${pct(r.land)} land`).join(' · '));
+check('and most of the map is land at every size',
+  islands.every((r) => r.land > 0.55),
+  islands.map((r) => `${r.w}: ${pct(r.land)}`).join(' · '));
+
+/* The shoreline sits where `canStand` stops anybody, so the edge of where you
+   can walk is the water rather than an invisible wall with beach beyond it. */
+check('nearly everywhere you may walk is dry',
+  islands.every((r) => r.reach > 0.8),
+  islands.map((r) => `${r.w}: ${pct(r.reach)} of the walkable disc`).join(' · '));
+
+/* And it still ends in sea, which is the reason there is a falloff at all. */
+check('the map still ends in water rather than at a cliff',
+  islands.every((r) => r.rim < 0.25),
+  islands.map((r) => `${r.w}: ${pct(r.rim)} of the rim is land`).join(' · '));
+
+/* Asserted on the line itself rather than on the absence of the old one: the
+   comment above it quotes `smoothstep(540, 820, d)` to say what it used to be,
+   and a check that greps the whole file for that string fails on the
+   explanation of why it is gone. */
+check('the falloff is written against the map, not in metres',
+  /const half = WORLD \/ 2;\s*h -= smoothstep\(half \* 0\.78, half \* 1\.12, d\) \* 95;/
+    .test(moduleSource('noise.js')));
+
+/* -------------------------------------------------------------------------
+   The full-page map
+
+   A map that fills the window is a different object from one in the corner: it
+   is the thing you are looking at rather than a glance, so it carries what a
+   map carries — a frame, labels, roads, a scale, and a way back.
+   ------------------------------------------------------------------------- */
+group('the full map');
+
+const mapMod = moduleSource('map.js');
+
+/* Five steps that were mostly each other. Walking through 118 and 168 on the
+   way to somewhere was four keypresses to make one decision. */
+check('M walks off, small and max — nothing in between',
+  /const MAP_SIZES = \[\s*\{ name: 'hidden', px: 0 \},\s*\{ name: 'small', px: 92 \},\s*\{ name: 'max', px: 0, fills: true \},\s*\]/
+    .test(mapMod));
+check('and it starts on the one you glance at, not off',
+  /const MAP_DEFAULT = SMALL_MAP;/.test(mapMod));
+/* Index 0 is the hidden one now. A button labelled "smaller" that turns the map
+   off is the kind of thing a reordered array does quietly. */
+check('so the corner is found by name rather than by number',
+  /const SMALL_MAP = MAP_SIZES\.findIndex\(\(m\) => m\.name === 'small'\)/.test(mapMod));
+
+/* One transform for drawing and for clicking, or a zoomed map disagrees with
+   itself about where a thing is — you would click a camp and travel somewhere
+   else. */
+check('zoom is a window on the world, shared by what is drawn and what is clicked',
+  /const mapView = \{ x: 0, z: 0, span: WORLD \}/.test(mapMod)
+  && /function worldToMap\(x, z\) \{\s*const k = MAP_N \/ mapView\.span;/.test(mapMod)
+  && /function mapToWorld\(u, v\) \{\s*return \[mapView\.x/.test(mapMod));
+/* It follows you until you drag it, and then it stays where you put it. Both
+   are wanted: finding yourself on the map is the reason to zoom, and being
+   unable to look at the next valley without walking there is why that is not
+   enough. */
+check('zoomed in it follows you, because that is what magnifying a map is for',
+  /const at = mapPan \|\| camera\.position;/.test(mapMod)
+  && /mapView\.x = clamp\(at\.x, -edge, edge\)/.test(mapMod));
+check('unless you have dragged it somewhere, and then it stays there',
+  /function setMapPan\(x, z\)/.test(mapMod)
+  && /setMapPan\(mapView\.x - dx \* per, mapView\.z - dy \* per\)/.test(mapMod));
+/* Zooming back out is also how you say "follow me again". */
+check('and zooming back out hands it back to you',
+  /if \(zoom === 1\) \{ mapView\.x = 0; mapView\.z = 0; mapPan = null; return; \}/.test(mapMod));
+/* One pointer, two jobs, and the only thing between them is how far it moved. */
+check('a drag pans and a click travels, told apart by distance',
+  /if \(drag\.moved > DRAG_SLOP\) return;/.test(mapMod)
+  && /const \[x, z\] = mapToWorld/.test(mapMod));
+check('and only a zoomed full map can be dragged at all',
+  /function mapCanPan\(\) \{ return mapIsFull\(\) && mapZoom > 1; \}/.test(mapMod));
+check('the ground keeps pace with the pointer',
+  /const per = mapView\.span \/ mapCanvas\.getBoundingClientRect\(\)\.width;/.test(mapMod));
+check('and never off the side of the world',
+  /const edge = \(WORLD - mapView\.span\) \/ 2/.test(mapMod));
+check('leaving full size drops the zoom with it', /if \(!at\.fills\) mapZoom = 1/.test(mapMod));
+
+/* The relief is one image of the whole island, so zooming is a crop rather than
+   a redraw: a keypress does not re-sample a quarter of a million heights. */
+check('zooming crops the relief rather than rebuilding it',
+  /drawImage\(mapBase, sx, sz, src, src, 0, 0, MAP_N, MAP_N\)/.test(mapMod));
+
+/* A track a metre and a half wide is a third of a pixel at island scale, so it
+   is drawn thicker than it is — which is what a map does with a road. */
+check('the paths are drawn as roads', /function drawPathLayer\(\)/.test(mapMod)
+  && /const w = Math\.max\(1, cell \* k\)/.test(mapMod));
+/* The same threshold the terrain shader browns from, so the map and the ground
+   agree about what counts as a path — a road on the map that is not under your
+   feet when you get there is worse than no road. */
+check('and only where somebody has actually worn one',
+  /if \(worn < PATH\.onMap\) return;/.test(mapMod)
+  && /smoothstep\(0\.45, 0\.88, worn\)/.test(moduleSource('scene.js'))
+  && /onMap: 0\.45,/.test(moduleSource('paths.js')));
+/* Painting the same few thousand cells fourteen times a second to get the same
+   picture is most of what the map would cost. */
+check('the roads are cached until the ground changes',
+  /if \(pathVersion === drawnPaths \|\| now < nextPathDraw\) return;/.test(mapMod)
+  && /pathVersion\+\+/.test(moduleSource('paths.js')));
+
+check('camps wear their band code at this size', /mapCtx\.strokeText\(c\.code, at, py\)/.test(mapMod)
+  && /mapCtx\.fillText\(c\.code, at, py\)/.test(mapMod));
+check('and only at this size', /if \(mapIsFull\(\)\) \{\s*mapCtx\.font/.test(mapMod));
+check('a band that is gone is not labelled', /if \(c\.gone\) continue;/.test(mapMod));
+
+/* A scale that reads "0.83 km" is a scale nobody can use, so the bar is a round
+   number of metres and its length follows. */
+check('the scale bar is a round distance, not a round number of pixels',
+  /const SCALE_STEPS = \[25, 50, 100, 200, 500, 1000, 2000, 5000\]/.test(mapMod)
+  && /SCALE_STEPS\.find\(\(m\) => m >= want\)/.test(mapMod));
+check('and says kilometres once it is worth saying them',
+  /metres >= 1000\s*\? `\$\{\(metres \/ 1000\)/.test(mapMod));
+
+check('there are controls on it, for somebody who has not read the keys card',
+  html.includes('id="mapIn"') && html.includes('id="mapOut"') && html.includes('id="mapMin"'));
+/* "Minimise" on a window that fills the screen means make it small. There is
+   already a key for making it go away. */
+check('and minimise puts it back in the corner rather than turning it off',
+  /\$\('mapMin'\)\?\.addEventListener\('click', \(\) => setMapSize\(SMALL_MAP\)\)/.test(mapMod));
+check('the wheel zooms it, the way a wheel over a map does',
+  /if \(!mapIsFull\(\)\) return;\s*ev\.preventDefault\(\);\s*stepMapZoom/.test(mapMod));
+check('the frame and the controls belong to the full size only',
+  /#map\.full::before/.test(html) && /#mapUi \{ display: none; \}/.test(html)
+  && /#map\.full #mapUi \{/.test(html));
+
+/* The page is served `no-store` so a restart with a new .env shows up. The
+   modules it loads have to be too, or a reload gives you new markup driving old
+   code — buttons that do nothing, a scale bar stuck on its placeholder, and no
+   way to tell from inside the page that this is what happened. */
+check('the page is served without caching', /'cache-control': 'no-store',\n      \}\);\n      return res\.end\(html\)/.test(serverSrc)
+  || /no-store/.test(serverSrc.slice(serverSrc.indexOf('serveIndex()'), serverSrc.indexOf('serveIndex()') + 400)));
+check('and so is every module and asset it loads',
+  /TYPES\[extname\(file\)\] \|\| 'application\/octet-stream',[^]*?'cache-control': 'no-store'/.test(serverSrc));
+
+/* -------------------------------------------------------------------------
+   A camp is a village that has not grown yet
+
+   Fourteen tents in one ring round one fire was the only thing a band could be:
+   past that the ring was full, everybody left over shared the last tent, and
+   the band split rather than getting any bigger.
+   ------------------------------------------------------------------------- */
+group('villages');
+
+const villageSrc = moduleSource('people.js');
+
+check('a camp has room for a tent per household, many times over',
+  /HEARTHS \* HUTS_PER_HEARTH/.test(villageSrc)
+  && /const HEARTHS = 5/.test(villageSrc) && /const HUTS_PER_HEARTH = 10/.test(villageSrc));
+check('and a tent is what a household gets — one, whatever its size',
+  /families\.forEach\(\(f, i\) => \{[^]*?const at = Math\.min\(i, camp\.huts\.length - 1\);\s*const hut = camp\.huts\[at\];/.test(html));
+/* A pair and their children, with the unpaired sharing — a camp is short of
+   shelter, not of ground. */
+check('a household is a pair and the children that belong to them',
+  /families\.push\(\{ adults: \[women\[i\], men\[i\]\], kids: \[\] \}\)/.test(html));
+
+/* The point of more than one fire: tents cluster round their own hearth rather
+   than packing tighter round the first one. */
+check('every hearth has its own ring of tents',
+  /const mine = \(i \/ HUTS_PER_HEARTH\) \| 0;/.test(villageSrc)
+  && /const fire = hearthAt\(camp, mine\);/.test(villageSrc));
+check('and its own stones to ring it and logs to sit at',
+  /const perFireStones = P0\.stones \/ HEARTHS/.test(villageSrc)
+  && /camp\.stoneAt\[at\] = _m4\.clone\(\)/.test(villageSrc));
+check('a fire is lit only once there are tents round it',
+  /function hearthsFor\(families\) \{\s*return clamp\(Math\.ceil\(\(families \|\| 1\) \/ HUTS_PER_HEARTH\), 1, HEARTHS\)/
+    .test(villageSrc)
+  && /camp\.hearths = here === 0 \? 0 : hearthsFor\(want\)/.test(villageSrc));
+check('so a band of one household still looks like one camp',
+  /const lit = f < camp\.hearths;/.test(villageSrc));
+
+/* Run rather than read: how many fires a band of n households sits around is
+   the whole of this feature, and a regex on the formula would pass just as
+   happily with the clamp the wrong way up. */
+const hearthsFor = new Function('clamp', 'HEARTHS', 'HUTS_PER_HEARTH',
+  villageSrc.slice(villageSrc.indexOf('function hearthsFor'),
+    villageSrc.indexOf('}', villageSrc.indexOf('function hearthsFor')) + 1)
+  + '\nreturn hearthsFor;')((v, a, b) => Math.max(a, Math.min(b, v)), 5, 10);
+const fires = [1, 4, 10, 11, 20, 21, 50, 200].map(hearthsFor);
+check('one household, one fire', fires[0] === 1);
+check('and a fire holds ten of them before the next is lit',
+  fires[2] === 1 && fires[3] === 2, `10 -> ${fires[2]} fires, 11 -> ${fires[3]}`);
+check('a village of fifty households is every hearth it has',
+  fires[6] === 5, `50 households -> ${fires[6]} fires`);
+check('and it never asks for a sixth', fires[7] === 5, `200 -> ${fires[7]}`);
+
+/* Five flames on one beat read as a mechanism rather than as fire. */
+check('each fire burns on its own beat',
+  /const own = f === 0 \? flick/.test(moduleSource('move.js')));
+check('and the smoke is shared out between the ones that are lit',
+  /camp\.fireAt\?\.\[i % Math\.max\(1, camp\.hearths \|\| 1\)\]/.test(villageSrc));
+/* One real light for the village. A hundred and forty camps at five apiece is
+   seven hundred lights in a scene that otherwise manages with the sun. */
+check('but the village is lit by one light, not one per hearth',
+  (villageSrc.match(/new THREE\.PointLight/g) || []).length === 1);
+
+/* And the band has to be allowed to grow into it. */
+check('a band grows to village size before it splits', /at: 60,/.test(html));
+/* The trampled ground has to cover the village, and so does the ground a
+   well-kept fire keeps a tiger off — otherwise somebody reaches their own tent,
+   is inside the camp by every other rule, and is taken there. */
+check('the clearing covers the whole village', /CAMP_CLEARING = 26;/.test(html));
+check('and so does the sanctuary a well-kept fire buys',
+  (() => {
+    const safe = Number((html.match(/safe: (\d+),/) || [, 0])[1]);
+    const more = Number((html.match(/fireSafe: (\d+),/) || [, 0])[1]);
+    const clearing = Number((html.match(/CAMP_CLEARING = (\d+);/) || [, 0])[1]);
+    return safe + more >= clearing;
+  })());
+
+/* The one number that decides how fast the world looks. `pace()` multiplies
+   every walk, flight and camera move by PACE_DAY / dayLength, so the default
+   day has to be the length the speeds were written against or people move at a
+   speed nobody chose — 1.35 m/s becomes 4.05 at a twenty-minute day, which is a
+   sprint the walk animation is not playing. */
+check('the default day is the one the speeds are tuned against',
+  /dayLength: 3600,/.test(moduleSource('params.js'))
+  && /PACE_DAY = 3600/.test(html));
+check('and pace is that ratio, clamped',
+  /function pace\(\) \{ return clamp\(PACE_DAY \/ P\.dayLength, 0\.5, 12\); \}/.test(html));
+/* The economy does not notice the day length: a day is always PACE_DAY seconds
+   of activity however many real seconds it takes to watch. */
+check('so shortening the day speeds the world up rather than starving it',
+  !/dayLength/.test(String(html.match(/const FOOD = \{[^]*?\n\};/) || '')));
+
+/* -------------------------------------------------------------------------
+   The caption and the figure have to agree
+
+   A job says what somebody is out to do; it does not say whether they have got
+   there. The caption read "knapping" and "at the fire" off a figure walking
+   across a hillside — the same disagreement INDOOR_WORDS exists to fix, one
+   step earlier in the errand.
+   ------------------------------------------------------------------------- */
+group('what they are doing now');
+
+const sayingSrc = moduleSource('chronicle.js');
+const doingWords = new Function('JOB_WORDS', 'INDOOR_WORDS', 'GOING_WORDS', 'CAME_WORDS',
+  'HOMEWARD', 'WALKING_AT', 'visitWords', 'fireWords',
+  sayingSrc.slice(sayingSrc.indexOf('function doingWords'),
+    sayingSrc.indexOf('\n}', sayingSrc.indexOf('function doingWords')) + 2)
+  + '\nreturn doingWords;');
+const WORDS = (k) => new Function(`return ${sayingSrc.slice(sayingSrc.indexOf(`const ${k} = {`) + `const ${k} = `.length, sayingSrc.indexOf('};', sayingSrc.indexOf(`const ${k} = {`)) + 2)}`)();
+const say = doingWords(WORDS('JOB_WORDS'), WORDS('INDOOR_WORDS'), WORDS('GOING_WORDS'),
+  WORDS('CAME_WORDS'), new Set(['tend', 'craft', 'sleep', 'nurse']), 0.25, () => 'visiting',
+  () => 'at the fire');
+
+/* The bug, both halves of it. */
+check('somebody walking to the fire is not "at the fire"',
+  say({ job: 'tend', state: 'goto', speed: 1.35 }) !== 'at the fire',
+  say({ job: 'tend', state: 'goto', speed: 1.35 }));
+check('and somebody walking off to knap is not knapping',
+  say({ job: 'craft', state: 'goto', speed: 1.35 }) !== 'knapping',
+  say({ job: 'craft', state: 'goto', speed: 1.35 }));
+check('they are walking, and it says where to',
+  /walk|off to|out after/.test(say({ job: 'craft', state: 'goto', speed: 1.35 })));
+
+/* And once they are there it says the job, or the fix has eaten the feature. */
+check('standing at the fire is at the fire',
+  say({ job: 'tend', state: 'work', speed: 0 }) === 'at the fire');
+check('and sitting knapping is knapping',
+  say({ job: 'craft', state: 'work', speed: 0 }) === 'knapping');
+
+/* And where from. "Walking to the fire" says where somebody is going and leaves
+   out the half you can watch them doing, which is coming in off something. */
+check('walking to the fire says what they are coming in from',
+  say({ job: 'tend', state: 'goto', speed: 1.35, came: 'hunt' })
+    === 'walking to the fire, back from a hunt',
+  say({ job: 'tend', state: 'goto', speed: 1.35, came: 'hunt' }));
+check('and the rocks, and the stones, and the next band',
+  say({ job: 'craft', state: 'goto', speed: 1.35, came: 'quarry' }).endsWith('back from the rocks')
+  && say({ job: 'tend', state: 'goto', speed: 1.35, came: 'mourn' }).endsWith('back from the stones')
+  && say({ job: 'tend', state: 'goto', speed: 1.35, came: 'visit' }).endsWith('back from the next band'));
+/* "Back from resting" is not news. */
+check('but says nothing of the errands not worth naming',
+  say({ job: 'tend', state: 'goto', speed: 1.35, came: 'sleep' }) === 'walking to the fire'
+  && say({ job: 'tend', state: 'goto', speed: 1.35, came: 'tend' }) === 'walking to the fire');
+/* Walking out to forage "back from a hunt" is two errands in one sentence. */
+check('and only when they are coming in, not going out',
+  say({ job: 'gather', state: 'goto', speed: 1.35, came: 'hunt' }) === 'walking out to forage');
+check('somebody on their first errand of all has nothing to say about it',
+  say({ job: 'tend', state: 'goto', speed: 1.35 }) === 'walking to the fire');
+/* One field, set in the one place a job is chosen. */
+check('and what they were at is recorded where the choosing happens',
+  /if \(p\.job\) p\.came = p\.job;/.test(moduleSource('move.js')));
+
+/* Coming back is its own thing, and worth saying: a forager walking home with
+   something is the moment the whole errand was for. */
+check('walking home says so', say({ job: 'gather', state: 'return', speed: 1.35 }) === 'walking home');
+check('and says when they are carrying something',
+  say({ job: 'gather', state: 'return', speed: 1.35, carry: 1 }) === 'carrying it home');
+
+/* The threshold has to sit under a walk and over a standstill, or somebody
+   coasting to a halt flickers between the two. */
+check('a walk counts as walking and a standstill does not',
+  say({ job: 'tend', state: 'goto', speed: 1.35 }) !== say({ job: 'tend', state: 'goto', speed: 0 })
+  && /WALKING_AT = 0\.25/.test(sayingSrc));
+
+/* Asleep and indoors still win: where somebody is beats what they are up to. */
+check('asleep is still asleep', say({ job: 'gather', speed: 2, asleep: true }) === 'asleep in a hut');
+check('and under a roof is still under a roof',
+  say({ job: 'craft', speed: 2, hidden: true }) === 'knapping in a tent');
+
+/* It reads off the number the gait is drawn from, so the two cannot disagree. */
+check('the words come from the same speed the legs do',
+  /if \(p\.speed > WALKING_AT\)/.test(sayingSrc)
+  && /const gaitF = Math\.min\(p\.speed \/ PERSON\.walk, 1\.6\)/.test(html));
+
+/* -------------------------------------------------------------------------
+   A band's two characters are its own
+
+   They used to be a hash of a seed: unique and meaningless, so the chip on the
+   map and the name on the panel were two unrelated facts about one band and you
+   learned the pairing by rote.
+   ------------------------------------------------------------------------- */
+group('tribe codes');
+
+const uiSrc = moduleSource('ui.js');
+const tribeCode = new Function('CODE_LETTERS', 'worldCode',
+  uiSrc.slice(uiSrc.indexOf('function tribeCode'),
+    uiSrc.indexOf('\n}', uiSrc.indexOf('function tribeCode')) + 2)
+  + '\nreturn tribeCode;')('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', () => 'ZZ');
+
+/* Claimed in order, the way an island fills up with bands. */
+function codesFor(names) {
+  const taken = new Set(), out = [];
+  for (const n of names) { const c = tribeCode(n, taken); taken.add(c); out.push(c); }
+  return out;
+}
+
+check('a code is the start of the name it stands for',
+  codesFor(['Tribe'])[0] === 'TR', codesFor(['Tribe'])[0]);
+/* And when that is taken, still out of the name: the start of its last
+   syllable, because the end of a name is the part that makes it that name. */
+check('and when that is taken it takes another letter from the same name',
+  codesFor(['Tribe', 'Tribetwo']).join(' ') === 'TR TT',
+  codesFor(['Tribe', 'Tribetwo']).join(' '));
+check('real band names come out as their own initials',
+  codesFor(['Tsekash', 'Ndahouth', 'Hiabrali']).join(' ') === 'TS ND HI',
+  codesFor(['Tsekash', 'Ndahouth', 'Hiabrali']).join(' '));
+
+/* Uniqueness is not decoration: the chronicle says whose line a line is with
+   one of these. Twenty bands whose names all start with T still get twenty
+   codes. */
+const crowd = Array.from({ length: 20 }, (_, i) => `Tsotsa${'abcdefgh'[i % 8]}${i}`);
+const many = codesFor(crowd);
+check('twenty bands sharing a first letter get twenty codes',
+  new Set(many).size === 20, many.join(' '));
+check('and every one of them still starts with the name\'s own letter',
+  many.every((c) => c[0] === 'T'));
+check('a nameless band still gets something rather than nothing',
+  typeof tribeCode('', new Set()) === 'string' && tribeCode('', new Set()).length === 2);
+
+/* The colour is derived from the code, and making codes meaningful is what
+   forced the hash to change: `h * 31 + c` moves the hue one degree per step of
+   the last character, so TR and TS would have been the same colour on the dots
+   the map uses to tell bands apart. */
+const codeColor = new Function(uiSrc.slice(uiSrc.indexOf('function codeColor'),
+  uiSrc.indexOf('\n}', uiSrc.indexOf('function codeColor')) + 2) + '\nreturn codeColor;')();
+const hue = (c) => Number(codeColor(c).match(/hsl\((\d+)/)[1]);
+const apart = (a, b) => { const d = Math.abs(hue(a) - hue(b)); return Math.min(d, 360 - d); };
+check('two codes one letter apart are not the same colour',
+  apart('TR', 'TS') > 25, `TR ${hue('TR')}° vs TS ${hue('TS')}° — ${apart('TR', 'TS')}° apart`);
+check('nor are two that differ in the first',
+  apart('TR', 'UR') > 25, `${apart('TR', 'UR')}° apart`);
+/* Across a whole island of same-letter bands, and asserted as spread rather
+   than as separation. Twenty arbitrary hues on a 360° wheel will crowd
+   somewhere by chance — the first cut of this check demanded three degrees
+   between the nearest pair and failed on a perfectly good hash, because that is
+   a fact about twenty random numbers and not about the hash.
+
+   What a summing hash actually did is the thing worth testing: twenty codes
+   sharing a first letter all landed inside a thirty-degree window, because only
+   the last character moved and it moved the hue by one. So: do they reach
+   across the wheel. */
+{
+  const buckets = new Set(many.map((c) => Math.floor(hue(c) / 30)));
+  check('and twenty of them reach across the wheel rather than clustering',
+    buckets.size >= 8, `${buckets.size} of 12 arcs used`);
+}
+
+/* -------------------------------------------------------------------------
+   Two ways to watch
+
+   Fly and Walk were a free camera with WASD and the same camera pinned to eye
+   height. What they were for — getting somewhere to look at it — is what
+   clicking the map does, in one gesture and without flying across an island in
+   real time.
+   ------------------------------------------------------------------------- */
+group('views');
+
+check('there are two views, and they are the two questions anybody has',
+  /const VIEW_MODES = \['orbit', 'follow'\]/.test(html));
+check('the panel names both and nothing else',
+  /const VIEW_NAMES = \{ orbit: 'Orbit', follow: 'Follow' \}/.test(html));
+check('and the environment will not let you ask for a gone one',
+  SCHEMA.VIEW.values.join('|') === 'orbit|follow');
+check('the world starts in one of them', /view: 'orbit',/.test(html));
+check('no path still branches on a view that does not exist',
+  !/P\.view === 'fly'/.test(html) && !/P\.view === 'walk'/.test(html)
+  && !/setViewMode\('fly'\)/.test(html));
+
+/* Travelling used to ask which of four rigs it was putting down and keep a
+   height for each. */
+check('travelling lands one rig, not four',
+  /if \(P\.view === 'follow'\) setViewMode\('orbit'\);/.test(moduleSource('map.js'))
+  && !/const height = P\.view/.test(html));
+/* The camera dispatch is the whole of it now. */
+check('and the camera is a choice between two',
+  /return P\.view === 'follow' \? moveFollow\(dt\) : moveOrbit\(dt\);/.test(html));
+
+/* -------------------------------------------------------------------------
+   A band on the map is a place, not a coordinate
+
+   The dot is drawn under two pixels across — a fine thing to look at and an
+   impossible thing to hit — so what is clickable is a target round it, sized
+   for a pointer rather than for the island.
+   ------------------------------------------------------------------------- */
+group('clicking a band');
+
+const clickSrc = moduleSource('map.js');
+check('a fire has a target round it, sized in pixels not metres',
+  /const CAMP_HIT = 10;/.test(clickSrc)
+  && /function campUnder\(clientX, clientY\)/.test(clickSrc));
+check('and a band that is gone is not one of them',
+  /for \(const c of camps\) \{\s*if \(c\.gone\) continue;/.test(clickSrc));
+/* Hit-tested where it is drawn, so a zoomed or panned map cannot offer you a
+   camp that is somewhere else — worldToMap is the same transform the dot uses. */
+check('it is hit-tested through the same transform the dot is drawn with',
+  /const \[mx, my\] = worldToMap\(c\.x, c\.z\);/.test(clickSrc));
+
+/* Travelling is "show me that place", and a map filling the window is the one
+   thing between you and it. Click a band on the full map and you would arrive
+   behind the map you clicked — which reads as the click having done nothing,
+   the same mistake as leaving the band card up, one layer further out. */
+check('travelling puts a full-page map away',
+  /if \(mapIsFull\(\)\) setMapSize\(SMALL_MAP\);/.test(clickSrc));
+/* A corner map is not in the way, and taking it away because you travelled
+   would be answering a question nobody asked. */
+check('but leaves a corner map where it is',
+  /if \(mapIsFull\(\)\) setMapSize/.test(clickSrc) && !/setMapSize\(SMALL_MAP\);\s*const ground/.test(clickSrc));
+check('clicking one goes and looks at it rather than at the ground nearby',
+  /const camp = campUnder\(ev\.clientX, ev\.clientY\);\s*if \(camp\) \{\s*travelTo\(camp\.x, camp\.z\);/.test(clickSrc));
+check('and opens that band\'s card', /openTribe\(camps\.indexOf\(camp\)\);/.test(clickSrc));
+
+/* Three things a click can mean here, and a target you cannot see is a target
+   nobody presses. */
+check('the cursor says which of the three a click will do',
+  /campUnder\(ev\.clientX, ev\.clientY\) \? 'pointer'/.test(clickSrc)
+  && /mapCanPan\(\) \? 'grab' : ''/.test(clickSrc)
+  && /drag\.on \? \(mapCanPan\(\) \? 'grabbing' : ''\)/.test(clickSrc));
+/* And a drag across a dot is still a drag. */
+check('but dragging over one still pans instead of travelling',
+  clickSrc.indexOf('if (drag.moved > DRAG_SLOP) return;')
+    < clickSrc.indexOf('const camp = campUnder(ev.clientX, ev.clientY);'));
+
+/* -------------------------------------------------------------------------
+   What has become of these people
+
+   The chronicle is every line from every world, searchable — the right shape
+   for "when did anybody last learn to cure meat" and the wrong one for "what
+   happened to this band".
+   ------------------------------------------------------------------------- */
+group('a band\'s own history');
+
+const cardSrc = moduleSource('chronicle.js');
+
+check('the card has a third tab', html.includes('id="tribeLog"')
+  && /\$\('tribeLog'\)\.addEventListener\('click', \(\) => \{ setTribeTab\('log'\); renderTribeCard\(\); \}\)/.test(html));
+check('and rendering it is a branch like the other two',
+  /if \(tribeTab === 'log'\) \{ \$\('tribeList'\)\.innerHTML = campHistory\(camp\); return; \}/.test(cardSrc));
+/* Important only, which is the same filter the panel and the fast-forward log
+   use — a band's forty years is thousands of lines and eight of them matter. */
+check('it shows what is worth telling, not everything',
+  /chronicle\.filter\(\(e\) => isMilestone\(e\)/.test(cardSrc));
+check('and only this world\'s', /e\.seed === P\.seed/.test(cardSrc));
+
+/* Found by code rather than by a stored id, for the same reason the colour is:
+   a line is text, it outlives the camp that wrote it, and it travels to another
+   world's chronicle intact. */
+check('a band is found in the record by the code its lines carry',
+  /e\.text\.includes\(`\[\$\{camp\.code\}\]`\)/.test(cardSrc));
+/* An empty box reads as something failing to load. */
+check('a band with no history yet says so',
+  /nothing worth telling yet/.test(cardSrc));
+check('and a long-lived one is capped rather than endless',
+  /const CAMP_HISTORY_MAX = 40;/.test(cardSrc)
+  && /\.slice\(0, CAMP_HISTORY_MAX\)/.test(cardSrc));
+
+/* And the one thing the card could not do, which is show you them. */
+check('the card has a button to go and stand there',
+  html.includes('id="tribeGo"')
+  && /travelTo\(camp\.x, camp\.z\);/.test(moduleSource('ui.js')));
+/* And gets out of the way. The card sits on a dimmed, blurred backdrop over the
+   whole window, so leaving it open moved the camera to a view of the overlay —
+   a button that reads as doing nothing, which is the worst way for one to
+   work. */
+/* Every overlay, not just the card: the chronicle and the keys are full-screen
+   backdrops too, and any one of them left up moves the camera to a view of an
+   overlay — which is what "the button does nothing" turned out to mean. */
+check('and takes down every popup over the world first',
+  /closeTribe\(\);\s*closeChronicle\(\);\s*showKeys\(false\);\s*travelTo\(camp\.x, camp\.z\);/
+    .test(moduleSource('ui.js')));
+/* And which band it goes to is written on the button when the card is rendered,
+   rather than read out of another module's live binding at click time. A button
+   that silently does nothing when that is out of step is indistinguishable on
+   screen from one that was never wired up. */
+check('the band it goes to is recorded on the button itself',
+  /pin\.dataset\.camp = String\(tribeShown\)/.test(moduleSource('chronicle.js'))
+  && /const at = Number\(\$\('tribeGo'\)\.dataset\.camp\);/.test(moduleSource('ui.js')));
+check('and it says so instead of failing silently',
+  /if \(!camp\) \{ toast\('no band to go to'\); return; \}/.test(moduleSource('ui.js')));
+check('the card really is a full-screen overlay, which is why',
+  /#tribe \{\s*position: fixed; inset: 0;/.test(html));
+check('it says what it does without being read',
+  /id="tribeGo"[^>]*aria-label="Go to their camp"[^>]*title="Go to their camp"/.test(html));
+
+/* -------------------------------------------------------------------------
+   Five hearths and one crowd
+
+   The village had its fires and nobody sat at four of them. Everything that
+   means "go home" — dusk, an errand ending, a job by the fire, a hunt finishing
+   — aimed at `camp.x`, and `camp.x` is hearth nought.
+   ------------------------------------------------------------------------- */
+group('spread round the fires');
+
+const fireSrc = moduleSource('move.js');
+/* Counted rather than spot-checked: one missed call site is one reason for the
+   whole village to be standing in the same place, and there are seven. */
+check('nothing aims at the middle of the village any more',
+  !/p\.targetX = p\.camp\.x/.test(fireSrc) && !/p\.targetZ = p\.camp\.z/.test(fireSrc));
+check('they go to the fire they live at',
+  (fireSrc.match(/homeFire\(p\)/g) || []).length >= 8);
+check('and "am I home yet" is asked of that fire too',
+  /Math\.hypot\(p\.x - homeFire\(p\)\.x, p\.z - homeFire\(p\)\.z\) > 12/.test(fireSrc));
+
+/* Which fire is theirs comes off their tent, so a household sits together —
+   the same rule that put their tents beside each other. */
+check('a household shares a hearth because it shares a tent',
+  /const fire = camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\]/.test(html));
+check('and somebody with no tent yet still has somewhere to go',
+  /function homeFire\(p\) \{\s*return p\.hearth \|\| p\.camp;\s*\}/.test(html));
+
+/* Which they should never be, because the households are worked out when the
+   world is built. They used not to be: assignHuts ran only when the band
+   changed, so a new world spent its first day with every hut hidden and the
+   whole band walking to the middle of the village, then quietly came right the
+   first time somebody was born. Founding a band is a change to it. */
+check('a band has its tents and its fires from the first frame',
+  /c\.food = c\.need \* FOOD\.startingDays;\s*\}[^]*?dressCamps\(\);\s*stats\.people = count;/.test(html));
+
+/* Except when something is chasing them. Everything else about going home is
+   about where you live; this is about getting behind a fire before it reaches
+   you. */
+check('but a tiger sends them to the nearest fire, not to theirs',
+  /const run = nearestFire\(p\.camp, p\.x, p\.z\);/.test(fireSrc)
+  && /function nearestFire\(camp, x, z\)/.test(html));
+check('and that only considers fires that are lit',
+  /for \(let f = 0; f < \(camp\.hearths \|\| 0\); f\+\+\)/.test(html));
+
+/* The arithmetic of it: ten households to a hearth, so a village of fifty
+   spreads over five and not one. */
+{
+  const spread = (families) => {
+    const per = 10, hearths = Math.min(5, Math.ceil(families / per));
+    const at = new Array(hearths).fill(0);
+    for (let i = 0; i < families; i++) at[Math.min(hearths - 1, Math.floor(i / per))]++;
+    return at;
+  };
+  check('ten households fill one hearth before a second is used',
+    spread(10).length === 1 && spread(11).length === 2, JSON.stringify(spread(11)));
+  check('and fifty sit at five rather than fifty at one',
+    spread(50).length === 5 && spread(50).every((n) => n === 10), JSON.stringify(spread(50)));
+}
+
+/* -------------------------------------------------------------------------
+   Somewhere to put the dead
+
+   They were buried where they fell, which is defensible and reads as nothing: a
+   stone in the long grass eight hundred metres out is scenery, and forty of
+   them scattered over an island are litter.
+   ------------------------------------------------------------------------- */
+group('the stones');
+
+const barrowSrc = moduleSource('people.js');
+
+check('a band has one place it buries people',
+  /camp\.barrow = \{ x, z, y: sampleHeight\(x, z\), a \}/.test(barrowSrc));
+/* Just outside the trampled ground: far enough that the village is not built on
+   its own dead, near enough to be theirs. */
+check('just outside the camp rather than inside it',
+  /const r = CAMP_CLEARING \+ 6 \+ rng\(\) \* 12;/.test(barrowSrc));
+check('on flat, dry ground, the way a camp is sited',
+  /if \(sampleHeight\(x, z\) < SEA \+ 1\.5\) continue;\s*if \(flatnessAt\(x, z\) < 0\.88\) continue;/
+    .test(barrowSrc));
+/* Off the camp's own stream and once, or it wanders every time somebody dies. */
+check('and chosen once, from the camp\'s own rng',
+  barrowSrc.indexOf('camp.barrow = null;') > barrowSrc.indexOf('const rng = camp.rng;'));
+check('an island with nowhere flat still buries its dead somewhere',
+  /if \(!camp\.barrow\) \{/.test(barrowSrc));
+
+check('the dead are carried back to it', /const ground = p\.camp\?\.barrow;/.test(barrowSrc));
+/* Laid in rows off the ground's own line, growing outward, so the oldest stones
+   are at the middle and the size of it is how long they have been here. */
+check('and laid in rows rather than dropped in a heap',
+  /const row = Math\.floor\(n \/ 5\), seat = \(n % 5\) - 2;/.test(barrowSrc));
+
+/* The seventh skill: the only one that is not a technique. */
+check('going back to them is a job somebody can be doing',
+  /\['mourn', p\.camp\.buried > 0 && !p\.child/.test(moduleSource('move.js')));
+/* A band that has buried nobody has nowhere to go, and a hungry one stops —
+   which is most of what makes it worth having. */
+check('a band with no dead has nowhere to go', /p\.camp\.buried > 0/.test(moduleSource('move.js')));
+check('and a hungry band stops going', /MOURN\.chance \* \(1 - hunger\)/.test(moduleSource('move.js')));
+check('standing there teaches it, and a burial teaches it more',
+  /practise\(p\.camp, 'rites', SKILL\.perVisit\)/.test(moduleSource('move.js'))
+  && /practise\(p\.camp, 'rites', SKILL\.perBurial\)/.test(html));
+{
+  const perVisit = Number((html.match(/perVisit: ([\d.]+)/) || [, 0])[1]);
+  const perBurial = Number((html.match(/perBurial: ([\d.]+)/) || [, 0])[1]);
+  check('a burial is worth several afternoons at the stones',
+    perBurial > perVisit * 3, `${perBurial} against ${perVisit}`);
+}
+
+/* And it does something, or it is a readout. A band with its dead in the next
+   field takes longer to give up its ground — sometimes why it comes through a
+   squeeze, sometimes why it starves where it stands. */
+check('and belief holds a band to its ground',
+  /const patience = GROUND\.patience \* \(1 \+ SKILL\.holdGround \* \(camp\.skill\?\.rites \|\| 0\)\)/.test(html)
+  && /if \(!squeezed \|\| camp\.pressed < patience\) continue;/.test(html));
+check('by enough to matter and not enough to be a wall',
+  (() => {
+    const hold = Number((html.match(/holdGround: ([\d.]+)/) || [, 0])[1]);
+    return hold > 0.5 && hold < 4;
+  })());
+/* And it can be lost, like the rest. */
+check('a band can forget it, in words', /burying: 'sit with their dead'/.test(html));
+
+/* -------------------------------------------------------------------------
+   What a band raises over its dead
+
+   `rites` is going back to the stones. This is what a band does once going back
+   is not enough — and it is the first mark any of them leaves that is not
+   shelter or a tool.
+   ------------------------------------------------------------------------- */
+group('raising stones');
+
+const artSrc = moduleSource('people.js');
+
+check('a band raises something of its own over its dead',
+  /const MONUMENT_FORMS = \['ring', 'avenue', 'cairn'\]/.test(artSrc)
+  && /function monumentPlan\(camp\)/.test(artSrc));
+/* Drawn once off the band's own stream, so two villages a kilometre apart have
+   raised different things and neither of them chose to. */
+check('the form is theirs, and settled once',
+  /if \(camp\.stonesPlan\) return camp\.stonesPlan;/.test(artSrc)
+  && /mulberry32\(\(camp\.index \+ 1\) \* 7919 \^ \(P\.seed \| 0\)\)/.test(artSrc));
+check('and it goes up over years rather than appearing',
+  /const up = Math\.round\(plan\.length \* \(camp\.skill\?\.art \|\| 0\)\)/.test(artSrc));
+/* Four hundred graves redrawn for a number nobody can see is four hundred
+   graves a frame. */
+check('the world is told only when a stone actually goes up',
+  /if \(up !== camp\.stonesUp\) \{ camp\.stonesUp = up; drawGraves\(\); \}/.test(html));
+check('and there is room in the mesh for them',
+  /GRAVE_MAX \* GRAVE_STONES \+ campCapacity \* MONUMENT_MAX/.test(artSrc));
+
+/* Learned at the ground and nowhere else — the six worked skills come off
+   craftChoice, these two do not. */
+check('stones are raised by the people who go back to them',
+  /practise\(p\.camp, 'art', SKILL\.perStone\)/.test(moduleSource('move.js')));
+check('and only where there is a ground to raise them on',
+  /if \(p\.camp\.barrow\) \{\s*practise\(p\.camp, 'art'/.test(moduleSource('move.js')));
+
+/* And it moves a number, or it is a readout: a band that has raised something
+   is a band other bands walk to, and visiting is how everything one band knows
+   reaches another. */
+check('a monument pulls the neighbours toward it',
+  /function campPull\(host\) \{\s*return 1 \+ SKILL\.artDraw \* \(host\.skill\?\.art \|\| 0\);/.test(html)
+  && /Math\.hypot\(c\.x - camp\.x, c\.z - camp\.z\) \/ campPull\(c\)/.test(html));
+check('by counting as nearer than it is, not by teleporting anybody',
+  (() => {
+    const draw = Number((html.match(/artDraw: ([\d.]+)/) || [, 0])[1]);
+    return draw > 1 && draw < 5;
+  })());
+/* A band that has gone is not a destination. */
+check('and a band that is gone is not walked to',
+  /if \(c === camp \|\| c\.gone\) continue;/.test(html));
+
+/* On the map, because a graveyard is a place. */
+check('the burial ground is on the map',
+  /for \(const c of camps\) \{\s*if \(!c\.barrow\) continue;/.test(moduleSource('map.js')));
+check('in a colour nothing else on the map uses',
+  /fillStyle = 'rgba\(216, 210, 196, 0\.92\)'/.test(moduleSource('map.js')));
+/* How much is standing is the thing worth seeing from above; where it is, is
+   not — so it grows a ring rather than a bigger dot. */
+check('and what is standing there shows as a ring round it',
+  /const raised = c\.skill\?\.art \|\| 0;/.test(moduleSource('map.js'))
+  && /arc\(px, py, \(2\.2 \+ 1\.8 \* raised\) \* MK/.test(moduleSource('map.js')));
+
+/* And it can be lost, like the rest — but not the stones. */
+check('a band forgets what the stones are for, not how to stack them',
+  /'raising stones': 'say what the stones are for'/.test(html));
+
+/* -------------------------------------------------------------------------
+   Making things, and getting them somewhere else
+
+   Between them the ninth and tenth skills are the two halves of having things
+   at all.
+   ------------------------------------------------------------------------- */
+group('wares and trade');
+
+/* Home goods: hides, bedding, pots. Not weaving — that is baskets, and it is
+   about carrying — and not knapping. What it moves is how well a band rests in
+   its own camp, which is the number a dry bed has always changed. */
+check('a band that makes things rests better in its own camp',
+  /const comfort = 1 \+ SKILL\.wareRest \* \(p\.camp\.skill\?\.wares \|\| 0\);/.test(moduleSource('move.js')));
+/* Only on the way up: home goods make a night worth more, they do not make a
+   chase cost less. */
+check('and only on the way up, not on the way down',
+  /rate > 0 \? rate \* fed \* heal \* comfort : rate/.test(moduleSource('move.js')));
+check('it is made when there is time to make it',
+  /\['wares', 0\.16 \+ 0\.55 \* \(1 - h\)\]/.test(html));
+
+/* Trading: learned by doing it, like the graveyard pair. */
+check('trading is learned by trading, on both sides',
+  /practise\(home, 'trade', SKILL\.perCall\);\s*practise\(host, 'trade', SKILL\.perCall\);/.test(html)
+  && /practise\(home, 'trade', SKILL\.perDeal\);\s*practise\(host, 'trade', SKILL\.perDeal\);/.test(html));
+check('a deal teaches more than the walk that led to it', (() => {
+  const deal = Number((html.match(/perDeal: ([\d.]+)/) || [, 0])[1]);
+  const call = Number((html.match(/perCall: ([\d.]+)/) || [, 0])[1]);
+  return deal > call * 2;
+})());
+/* And what it moves is what actually changes hands. */
+check('and it moves more of the surplus when somebody walks over',
+  /const dealt = VISIT\.gift \* \(1 \+ SKILL\.tradeGift \* \(\(home\.skill\.trade \+ host\.skill\.trade\) \/ 2\)\)/.test(html));
+/* A share is a share: more than all of the surplus is not a trade, it is a
+   subtraction. */
+check('but never more of it than there is',
+  /const gift = surplus \* Math\.min\(dealt, 1\);/.test(html));
+
+/* -------------------------------------------------------------------------
+   And where the skills now live
+   ------------------------------------------------------------------------- */
+check('what a band knows is its own module now',
+  srcFiles.includes('skills.js') && /const SKILLS = \{/.test(moduleSource('skills.js')));
+/* Eight modules import these names from life.js. A move that is invisible to
+   all of them is a move that cannot break any of them. */
+check('and life.js passes the names through, so nothing else had to change',
+  /export \{\s*FORGET_WORDS, LEAN, ROLES, ROLE_AT, SKILL, SKILLS[^]*?\} from '\.\/skills\.js';/.test(
+    rawSources[srcFiles.indexOf('life.js')] || ''));
+/* A re-export binds nothing locally, and life.js uses most of them itself. */
+check('while still importing the ones it uses',
+  /import \{\s*ROLES, SKILL, SKILLS, SKILL_RUNGS, announceSkill, assignRoles, craftChoice,[^]*?\} from '\.\/skills\.js';/.test(
+    rawSources[srcFiles.indexOf('life.js')] || ''));
+
+/* -------------------------------------------------------------------------
+   Stone, and what it is for
+
+   Two skills that are one chain: somebody gets it out of the ground, somebody
+   else turns it into something that makes every other job quicker.
+   ------------------------------------------------------------------------- */
+group('stone and tools');
+
+const mineSrc = moduleSource('move.js');
+
+/* Worked at an outcrop that is actually on the hillside. A spot invented for
+   the errand is a person standing in a field pretending. */
+check('quarrying happens at a rock somebody can see',
+  /const at = nearestRock\(camp\.x, camp\.z, QUARRY_TRIP\.reach\);/.test(mineSrc)
+  && /function nearestRock\(x, z, within\)/.test(html));
+check('and only the ones big enough to be worth the walk',
+  /if \(s > 1\.1\) outcrops\.push\(\{ x, z \}\);/.test(html));
+check('the outcrops go with the world they belong to',
+  /outcrops\.length = 0;/.test(moduleSource('world.js')));
+/* No rock within reach is not a person standing still all afternoon. */
+check('and a band with no rock near it does something else',
+  /p\.job = 'craft';\s*\/\/ no rock within reach/.test(mineSrc));
+
+/* Not while hungry, and not when the pile is already high. */
+check('nobody quarries on an empty store',
+  /QUARRY_TRIP\.chance \* \(1 - hunger\) \* rested/.test(mineSrc));
+check('nor when the camp already has all it can keep',
+  /\(p\.camp\.stone \|\| 0\) < SKILL\.stoneMax/.test(mineSrc));
+
+/* The stock, which is the point of it: stone does not spoil, so a band can hold
+   it and therefore trade it. */
+check('a trip brings stone back, and the better they are the more of it',
+  /SKILL\.stonePerTrip \* \(1 \+ p\.camp\.skill\.mining\)/.test(mineSrc));
+check('the pile is capped — a camp is not a warehouse',
+  /Math\.min\(SKILL\.stoneMax,/.test(mineSrc));
+check('and a new band starts at the rocks again', (() => {
+  const splits = (html.match(/food: 0, pop: 0, need: 0, hunger: 1, wasEmpty: false,/g) || []).length;
+  const stones = (html.match(/\n\s*stone: 0,/g) || []).length;
+  return splits === stones ? true : `${stones} camps start with a pile of nothing, of ${splits}`;
+})() === true);
+
+/* Tools are what the stone is for, and the two are one thing. */
+check('toolmaking cannot be practised without stone',
+  /\['tools', \(camp\.stone \|\| 0\) >= SKILL\.stonePerTool \? 0\.30 \+ 0\.35 \* h : 0\]/.test(html));
+check('and a session spends it',
+  /if \(key === 'tools'\) p\.camp\.stone = Math\.max\(0, p\.camp\.stone - SKILL\.stonePerTool\);/.test(mineSrc));
+/* Taken where it is spent rather than where it is chosen, so choosing stays
+   free of side effects and can be asked twice. */
+check('spent where it is used, not where it is chosen',
+  !/stone -= /.test(moduleSource('skills.js')));
+
+/* And what tools do: the work goes quicker, which is the difference tools have
+   always made. */
+check('tools make every errand shorter',
+  /const quick = 1 - SKILL\.toolSpeed \* \(p\.camp\.skill\?\.tools \|\| 0\);/.test(mineSrc));
+check('but not a night — a good axe does not shorten sleep',
+  /p\.job === 'sleep' \? 600/.test(mineSrc)
+  && !/'sleep' \? 600 \* quick/.test(mineSrc));
+
+/* Stone travels the way food does, and that is what makes it a good rather
+   than a number in a camp. */
+check('stone is traded between bands',
+  /const spareStone = \(home\.stone \|\| 0\) - SKILL\.stonePerTool \* 4;/.test(html)
+  && /host\.stone = Math\.min\(SKILL\.stoneMax, \(host\.stone \|\| 0\) \+ moved\);/.test(html));
+check('only what is spare, and only to a band that needs it',
+  /if \(spareStone > 0 && \(host\.stone \|\| 0\) < SKILL\.stoneMax \* 0\.5\)/.test(html));
+check('and dealing in it teaches dealing',
+  /host\.stone = Math\.min[^]*?practise\(home, 'trade', SKILL\.perDeal\)/.test(html));
+
+/* -------------------------------------------------------------------------
+   A save has to fit through the door
+
+   `LINE_MAX` is twenty thousand people who have ever lived. The server took a
+   megabyte. Neither cap knew the other existed, so a long-running world
+   produced a save the server refused — and the page read the refusal as a
+   save, because it checked that the fetch had not thrown rather than that it
+   had worked. A world too big to keep was a world silently not kept.
+   ------------------------------------------------------------------------- */
+group('the size of a saved world');
+
+const LINE_MAX = Number((html.match(/LINE_MAX = (\d+)/) || [, 0])[1]);
+const GRAVE_MAX = Number((html.match(/GRAVE_MAX = (\d+)/) || [, 0])[1]);
+const PEOPLE_CAP = 4000;                 // the ceiling PEOPLE_CEILING clamps to
+const STATE_LIMIT = Number((serverSrc.match(/STATE_LIMIT = ([\d_]+)/) || [, '0'])[1].replace(/_/g, ''));
+
+/* Measured off the shapes the code actually writes, not guessed: one lineage
+   row, one grave, and one person with every skill they can have. */
+const skillCount = Object.keys(
+  (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
+    .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
+    .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
+).length;
+const LINE_ROW = JSON.stringify({
+  i: 12345, n: 'Khayuyeiss', s: 'f', f: 1234, m: 1235, fn: 'Braebreir', mn: 'Tsekash',
+  b: 12345.67, d: 0, c: 'ND', g: 12, l: 'Lohae',
+}).length;
+const PERSON_ROW = 620 + skillCount * 14;   // the fixed fields, plus one entry a skill
+const GRAVE_ROW = 60;
+const worstSave = LINE_MAX * LINE_ROW + PEOPLE_CAP * PERSON_ROW + GRAVE_MAX * GRAVE_ROW;
+
+check('the server takes the largest save the page can make',
+  STATE_LIMIT > worstSave,
+  `${(worstSave / 1048576).toFixed(1)}MB possible, ${(STATE_LIMIT / 1048576).toFixed(1)}MB allowed`);
+/* And the other endpoints stay tight — they are small, fixed-shape messages,
+   and a cap that fits them is a cap that catches a client gone wrong. */
+check('but only that one endpoint is given the room',
+  /const raw = await readJson\(req, STATE_LIMIT\);/.test(serverSrc)
+  && /function readJson\(req, limit = BODY_LIMIT\)/.test(serverSrc));
+
+/* The failure that mattered: a refusal read as a success. */
+check('the page checks that a save worked, not that it did not throw',
+  /if \(res\.ok\) return;/.test(moduleSource('save.js')));
+check('and keeps the world in the browser when it did not',
+  /localStorage\.setItem\(STATE_STORE, JSON\.stringify\(data\)\)/.test(moduleSource('save.js')));
+/* Which it can only do if it is told. A dropped socket is not an answer. */
+check('so too-large is answered rather than dropped',
+  /err\.tooLarge = true;/.test(serverSrc)
+  && /if \(err\.tooLarge\) \{[^]*?json\(res, 413/.test(serverSrc));
+check('and logged as a warning, because it is not a crash',
+  /console\.warn\(`  ! \$\{req\.method\} \$\{req\.url\}: \$\{err\.message\}`\)/.test(serverSrc));
+/* Answered, then hung up. The other order gives the client a dropped
+   connection, which it cannot tell from the server being gone — it falls back
+   to the browser either way, but only one of those says why. */
+check('the status goes out before the socket is closed',
+  /req\.pause\(\);\s*reject\(err\);/.test(serverSrc)
+  && /json\(res, 413, \{ error: err\.message \}\);\s*return req\.destroy\(\);/.test(serverSrc));
+
+/* -------------------------------------------------------------------------
+   Roles
+
+   A band of eight is eight people doing whatever needs doing, and that is
+   right: there is no room in a hungry camp for somebody who only knaps.
+   ------------------------------------------------------------------------- */
+group('who does what');
+
+const roleSrc = moduleSource('skills.js');
+
+/* Specialising is something a band can afford, not a setting. Both conditions
+   already meant something before this existed. */
+check('a band specialises only when it can afford to',
+  /const ROLE_AT = \{ families: 6, days: 8 \}/.test(roleSrc)
+  && /if \(adults\.length < ROLE_AT\.families \|\| fed < ROLE_AT\.days\)/.test(roleSrc));
+/* And un-specialises. A bad winter puts everybody back on the hill, which is
+   the point of the condition rather than a tidy-up. */
+check('and gives the roles up again when it cannot',
+  /for \(const p of folk\) p\.role = null;\s*return;/.test(roleSrc));
+
+/* The one the whole thing is for. */
+check('the chief does not forage or hunt',
+  /chief:\s*\{ job: 'tend',\s*refuses: \['gather', 'hunt', 'quarry'\]/.test(roleSrc));
+check('and is the first role handed out',
+  roleSrc.indexOf("chief.role = 'chief'") < roleSrc.indexOf('for (const [name, role] of Object.entries(ROLES))'));
+
+/* A role is a bias, not an assignment: a knapper still eats, still sleeps and
+   still runs from a tiger. */
+check('a role leans the choosing rather than replacing it',
+  /if \(p\.role\) for \(const w of weights\) w\[1\] \*= roleWeight\(p, w\[0\]\);/.test(moduleSource('move.js')));
+check('and refusing a job is a zero, not a rule elsewhere',
+  /if \(role\.refuses\.includes\(job\)\) return 0;/.test(roleSrc)
+  && /return job === role\.job \? LEAN : 1;/.test(roleSrc));
+
+/* Who gets which is what they already know — the same number pickChief reads
+   and the same one that caps what a camp can learn. */
+check('roles go to whoever the band is already best at it through',
+  /\.sort\(\(a, b\) => \(b\.knows\?\.\[role\.by\] \|\| 0\) - \(a\.knows\?\.\[role\.by\] \|\| 0\)\)/.test(roleSrc));
+check('and nobody is made a quarrier who has never seen a rock',
+  /if \(\(able\[i\]\.knows\?\.\[role\.by\] \|\| 0\) <= 0\.02\) break;/.test(roleSrc));
+/* Shares, so a village of forty has four hunters and a camp of ten has one. */
+check('how many of each is a share of the band',
+  /const want = Math\.max\(1, Math\.round\(adults\.length \* role\.share\)\)/.test(roleSrc));
+check('and nobody holds two', /taken\.add\(able\[i\]\.id\)/.test(roleSrc)
+  && /\.filter\(\(p\) => !taken\.has\(p\.id\)\)/.test(roleSrc));
+
+/* Worked out for the band at once, because the shares are a fact about the
+   band: you cannot ask "am I the healer" without knowing who else wanted to
+   be. Once a day, which is the cadence everything else about a band moves on. */
+check('the band works out who is who once a day',
+  /assignRoles\(c, people\.filter\(\(p\) => p\.camp === c\)\)/.test(html));
+
+/* And it is visible, or it is a number in a file. */
+check('the card says what somebody is',
+  /ROLE_WORDS\[p\.role\] \|\| p\.role/.test(moduleSource('chronicle.js'))
+  && /<th>is<\/th>/.test(html));
+/* Forager is what everybody is until the band can afford otherwise, and a card
+   that says it of half the village says nothing. */
+check('but says nothing of the ones who are just the band',
+  /p\.role !== 'forager'/.test(moduleSource('chronicle.js'))
+  && !/forager: '/.test(moduleSource('chronicle.js')));
+
+/* Run rather than read. The shares, the ordering and the affordability gate are
+   the whole of this feature, and a regex on any of them would pass just as
+   happily with the comparison the wrong way round. */
+/* `moduleSource` has already stripped `export` off the declarations — searching
+   for it here found nothing and sliced from the end of the file, which is a
+   ReferenceError three lines later and no hint as to why. */
+const roleApi = new Function('clamp',
+  roleSrc.slice(roleSrc.indexOf('const ROLE_AT'))
+  + '\nreturn { ROLES, ROLE_AT, LEAN, roleWeight, assignRoles };')(
+  (v, a, b) => Math.max(a, Math.min(b, v)));
+
+/** A band of `n` adults, each best at one thing, with `days` of food. */
+function bandOf(n, days, best = {}) {
+  const folk = Array.from({ length: n }, (_, i) => ({
+    id: i + 1, child: false, knows: { ...best[i] },
+  }));
+  const camp = { food: days, need: 1, chief: folk[0]?.id };
+  return { camp, folk };
+}
+
+{
+  // Too small to divide the work, however well fed.
+  const { camp, folk } = bandOf(4, 40);
+  roleApi.assignRoles(camp, folk);
+  check('four people are four people, not a chief and three specialists',
+    folk.every((p) => p.role === null));
+}
+{
+  // Big enough, and starving.
+  const { camp, folk } = bandOf(20, 2);
+  roleApi.assignRoles(camp, folk);
+  check('and a hungry village goes back to everybody foraging',
+    folk.every((p) => p.role === null));
+}
+{
+  const best = { 3: { spears: 0.9 }, 4: { herbs: 0.8 }, 5: { mining: 0.7 } };
+  const { camp, folk } = bandOf(20, 40, best);
+  roleApi.assignRoles(camp, folk);
+  check('a fed village divides the work', folk.some((p) => p.role && p.role !== 'forager'));
+  check('the chief is the chief', folk[0].role === 'chief');
+  /* The one the whole thing is for. */
+  check('and does not hunt or forage',
+    roleApi.roleWeight(folk[0], 'hunt') === 0 && roleApi.roleWeight(folk[0], 'gather') === 0,
+    `hunt ${roleApi.roleWeight(folk[0], 'hunt')}, gather ${roleApi.roleWeight(folk[0], 'gather')}`);
+  check('but still eats, sleeps and tends the fire',
+    roleApi.roleWeight(folk[0], 'sleep') > 0 && roleApi.roleWeight(folk[0], 'tend') > 1);
+
+  check('the best spear-hand becomes a hunter', folk[3].role === 'hunter', String(folk[3].role));
+  check('the one who knows herbs becomes the healer', folk[4].role === 'healer', String(folk[4].role));
+  check('and the one who has been to the rocks, the quarrier',
+    folk[5].role === 'quarrier', String(folk[5].role));
+  check('nobody holds two', new Set(folk.filter((p) => p.role && p.role !== 'forager')
+    .map((p) => p.id)).size === folk.filter((p) => p.role && p.role !== 'forager').length);
+  /* Everybody else is the band, and most of a band always will be. */
+  check('and most of the village is still the village',
+    folk.filter((p) => p.role === 'forager').length > folk.length / 2,
+    `${folk.filter((p) => p.role === 'forager').length} of ${folk.length}`);
+  /* A hunter leans toward hunting without being unable to do anything else. */
+  check('a role leans rather than dictates',
+    roleApi.roleWeight(folk[3], 'hunt') === roleApi.LEAN
+    && roleApi.roleWeight(folk[3], 'gather') === 1);
+}
+{
+  // Nobody knows anything: no roles but the chief, because the band has no
+  // grain to specialise along yet.
+  const { camp, folk } = bandOf(20, 40);
+  roleApi.assignRoles(camp, folk);
+  check('a village that knows nothing yet has only a chief',
+    folk.filter((p) => p.role && p.role !== 'forager').length === 1,
+    folk.filter((p) => p.role && p.role !== 'forager').map((p) => p.role).join(' '));
+}
+{
+  // Shares: a bigger band has more of each.
+  const best = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [i, { spears: 0.9 - i * 0.01 }]));
+  const big = bandOf(40, 40, best);
+  const small = bandOf(10, 40, best);
+  roleApi.assignRoles(big.camp, big.folk);
+  roleApi.assignRoles(small.camp, small.folk);
+  const hunters = (f) => f.filter((p) => p.role === 'hunter').length;
+  check('a village has more hunters than a camp does',
+    hunters(big.folk) > hunters(small.folk),
+    `${hunters(big.folk)} of 40 against ${hunters(small.folk)} of 10`);
+}
+
+/* How wide and how strong a path comes out. Both are a fact about three
+   numbers — where the browning starts, where it reaches full, and how far the
+   colour goes — and all three were set once and never measured. A route walked
+   twenty times painted 3.8 m across at 88%, which is a road. */
+{
+  const lo = Number((moduleSource('scene.js').match(/smoothstep\(([\d.]+), [\d.]+, worn\)/) || [, 0])[1]);
+  const hi = Number((moduleSource('scene.js').match(/smoothstep\([\d.]+, ([\d.]+), worn\)/) || [, 0])[1]);
+  const deep = Number((moduleSource('paths.js').match(/uPathDeep: \{ value: ([\d.]+) \}/) || [, 0])[1]);
+  check('a path is a trodden line, not a road', lo >= 0.35 && hi > lo && deep <= 0.6,
+    `browns from ${lo} to ${hi}, at most ${deep} of the way`);
+  /* And the grass gives up before the earth shows, which is the order it
+     happens in: thin first, bare after. */
+  const showing = Number((moduleSource('paths.js').match(/showing: ([\d.]+),/) || [, 0])[1]);
+  check('the grass thins before the ground browns', showing < lo,
+    `grass at ${showing}, ground at ${lo}`);
+}
+
+/* -------------------------------------------------------------------------
+   Why somebody is walking over the hill
+
+   "Walking to the next band" says where and not what, and a visit is the one
+   errand in this world with several completely different points to it.
+   ------------------------------------------------------------------------- */
+group('what a visit is for');
+
+/* Run rather than read: the reasons are an ordering, and an ordering is exactly
+   what a regex cannot check. */
+const visitSrc = moduleSource('chronicle.js');
+const visitWords = new Function('VISIT', 'FOOD', 'SKILL', 'SKILLS',
+  visitSrc.slice(visitSrc.indexOf('function visitWords'),
+    visitSrc.indexOf('\n}', visitSrc.indexOf('function visitWords')) + 2)
+  + '\nreturn visitWords;')(
+  { begFrom: 0.70, learn: 0.90 },
+  { comfortable: 6 },
+  { stonePerTool: 0.6, stoneMax: 40 },
+  { drying: { of: 'curing' } });
+
+const aBand = (over = {}) => ({
+  name: 'Tsekash', hunger: 0.2, food: 100, need: 1, stone: 0, skill: {}, ...over,
+});
+const goer = (over = {}) => ({ camp: aBand(), visiting: aBand({ name: 'Ndahouth' }), knows: {}, ...over });
+
+check('a visit says where it is going',
+  visitWords(goer(), true).includes('Ndahouth'), visitWords(goer(), true));
+/* Somebody starving is going for food whatever else is in their arms. */
+check('a hungry band goes to ask for food',
+  visitWords(goer({ camp: aBand({ hunger: 0.9 }) }), true) === 'walking to Ndahouth, to ask for food',
+  visitWords(goer({ camp: aBand({ hunger: 0.9 }) }), true));
+check('and a band with a surplus takes some over',
+  visitWords(goer({
+    camp: aBand({ food: 100, need: 1 }),
+    visiting: aBand({ name: 'Ndahouth', hunger: 0.8 }),
+  }), true) === 'walking to Ndahouth, with food');
+check('stone goes the same way',
+  visitWords(goer({
+    camp: aBand({ stone: 30 }), visiting: aBand({ name: 'Ndahouth', stone: 0, hunger: 0.1 }),
+  }), true) === 'walking to Ndahouth, with stone to trade');
+/* The quietest of the three and the one that changes the island. */
+check('and what one band knows, when there is nothing else to carry',
+  visitWords(goer({ knows: { drying: 0.8 } }), true)
+    === 'walking to Ndahouth, to show them curing',
+  visitWords(goer({ knows: { drying: 0.8 } }), true));
+check('but not something they already know',
+  !visitWords(goer({
+    knows: { drying: 0.8 }, visiting: aBand({ name: 'Ndahouth', skill: { drying: 0.9 } }),
+  }), true).includes('show'));
+check('and otherwise, to see them',
+  visitWords(goer(), true) === 'walking to Ndahouth, to see them');
+/* Arrived is the same errand, standing still. */
+check('and it reads as arrived once they are there',
+  visitWords(goer(), false).startsWith('at Ndahouth'), visitWords(goer(), false));
+/* A visit with no destination yet is still a visit. */
+check('somebody with nowhere to go yet still says something',
+  visitWords({ camp: aBand(), knows: {} }, true) === 'walking to the next band');
+
+/* -------------------------------------------------------------------------
+   Ground that gives out
+
+   Foraging read a noise field and nothing else, so a patch was worth exactly as
+   much on its thousandth visit as its first — and every forager in a band works
+   the same best spot out of the same numbers. The whole band walked to one
+   place for ever, and there was no mechanism by which it could have done
+   anything else.
+   ------------------------------------------------------------------------- */
+group('where the food comes from');
+
+check('the ground remembers what has been taken off it',
+  /const FORAGED = \{/.test(html) && /function takeForage\(x, z\)/.test(html));
+check('and richness is what is there less what was picked',
+  /\* \(1 - pickedAt\(x, z\)\);/.test(html));
+/* Taken where the trip actually ended, not where it was aimed: a patch somebody
+   gave up halfway to is not a patch anybody stripped. */
+check('taken where the trip ended, not where it was aimed',
+  /takeForage\(p\.x, p\.z\);/.test(moduleSource('move.js')));
+/* Proportional, like the fruit: the more that was taken the faster it returns,
+   so ground recovers rather than running on a timer. */
+check('and it grows back, proportionally to what is missing',
+  /const left = picked\[k\] - picked\[k\] \* back;/.test(html)
+  && /recoverForage\(owed\);/.test(moduleSource('main.js')));
+check('there is always something there', /floor: 0\.15,/.test(html));
+/* Eight metres a cell is about the ground one person works in an afternoon, and
+   one float apiece is 640 KB on a 3200 m island. */
+check('the grid is coarse enough to be cheap', (() => {
+  const cell = Number((html.match(/FORAGED = \{\s*\n\s*cell: (\d+)/) || [, 0])[1]);
+  return cell >= 6 && cell <= 16 ? true : `${cell} m a cell`;
+})() === true);
+/* It belongs to the ground, not to a band: two camps sharing a hillside strip
+   it between them, which is what GROUND.range was already about and had no
+   physical basis for until now. */
+check('and it belongs to the ground rather than to a band',
+  !/camp\.picked/.test(html) && /let picked = null, pickedCols = 0;/.test(html));
+
+/* And the second half: twenty people reading the same numbers is a band with
+   one opinion. */
+check('two foragers leaving together do not have to agree',
+  /const guess = 0\.78 \+ luck\(\) \* 0\.44;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Taking it instead
+
+   A band with a full pile and a hungry neighbour is a fact about the world
+   before it is a fact about either of them. Until now the neighbour could only
+   walk over and ask, and a band with nothing to spare said no by having nothing.
+   ------------------------------------------------------------------------- */
+group('raiding');
+
+/* The ordering that is the whole ethics of it, and it is one comparison: a band
+   that could still walk over and ask, asks. */
+{
+  const beg = Number((html.match(/begFrom: ([\d.]+),/) || [, 0])[1]);
+  const raid = Number((html.match(/hungry: ([\d.]+),/) || [, 0])[1]);
+  check('a band asks before it takes', raid > beg, `raids at ${raid}, begs at ${beg}`);
+}
+check('and only when there is somebody worth walking to',
+  /function raidTarget\(camp\)/.test(html)
+  && /if \(daysOfFood\(c\) < RAID\.worth && \(c\.stone \|\| 0\) < SKILL\.stoneMax \* 0\.3\) continue;/.test(html));
+check('and not twice in a row', /simDay - \(p\.camp\.lastRaid \?\? -99\) > RAID\.every/.test(moduleSource('move.js')));
+/* The same walk a visit is. There is no new place and no new resource. */
+check('a raid is the same walk over the hill with a different reason',
+  /if \(p\.job === 'raid'\) \{[^]*?p\.raiding = mark;/.test(moduleSource('move.js')));
+check('and it has to arrive, like a visit',
+  /if \(Math\.hypot\(p\.x - mark\.x, p\.z - mark\.z\) < CAMP_CLEARING \* 1\.6\)/.test(moduleSource('move.js')));
+/* Five people arriving is one raid, not five. */
+check('the party is resolved once, not once a raider',
+  /resolveRaid\(party, mark\)/.test(moduleSource('move.js'))
+  && /p\.raiding = null;/.test(moduleSource('move.js')));
+
+/* And the odds, which are the whole of it. Run rather than read. */
+const strengthOf = new Function('SKILL',
+  html.slice(html.indexOf('function strengthOf'), html.indexOf('\n}', html.indexOf('function strengthOf')) + 2)
+  + '\nreturn strengthOf;')({ warEdge: 1.5 });
+const folkOf = (camp, n, over = {}) => Array.from({ length: n }, () => ({
+  camp, child: false, sick: false, energy: 1, ...over,
+}));
+{
+  const a = { skill: { war: 0 } }, b = { skill: { war: 0 } };
+  check('more people is more strength',
+    strengthOf(a, folkOf(a, 10)) > strengthOf(b, folkOf(b, 5)));
+  check('children and the ill do not count',
+    strengthOf(a, folkOf(a, 5).concat(folkOf(a, 5, { child: true }))) === strengthOf(b, folkOf(b, 5)));
+  check('a tired band is a weaker one',
+    strengthOf(a, folkOf(a, 5, { energy: 0.1 })) < strengthOf(b, folkOf(b, 5)));
+  check('a warrior counts for more than a person',
+    strengthOf(a, folkOf(a, 5, { role: 'warrior' })) > strengthOf(b, folkOf(b, 5)));
+  /* Practice counts for more than numbers, which is what makes defending worth
+     anything and raiding a gamble rather than an arithmetic problem. */
+  const practised = { skill: { war: 1 } };
+  check('and a practised band beats a bigger unpractised one',
+    strengthOf(practised, folkOf(practised, 6)) > strengthOf(b, folkOf(b, 12)),
+    `${strengthOf(practised, folkOf(practised, 6)).toFixed(1)} against ${strengthOf(b, folkOf(b, 12)).toFixed(1)}`);
+}
+/* Both sides learn, which is the uncomfortable part and the true one. */
+check('both sides get better at it',
+  /practise\(home, 'war', SKILL\.perRaid\);\s*practise\(host, 'war', SKILL\.perRaid\);/.test(html));
+check('and defending your own camp is worth something',
+  /const theirs = strengthOf\(host, people\) \* RAID\.home;/.test(html)
+  && Number((html.match(/home: ([\d.]+),/) || [, 0])[1]) > 1);
+/* What changes hands is what was already there. */
+check('a raid moves food and stone, and invents neither',
+  /host\.food -= food;\s*home\.food \+= food;/.test(html)
+  && /host\.stone = \(host\.stone \|\| 0\) - stone;/.test(html));
+check('and the pile it lands in is still capped',
+  /home\.stone = Math\.min\(SKILL\.stoneMax, \(home\.stone \|\| 0\) \+ stone\);/.test(html));
+/* Somebody may not come back, and the losing side pays it. */
+check('a raid can cost somebody', /killPerson\(i, 'raid'\)/.test(html)
+  && /raid: 'a raid'/.test(html) && /raid: \(p, age\) =>/.test(html));
+
+/* The warrior, who is not a job — there is nothing to do all day. */
+check('a warrior is a role a band keeps once it has something worth taking',
+  /warrior: \{ job: 'tend',\s*refuses: \[\],\s*by: 'war'/.test(moduleSource('skills.js')));
+/* And what a band is holding, which is what makes it a target. */
+check('the card says what a band has worth taking',
+  /function wealthOf\(camp\)/.test(html) && /worth taking<\/span>/.test(html));
+
+/* -------------------------------------------------------------------------
+   Fish
+
+   The island has had water round it since the first frame and nothing has ever
+   eaten out of it. A coast was the one piece of ground worth standing on for a
+   reason nothing in the simulation could see.
+   ------------------------------------------------------------------------- */
+group('fishing');
+
+const larderSrc = moduleSource('larder.js');
+
+/* Fishing is foraging with a different larder, and it is built that way: the
+   same trip, the same completion, the same haul into the same store, and the
+   same ground that runs down. */
+check('a catch lands in the same haul as a basket of berries',
+  /if \(p\.job === 'fish'\) \{[^]*?p\.haul \+= got;/.test(moduleSource('move.js')));
+check('and takes off the same ground that runs down',
+  /if \(p\.job === 'fish'\) \{[^]*?takeForage\(p\.x, p\.z\);/.test(moduleSource('move.js')));
+/* Baskets carry fish as well as berries. */
+check('and the same baskets carry it',
+  /if \(p\.job === 'fish'\) \{[^]*?SKILL\.basketHaul \* p\.camp\.skill\.baskets/.test(moduleSource('move.js')));
+
+/* Somewhere to stand: dry ground with water in front of it, found once with the
+   camp, because a coast does not move. */
+check('a band knows where its own water is',
+  /camp\.shore = nearestShore\(camp\.x, camp\.z\);/.test(moduleSource('people.js'))
+  && /function nearestShore\(x, z, within = FISH\.reach\)/.test(larderSrc));
+check('and a landlocked band forages instead of standing about',
+  /p\.job = 'gather';\s*\/\/ landlocked/.test(moduleSource('move.js')));
+
+/* The good water is the deep water, and most of it is out of reach from the
+   bank — which is what a raft is for, and the only thing in this world that
+   opens ground rather than improving what a band already does with it. */
+check('the good water is the deep water',
+  /if \(h < SEA\) deep = Math\.max\(deep, Math\.min\(1, -h \/ 22\)\);/.test(larderSrc));
+check('and most of it is out of reach without a raft',
+  /const reach = camp\?\.raft \? 1 : FISH\.fromBank;/.test(larderSrc)
+  && Number((larderSrc.match(/fromBank: ([\d.]+),/) || [, 1])[1]) < 0.5);
+check('a band builds one once it is sure it is worth the wood',
+  /camp\.skill\.fishing >= FISH\.raftAt && camp\.shore/.test(moduleSource('skills.js'))
+  && /camp\.raft = true;/.test(moduleSource('skills.js')));
+
+/* And the sea does not have a winter the way the ground does, which is the
+   whole point of a coast. */
+check('winter takes less off the water than off the ground', (() => {
+  const water = Number((larderSrc.match(/winter: ([\d.]+),/) || [, 0])[1]);
+  const land = 0.35;                       // SEASON.forage, winter
+  return water > land ? true : `${water} against ${land} on land`;
+})() === true);
+
+/* And the mistake foraging already made once: one landing is everybody in the
+   same water until it is fished out, with nothing telling them to walk along
+   the beach. */
+check('fishing spreads along the coast rather than sitting on one spot',
+  /function pickFishing\(camp, luck\)/.test(larderSrc)
+  && /const value = \(worth - away \/ 700\) \* \(0\.78 \+ luck\(\) \* 0\.44\);/.test(larderSrc));
+
+/* -------------------------------------------------------------------------
+   And where the larder lives
+   ------------------------------------------------------------------------- */
+check('where food comes from is its own module',
+  srcFiles.includes('larder.js') && /const FORAGED = \{/.test(larderSrc)
+  && /const FISH = \{/.test(larderSrc));
+/* It is handed positions and asked what they are worth: nothing in it knows
+   about people, camps or days.
+
+   Asserted on the code with the comments taken out, because the paragraph
+   explaining this rule says "people, camps or days" and a grep over the whole
+   file finds it there. That is the second check this session to fail on its own
+   explanation. */
+const codeOnly = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+check('and it knows nothing about people or days',
+  !/\bpeople\b/.test(codeOnly(larderSrc)) && !/simDay/.test(codeOnly(larderSrc))
+  && !/from '\.\/(people|life)\.js'/.test(larderSrc),
+  (codeOnly(larderSrc).match(/\bpeople\b|simDay/g) || []).join(' '));
+check('life.js passes it through the way it does the skills',
+  /export \{\s*FISH, FORAGED, buildForaged[^]*?\} from '\.\/larder\.js';/.test(
+    rawSources[srcFiles.indexOf('life.js')] || ''));
+
+/* -------------------------------------------------------------------------
+   Nothing is drawn while nothing is watching
+
+   `stepWorld` sets `drawingWorld` false and the fast-forward runs thousands of
+   steps under it. Everything that poses a figure has to be behind that flag,
+   and it is easy to put it on one branch and not the other.
+   ------------------------------------------------------------------------- */
+group('the unwatched world');
+
+const unwatchedSrc = moduleSource('move.js');
+
+/* The one that was missed. Somebody indoors is parked out of sight with
+   seventeen zeroed matrices, and that was happening for every hidden person on
+   every step of a run nobody was looking at: six percent of a fast-forward,
+   spent on people asleep in their huts. */
+check('parking somebody out of sight is drawing them',
+  /if \(hidden\) \{[^]*?if \(drawingWorld\) \{\s*for \(const key in personParts\)/.test(unwatchedSrc));
+check('and so is posing them',
+  /if \(drawingWorld\) writePerson\(p, i\);/.test(unwatchedSrc));
+/* Nothing was written, so there is nothing to upload. */
+check('and an unwatched step uploads nothing',
+  /if \(drawingWorld\) \{\s*for \(const key in personParts\) personParts\[key\]\.instanceMatrix\.needsUpdate = true;/.test(unwatchedSrc));
+/* The herds were fixed for this once; the rule is the same for both. */
+check('the herds already knew', /if \(!drawingWorld\) continue;/.test(moduleSource('wildlife.js')));
+
+/* -------------------------------------------------------------------------
+   And two scans that a busier world made expensive
+   ------------------------------------------------------------------------- */
+/* Picking walked every fruit on the island — and walked all of them precisely
+   when there were none within reach, which is most trips. */
+check('picking fruit looks at the ground you are standing on',
+  /const here = orchard\.buckets\?\.get\(`\$\{bi\},\$\{bj\}`\);/.test(html)
+  && /const ORCHARD_BUCKET = 12;/.test(moduleSource('world.js')));
+check('and the index is built once, with the trees that carry it',
+  /buckets\.set\(key, \[i\]\)/.test(moduleSource('world.js')));
+/* The record was serialised and handed to localStorage on every line logged. */
+check('the chronicle is written once a day, not once a line',
+  /chronicleDirty = true;/.test(html) && /function flushChronicle\(\)/.test(html)
+  && /flushChronicle\(\);/.test(html));
+/* And recovery walks the ground somebody has taken from, not the island. */
+check('and the ground recovers over what was worked, not over everything',
+  /for \(const k of worked\)/.test(moduleSource('larder.js'))
+  && /worked\.delete\(k\)/.test(moduleSource('larder.js')));
+
+/* -------------------------------------------------------------------------
+   Why somebody is at the fire
+
+   "At the fire" is where, and for a third of a band on any given afternoon it
+   is the whole caption — the least informative thing the page says about the
+   most people.
+   ------------------------------------------------------------------------- */
+group('at the fire');
+
+const fireSay = new Function('P', 'seasonName',
+  sayingSrc.slice(sayingSrc.indexOf('function fireWords'),
+    sayingSrc.indexOf('\n}', sayingSrc.indexOf('function fireWords')) + 2)
+  + '\nreturn fireWords;');
+const atFire = (p, hour = 12, season = 'summer') => fireSay({ time: hour }, season)(p);
+const person = (over = {}) => ({ energy: 1, camp: { hunger: 0.1 }, ...over });
+
+check('the one whose job it is says so', atFire(person({ role: 'keeper' })) === 'keeping the fire');
+/* Somebody with nothing left is resting whatever else is true of the evening. */
+check('and somebody with nothing left is resting, whatever else is true',
+  atFire(person({ energy: 0.1, role: null }), 23, 'winter') === 'resting by the fire');
+check('an empty store is worth saying',
+  atFire(person({ camp: { hunger: 0.95 } })) === 'at the fire, with nothing in the store');
+check('and so is the cold', atFire(person(), 12, 'winter') === 'at the fire, out of the cold');
+/* Night is last of the four because it is the least surprising: everybody is at
+   the fire at night, and saying so of all of them is saying nothing. */
+check('night is the least surprising reason and comes last',
+  atFire(person(), 23) === 'sitting up at the fire'
+  && atFire(person({ camp: { hunger: 0.95 } }), 23) === 'at the fire, with nothing in the store');
+check('and an ordinary afternoon says the ordinary thing',
+  atFire(person()) === 'at the fire');
+/* Only when they are actually there. */
+check('somebody still walking to it is still walking to it',
+  /if \(p\.job === 'tend' && p\.speed <= WALKING_AT\) return fireWords\(p\);/.test(sayingSrc));
+
+/* -------------------------------------------------------------------------
+   What they are carrying
+   ------------------------------------------------------------------------- */
+group('the load');
+
+/* Berries, a joint of meat and a morning's fish all came home as the same brown
+   block — the one moment of a forager's day you can watch pay off, saying
+   nothing about what they had been doing. */
+check('a load takes the shape of the thing it is',
+  /const LOADS = \{/.test(moduleSource('move.js'))
+  && /gather:\s*\{ scale:[^]*?hunt:\s*\{ scale:[^]*?fish:\s*\{ scale:/.test(moduleSource('move.js')));
+check('and a catch is not the same shape as a joint of meat', (() => {
+  const src = moduleSource('move.js');
+  const grab = (k) => (src.match(new RegExp(`${k}:\\s*\\{ scale: new THREE\\.Vector3\\(([\\d., ]+)\\)`)) || [, ''])[1];
+  return grab('fish') !== grab('hunt') && grab('fish') !== grab('gather');
+})());
+check('stone comes home the same way, being also a thing somebody carries',
+  /quarry:\s*\{ scale:/.test(moduleSource('move.js')));
+/* One geometry still: a person is seventeen instanced pieces and a fourth load
+   mesh is another two thousand slots. */
+check('and it is still one mesh, scaled',
+  /_mChain\.scale\(kind\.scale\);/.test(moduleSource('move.js')));
+/* The colour of a load is a fact about the errand, not about the frame. */
+check('the colour is written when it changes hands, not every frame',
+  /if \(p\.loadKind !== p\.job\) \{/.test(moduleSource('move.js'))
+  && /p\.loadKind = null;/.test(moduleSource('move.js')));
+
+/* -------------------------------------------------------------------------
+   A face, and where the detail goes
+
+   A face is legible at about four metres. So is a knuckle. Everything a person
+   is made of is an InstancedMesh sized to the whole island, so eyes on
+   everybody cost four thousand instances to be seen on one figure.
+   ------------------------------------------------------------------------- */
+group('the near set');
+
+const nearSrc = moduleSource('people.js');
+
+check('detail for one person is not instanced for two thousand',
+  /function buildNearParts\(\)/.test(nearSrc)
+  && /new THREE\.Mesh\(geo, new THREE\.MeshLambertMaterial/.test(nearSrc));
+/* It costs the same at any population, which is the whole reason it exists. */
+check('and a village draws the same face as a band of nine',
+  !/nearParts\[[^\]]*\]\.setMatrixAt/.test(moduleSource('move.js')));
+
+/* It hangs off the matrix writePerson has already worked out, so a face cannot
+   drift from the head it is on — that matrix carries the build, the crouch, the
+   bob of the walk and which way they are looking. */
+check('the face hangs off the head it belongs to',
+  /mesh\.matrix\.multiplyMatrices\(_mHead, _mLocal\);/.test(moduleSource('move.js')));
+check('and is placed in the head\'s own space, not the world\'s',
+  /put\(nearParts\.eyeL, -H\[0\] \* 0\.22/.test(moduleSource('move.js')));
+
+/* Only on the person being followed, and only in the view where you can see
+   them. */
+check('it is worn by whoever you are behind',
+  /if \(nearParts && i === followIdx && P\.view === 'follow'\)/.test(moduleSource('move.js')));
+/* And the failure that matters: a face left on somebody you stopped following. */
+check('and put away the moment that is nobody',
+  /if \(!nearShown\) hideNearParts\(\);\s*nearShown = false;/.test(moduleSource('move.js'))
+  && /function hideNearParts\(\)/.test(nearSrc));
+/* Dropped where the world is torn down, which is world.js — the meshes go with
+   tribeGroup and only the handle on them is left to let go of. */
+check('a new world does not inherit the last one\'s face',
+  /setGraveMesh\(null\);[^]*?setNearParts\(null\);/.test(moduleSource('world.js')));
+
+/* The fist is the one piece of hand detail that survives being thirty metres
+   away, and it costs nothing: everybody already has this box, and closing it is
+   a scale on it. */
+check('a hand closes round what it is holding',
+  /const closed = p\.carry \|\| \(p\.hasSpear && side === 0\) \|\| p\.state === 'work';/.test(moduleSource('move.js'))
+  && /if \(closed\) _mChain\.scale\(FIST\);/.test(moduleSource('move.js')));
+check('and a fist is shorter and thicker than a hand hanging', (() => {
+  const m = moduleSource('move.js').match(/FIST = new THREE\.Vector3\(([\d., ]+)\)/);
+  const [x, y, z] = m[1].split(',').map(Number);
+  return y < 1 && x > 1 && z > 1 ? true : `${x} ${y} ${z}`;
+})() === true);
+/* The fingers are the expensive half and they only exist when there is a hand
+   open to put them on. */
+check('fingers are near-set only, and only on an open hand',
+  /if \(nearParts && i === followIdx && P\.view === 'follow' && !closed\) \{/.test(moduleSource('move.js')));
+check('four of them and a thumb', /for \(let k = 0; k < 4; k\+\+\)/.test(moduleSource('move.js'))
+  && /F\.thumb\.visible = true;/.test(moduleSource('move.js')));
+
+/* A joint is a ball at the seam between two capsules — the limbs already have
+   no corner in them, what was missing is the joint reading as a joint. */
+check('elbows, wrists and knees are balls at the seam',
+  /nearJoint\(nearParts\?\.elbow\?\.\[side\], i, _mLower\);/.test(moduleSource('move.js'))
+  && /nearJoint\(nearParts\?\.wrist\?\.\[side\], i, _mChain\);/.test(moduleSource('move.js'))
+  && /nearJoint\(nearParts\?\.knee\?\.\[side\], i, _mLower\);/.test(moduleSource('move.js')));
+/* The joint is where the limb hanging from it starts, which is the origin of
+   that limb's own space — so there is nothing to work out. */
+check('and are placed with the matrix the caller already had',
+  /mesh\.matrix\.copy\(mat\);/.test(moduleSource('move.js')));
+
+/* The set grew from five meshes to twenty-one, and anything that walks it
+   shallowly puts half of it away — a face hidden while ten fingers stay on the
+   world. */
+check('and the whole set is walked, however deep it nests',
+  /function eachNearPart\(fn\)/.test(nearSrc)
+  && /else if \(Array\.isArray\(v\)\) v\.forEach\(walk\);/.test(nearSrc)
+  && /hideNearParts\(\) \{\s*eachNearPart/.test(nearSrc));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);

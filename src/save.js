@@ -85,11 +85,16 @@ export async function persistState() {
   const data = snapshot();
   if (runId) {
     try {
-      await fetch('/api/state', {
+      const res = await fetch('/api/state', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(data),
       });
-      return;
+      /* `ok`, not merely "it did not throw". A fetch that comes back 413 is a
+         fetch that succeeded at telling you it refused, and this used to read
+         it as a save — so a world too big for the server was a world silently
+         not kept, with the fallback below sitting right there unused. The one
+         failure worth handling is the one that loses everything. */
+      if (res.ok) return;
     } catch { /* fall through to the browser's own copy */ }
   }
   try {
