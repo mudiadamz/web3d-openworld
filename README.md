@@ -21,6 +21,7 @@ python3 -m http.server 8000     # then open http://localhost:8000
 ```bash
 cp .env.example .env            # optional; every setting has a default
 npm start                       # http://localhost:8080
+npm start -- --port 8089        # ...or wherever. --host, --people, --map too
 ```
 
 or without editing anything at all:

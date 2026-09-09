@@ -110,6 +110,72 @@ export function parseEnvFile(text) {
   return out;
 }
 
+/* -------------------------------------------------------------------------
+   Settings from the command line
+
+   `--port 8089`, so that starting a second copy on another port does not mean
+   editing a file that the first copy is also reading. Anything the schemas know
+   about works the same way: --host, --people, --map, --chronicle-db.
+
+   Shaped as an environment rather than parsed into values, so it goes through
+   the same coercion, the same ranges and the same notes as everything else. A
+   flag that is out of range should be clamped and reported exactly like a line
+   in .env, and there is only one piece of code that knows how to do that.
+
+   Highest precedence of the three, and that is the whole point: a flag is what
+   you typed a second ago, and it should not be argued with by a .env you have
+   forgotten about.
+   ------------------------------------------------------------------------- */
+export function parseArgs(argv = []) {
+  const known = new Set([...Object.keys(SCHEMA), ...Object.keys(SERVER_SCHEMA)]);
+  const alias = { p: 'PORT', h: 'HOST' };
+  const values = {};
+  const notes = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = String(argv[i]);
+    if (arg === '--') break;                       // everything after is not ours
+    const long = /^--([A-Za-z][\w-]*)(?:=([\s\S]*))?$/.exec(arg);
+    const short = /^-([A-Za-z])(?:=([\s\S]*))?$/.exec(arg);
+    const hit = long || short;
+    if (!hit) {
+      notes.push(`${arg}: not a setting — ignored`);
+      continue;
+    }
+
+    /* --chronicle-db and CHRONICLE_DB are the same setting written two ways,
+       which is the convention every tool uses and nobody documents. */
+    const raw = hit[1];
+    const name = short ? (alias[raw] || alias[raw.toLowerCase()] || raw.toUpperCase())
+      : raw.replace(/-/g, '_').toUpperCase();
+
+    if (!known.has(name)) {
+      notes.push(`--${raw}: no such setting — ignored`);
+      /* A value that followed an unknown flag is not a stray word; swallowing
+         it stops "--nope 5" complaining twice about one mistake. */
+      if (hit[2] === undefined && argv[i + 1] !== undefined && !/^-/.test(String(argv[i + 1]))) i++;
+      continue;
+    }
+
+    let value = hit[2];
+    if (value === undefined) {
+      const next = argv[i + 1];
+      /* A bool may stand alone: `--shadows` means on. Anything else needs the
+         value that follows, and a following flag is not that value. */
+      const spec = SCHEMA[name] || SERVER_SCHEMA[name];
+      if (next === undefined || /^--?[A-Za-z]/.test(String(next))) {
+        if (spec.type === 'bool') value = 'true';
+        else { notes.push(`--${raw}: needs a value — ignored`); continue; }
+      } else {
+        value = String(next);
+        i++;
+      }
+    }
+    values[name] = value;
+  }
+  return { values, notes };
+}
+
 export function loadEnv(file = '.env', env = process.env) {
   const fromFile = existsSync(file) ? parseEnvFile(readFileSync(file, 'utf8')) : {};
   // Real environment variables override the file.

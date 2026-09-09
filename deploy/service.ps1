@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Runs the open world in the background on Windows, on port 8080.
+  Runs the open world in the background on Windows, on port 8089.
 
 .DESCRIPTION
   Node cannot be a services.msc service by itself. A real service has to answer
@@ -36,7 +36,10 @@ param(
   [ValidateSet('install', 'uninstall', 'start', 'stop', 'restart', 'status', 'logs')]
   [string] $Action = 'status',
 
-  [int] $Port = 8080,
+  # 8089, not the server's own default of 8080, so the deployed copy and
+  # a node server.js you start to try something out never fight over a port.
+  # The one you leave running is not the one you keep restarting.
+  [int] $Port = 8089,
   [string] $Bind = '127.0.0.1',
   [string] $Name = 'OpenWorld'
 )

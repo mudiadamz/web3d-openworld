@@ -10,7 +10,11 @@
 .\deploy\service.ps1 uninstall
 ```
 
-Defaults to `http://127.0.0.1:8080`. `-Port`, `-Bind` and `-Name` override.
+Defaults to `http://127.0.0.1:8089`. `-Port`, `-Bind` and `-Name` override.
+
+**8089 and not 8080** on purpose: the server's own default is 8080, so the
+deployed copy and a `node server.js` you start to try something out never fight
+over a port. The one you leave running is not the one you keep restarting.
 `npm run service:install`, `service:restart` and `service:status` are the same
 thing from a package script.
 
@@ -73,7 +77,7 @@ bound — a task is `Running` with a process that exited on line one.
 So every verb polls `GET /healthz`:
 
 ```json
-{ "ok": true, "pid": 21392, "uptime": 3, "port": 8080,
+{ "ok": true, "pid": 21392, "uptime": 3, "port": 8089,
   "chronicle": true, "node": "v22.14.0" }
 ```
 

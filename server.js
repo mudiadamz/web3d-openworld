@@ -13,7 +13,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadEnv, resolveConfig, resolveServer, describe } from './config.js';
+import { loadEnv, parseArgs, resolveConfig, resolveServer, describe } from './config.js';
 import { openDb } from './db.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -32,11 +32,16 @@ const TYPES = {
   '.md': 'text/markdown; charset=utf-8',
 };
 
-const env = loadEnv(join(ROOT, '.env'));
+/* Three sources, in the order you would expect to be obeyed: the file you
+   wrote once, the environment around the process, and the flags you typed a
+   moment ago. Merged before either resolve so `--port` and `--people` arrive
+   by the same road as everything else. */
+const args = parseArgs(process.argv.slice(2));
+const env = { ...loadEnv(join(ROOT, '.env')), ...args.values };
 const { values, explicit, notes } = resolveConfig(env);
 const server = resolveServer(env);
 
-for (const note of [...notes, ...server.notes]) console.warn(`  ! ${note}`);
+for (const note of [...args.notes, ...notes, ...server.notes]) console.warn(`  ! ${note}`);
 
 const db = openDb(join(ROOT, server.chronicle_db));
 const payload = { values, explicit, chronicle: Boolean(db) };
