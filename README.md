@@ -1,10 +1,65 @@
 # Open World Sandbox
 
-A single standalone HTML file for experimenting with web 3D: procedural terrain,
-instanced grass, trees, five species of wildlife, a band of hunter-gatherers
-living a daily round, a physical sky on a running clock, adjustable wind, and a
-synthesised nature soundscape. No build step, no
-`node_modules`, no assets — `index.html` is the whole program.
+**An island that runs itself.** Procedural terrain, a physical sky on a running
+clock, five species of wildlife — and a few hundred hunter-gatherers who forage
+it, hunt it, learn fourteen crafts, trade with each other, split off to found
+new bands, bury their dead, and are still at it a century later.
+
+Nobody scripts any of that. It is a simulation, and the history is whatever
+happens.
+
+**No build step, no `node_modules`, no assets, no dependencies.** `index.html`
+and a folder of ES modules are the whole program; `node:http` and `node:fs` are
+the whole server.
+
+![A band's camp on a hillside at dusk](assets/ss/ss2.webp)
+
+## What you are actually watching
+
+- **People with reasons.** Everyone has energy, hunger, a job and a family.
+  They forage where it paid last time, hunt what they can catch, come home at
+  dusk, sleep in a hut, fall ill, recover or do not. A tiger takes the ones who
+  went out alone.
+- **Bands that learn.** Fourteen skills, each moving a number the simulation
+  already had — curing meat means less of the store spoils, tracking means a
+  hunter sees further, fire-keeping means a tiger will not come as close. What
+  a band practises is what it has been worrying about, so a band good at
+  healing is one that has been ill.
+- **A world with a memory.** Births, deaths, splits, plagues, skills won and
+  forgotten: all of it goes into a chronicle you can search, kept in SQLite
+  across worlds and reloads.
+- **Time you can skip.** Name a number of years and it runs them unwatched in
+  seconds, then hands the world back.
+- **Everything is a setting.** Forty-two environment variables, so a world is
+  a `.env` file you can hand to somebody else.
+
+<table>
+<tr>
+<td width="50%"><img src="assets/ss/ss4.webp" alt="A band's card: chief, skills and who is here"></td>
+<td width="50%"><img src="assets/ss/ss3.webp" alt="The island map with twenty bands on it"></td>
+</tr>
+<tr>
+<td>Every band keeps its own books — who leads it, what it has worked out, what
+it has lost and to what, and what each person is doing right now.</td>
+<td>Twenty-odd bands on one island, each with a two-letter code that follows it
+through the chronicle. Click anywhere to travel there.</td>
+</tr>
+</table>
+
+![Running the world on: a population curve and the chronicle beside it](assets/ss/ss1.webp)
+
+*Five years in about fifty seconds, unwatched. One line per band, and the
+chronicle beside it says what happened to them.*
+
+## Have a look
+
+```bash
+git clone https://github.com/mudiadamz/web3d-openworld
+cd web3d-openworld
+npm start                       # http://localhost:8080
+```
+
+That is the whole setup. There is nothing to install.
 
 ## Run it
 
@@ -41,8 +96,8 @@ will tell you so after six seconds. three.js r169 is pulled from a CDN
 
 Every knob on the panel can be given a starting value by an environment
 variable, so a world can be described by a `.env` file and handed to someone
-else. `.env.example` lists all thirty of them with their ranges; real
-environment variables win over the file.
+else. `.env.example` lists all forty-two of them with their ranges. Real environment
+variables win over the file, and a `--flag` wins over both.
 
 ```
 SEED  QUALITY                             the world
