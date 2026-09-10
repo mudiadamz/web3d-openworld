@@ -2437,6 +2437,7 @@ src/
   move.js       getting there, jobs, the camera rig
   creeks.js     creeks: traced downhill, carved, and filled with water
   farming.js    fields and flocks: irrigation first, then crops, then a pen
+  society.js    from band to tribe, chiefdom, village and city, a rung at a time
   chronicle.js  events, the chronicle window, the band card, bisect
   kin.js        a person's family, read off the record: the lineage view
   save.js       snapshot and restore

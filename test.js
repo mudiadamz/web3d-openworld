@@ -7199,6 +7199,44 @@ check('and the meshes have room for the largest one', (() => {
   return crops / rows >= Math.floor(maxLen / step) ? true : `${crops / rows} places a row for ${Math.floor(maxLen / step)} plants`;
 })() === true);
 
+/* -------------------------------------------------------------------------
+   From band to city
+
+   A rung at a time, each held before it is reached, any of them lost again,
+   and the day's work shifting across a year rather than overnight.
+   ------------------------------------------------------------------------- */
+group('from band to city');
+const socSrc = moduleSource('society.js');
+check('five rungs, in order',
+  ['band', 'tribe', 'chiefdom', 'village', 'city'].every((n, i, all) =>
+    socSrc.indexOf(`name: '${n}'`) >= 0 && (i === 0 || socSrc.indexOf(`name: '${all[i - 1]}'`) < socSrc.indexOf(`name: '${n}'`))));
+check('climbed one at a time, and only once the next has held',
+  /if \(at < STAGES\.length - 1 && meets\(c, at \+ 1\)\)/.test(socSrc)
+  && /if \(simDay - c\.risingSince >= SOCIETY\.hold \* year\) \{ setStage\(c, at \+ 1\); continue; \}/.test(socSrc));
+check('and lost again, one rung, when a settlement stops meeting its own',
+  /if \(at > 0 && !meets\(c, at\)\)/.test(socSrc)
+  && /if \(simDay - c\.slippingSince >= SOCIETY\.slip \* year\) setStage\(c, at - 1\);/.test(socSrc));
+check('the day\'s work shifts with the stage, across a year, and hunger undoes it', (() => {
+  const at = socSrc.indexOf('function jobMix(');
+  const STAGES = [{ mix: { gather: 1, farm: 0.7 } }, { mix: { gather: 0.9, farm: 1.2 } }, { mix: { gather: 0.75, farm: 1.4 } },
+    { mix: { gather: 0.6, farm: 1.7 } }, { mix: { gather: 0.45, farm: 1.9 } }];
+  const make = (simDay) => new Function('STAGES', 'SOCIETY', 'P', 'simDay',
+    socSrc.slice(at, socSrc.indexOf('\n}\n', at) + 2) + '\nreturn jobMix;')(STAGES, { blend: 1 }, { yearLength: 4 }, simDay);
+  const city = { stage: 4, stageFrom: 3, stageSince: 0 };
+  const settled = make(100)(city, 'gather', 0), fresh = make(0)(city, 'gather', 0), starving = make(100)(city, 'gather', 1);
+  const band = make(100)({ stage: 0 }, 'gather', 0), farmCity = make(100)(city, 'farm', 0);
+  return settled < band && Math.abs(fresh - 0.6) < 1e-9 && Math.abs(settled - 0.45) < 1e-9
+    && Math.abs(starving - 1) < 1e-9 && farmCity > 1 ? true : JSON.stringify({ settled, fresh, starving, band, farmCity });
+})() === true);
+check('and the job list is leaned by it before anything is rolled',
+  /for \(const w of weights\) w\[1\] \*= jobMix\(p\.camp, w\[0\], hunger\);\n    let roll/.test(moduleSource('move.js')));
+check('a settlement holds more before it splits as it climbs',
+  /c\.pop >= SPLIT\.at \* STAGES\[c\.stage \|\| 0\]\.split/.test(html)
+  && (() => { const s = [...socSrc.matchAll(/split: ([\d.]+),/g)].map((m) => Number(m[1]));
+    return s.length === 5 && s.every((v, i) => i === 0 || v > s[i - 1]); })());
+check('every step is told, and saved', /'stage',      \/\/ a band became/.test(html)
+  && /sg: c\.stage \|\| undefined/.test(html) && /camps\[i\]\.stage = c\.sg \| 0;/.test(html));
+
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);

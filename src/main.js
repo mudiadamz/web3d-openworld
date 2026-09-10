@@ -38,6 +38,7 @@ import {
   codeChip, ensureCurrentWorld, hhmm, setRate, syncLabels, toast, tribeChips, updateToast
 } from './ui.js';
 import { updateLivestock } from './farming.js';
+import { updateSociety } from './society.js';
 
 /* -------------------------------------------------------------------------
    Loop
@@ -138,6 +139,7 @@ export function stepWorld(dt) {
     updateLives(owed);
     repopulate(owed);
     updateLivestock(owed);
+    updateSociety();
   }
   updatePeople(paced, smoothstep(-0.10, 0.14, sunDir.y));
   setDrawingWorld(true);
@@ -435,6 +437,7 @@ export function tick() {
     updateLives(owed);
     repopulate(owed);
     updateLivestock(owed);
+    updateSociety();
   }
   updatePeople(paced, daylight);
   // After the people have moved, so a bubble is over where somebody is now.

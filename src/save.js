@@ -53,7 +53,10 @@ export function snapshot() {
       stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0),
       // A village taken by another tribe: its code now, its name then (life.js, conquer).
       cd: c.code, vn: c.villageName || undefined, pc: c.pastCodes?.length ? c.pastCodes : undefined,
-      ca: c.conqueredAt })),
+      ca: c.conqueredAt,
+      // From band to city (society.js): the rung, since when, and how long the next has held.
+      sg: c.stage || undefined, sd: c.stageSince != null ? r2(c.stageSince) : undefined,
+      sr: c.risingSince != null ? r2(c.risingSince) : undefined })),
     /* What is left in each quarry, by its place in the list — the seed lays the
        same deposits out in the same order, so the position is the name. */
     quarries: deposits.map((d) => d.left),
@@ -225,6 +228,10 @@ export function applySavedLife(st) {
     camps[i].villageName = c.vn || null;
     camps[i].pastCodes = Array.isArray(c.pc) ? c.pc : [];
     camps[i].conqueredAt = Number.isFinite(c.ca) ? c.ca : undefined;
+    camps[i].stage = c.sg | 0;
+    camps[i].stageFrom = camps[i].stage;
+    camps[i].stageSince = Number.isFinite(c.sd) ? c.sd : null;
+    camps[i].risingSince = Number.isFinite(c.sr) ? c.sr : null;
     camps[i].food = c.food;
     // A save from before a band could learn anything has no skills in it.
     for (const key in SKILLS) {

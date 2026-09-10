@@ -24,6 +24,7 @@ import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
 import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
+import { STAGES } from './society.js';
 
 /* -------------------------------------------------------------------------
    Food, and hunts that actually catch something
@@ -83,6 +84,7 @@ export const MILESTONES = new Set([
   'relief',     // ...and the day it came back
   'find',       // the first of a metal carried home
   'conquest',   // a band took another's village
+  'stage',      // a band became a tribe, a chiefdom, a village, a city -- or fell back
   'slain',      // somebody killed a tiger
   'extinct',    // a band ended
   'end',        // and the last one of them
@@ -187,7 +189,7 @@ export function renderTribes(now = 0) {
     for (const p of people) if (p.camp === c) pop++;
     return `<div data-camp="${i}"><i style="background:${TRIBE_COLORS[i % TRIBE_COLORS.length]}"></i>`
       + `<b class="wcode" style="background:${c.color}">${c.code}</b>`
-      + `<b>${c.name}</b> <span>${pop || 'empty'}</span></div>`;
+      + `<b>${c.name}</b>${c.stage ? ` <em>${STAGES[c.stage].name}</em>` : ''} <span>${pop || 'empty'}</span></div>`;
   }).join('') || '<div><span>' + (camps.length ? 'every band has died out' : 'no camps') + '</span></div>';
 
   drawTribeChart();
@@ -1194,7 +1196,8 @@ export function updateEconomy(days) {
      after the head count and before anything is eaten, so the day it happens
      both camps are counted properly. */
   for (const c of camps) {
-    if (c.pop >= SPLIT.at && daysOfFood(c) > SPLIT.needFood
+    // A settlement holds more before it splits as it climbs (society.js).
+    if (c.pop >= SPLIT.at * STAGES[c.stage || 0].split && daysOfFood(c) > SPLIT.needFood
         && simDay - (c.splitAt || -999) > SPLIT.everyYears * P.yearLength) {
       splitCamp(c);
       break;                       // one at a time; the next can go tomorrow

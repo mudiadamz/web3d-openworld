@@ -26,6 +26,7 @@ import { $ } from './save.js';
 import { PATCHES_MARKED, stepMapSize } from './map.js';
 import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, togglePanel, tribeChips } from './ui.js';
 import { stopAhead } from './main.js';
+import { nextStage, stageName, stageProgress } from './society.js';
 
 /* -------------------------------------------------------------------------
    The whole chronicle
@@ -260,7 +261,13 @@ export function renderTribeCard() {
   const held = (villages > 1 ? `<div><span>one of</span> ${villages} <span>villages of</span> ${camp.name}</div>` : '')
     + (camp.villageName
       ? `<div><span>once</span> ${camp.villageName}<span>, taken on day ${Math.floor(camp.conqueredAt || 0)}</span></div>` : '');
-  $('tribeHead').innerHTML = held +
+  /* What it has become, and how far it is through holding the next rung's marks
+     (society.js). */
+  const next = nextStage(camp), rising = stageProgress(camp);
+  const stageLine = `<div><span>a</span> <b>${stageName(camp)}</b>${next
+    ? ` <span>· ${rising > 0 ? `${Math.round(rising * 100)}% of the way to ${/^[aeiou]/.test(next.name) ? 'an' : 'a'} ${next.name}`
+      : `not yet on the way to ${/^[aeiou]/.test(next.name) ? 'an' : 'a'} ${next.name}`}</span>` : ''}</div>`;
+  $('tribeHead').innerHTML = stageLine + held +
     `<div>Chief <b>${chief ? chief.name : 'nobody'}</b>`
     + `${chief ? ` <span>${Math.floor(personAge(chief))}${sexMarks(chief.sex === 'f' ? '♀' : '♂')}</span>` : ''}</div>`
     + `<div><b>${bandAge(camp)}</b> <span>old · founded on day ${Math.floor(camp.founded || 0)}</span></div>`

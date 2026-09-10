@@ -49,6 +49,7 @@ import { arm } from './ui.js';
 import { updateHud } from './main.js';
 import { traceStreams, carveStreams, buildStreamWater } from './creeks.js';
 import { farmDone, farmSite, farmWeight } from './farming.js';
+import { jobMix } from './society.js';
 
 /* -------------------------------------------------------------------------
    Getting there
@@ -712,6 +713,10 @@ export function chooseJob(p, day) {
        too small or too hungry to afford roles has none, and this does nothing
        at all — see assignRoles. */
     if (p.role) for (const w of weights) w[1] *= roleWeight(p, w[0]);
+    /* And the stage the settlement has reached leans it again (society.js):
+       fewer foraging, more at the fields, the workshop, the neighbours and the
+       war band as it climbs — unless it is hungry, which undoes all of it. */
+    for (const w of weights) w[1] *= jobMix(p.camp, w[0], hunger);
     let roll = luck() * weights.reduce((a, w) => a + w[1], 0);
     p.job = weights.find(([, w]) => (roll -= w) <= 0)?.[0] || 'gather';
   }
