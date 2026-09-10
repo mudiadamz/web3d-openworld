@@ -13,7 +13,10 @@ and a folder of ES modules are the whole program; `node:http` and `node:fs` are
 the whole server. The people are the low-poly body from
 [humans-threejs](https://github.com/mudiadamz/humans-threejs), vendored as a
 module of plain arrays (`src/human-parts.js`) and hung on the simulation's own
-rig.
+rig — and dressed in everything else the library makes: four builds, a hide
+tunic cut to each sex and build, six ways of wearing hair, three faces, the
+library's baskets of fruit, fish and meat, a small animal carried in the arms,
+and a pick and a knife for the work that uses them (`src/looks.js`).
 
 ![A camp of tents on the slope above a river, the band gathered at its fire](assets/ss/cool-camp.webp)
 

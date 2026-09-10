@@ -40,6 +40,9 @@ import { boardRaft, landRaft, moorRaft, raftBusy, raftStep, raftTrip } from './r
 import { dockOf } from './larder.js';
 import { buildThickets } from './thickets.js';
 import { CLIMB_HEIGHT, CLIMB_REACH, CRAWL } from './danger.js';
+import {
+  HEAD_GROUPS, animalSize, cargoKey, clearLooks, fitOf, flushLooks, headKey, looks, tunicKey, undress, wear
+} from './looks.js';
 import { atHome, eat, lifeWant, restBoost, spendLife } from './vitals.js';
 import { arm } from './ui.js';
 import { updateHud } from './main.js';
@@ -1259,6 +1262,8 @@ export function updatePeople(dt, day) {
           const per = partsPer(key);
           for (let k = 0; k < per; k++) personParts[key].setMatrixAt(i * per + k, HIDDEN);
         }
+        // And nothing of theirs is in the wardrobe's lists, so none of it is drawn.
+        undress(p);
       }
       continue;
     }
@@ -1274,6 +1279,7 @@ export function updatePeople(dt, day) {
   // Nothing was written if nothing is being drawn, so nothing has to be uploaded.
   if (drawingWorld) {
     for (const key in personParts) personParts[key].instanceMatrix.needsUpdate = true;
+    flushLooks();
   }
 }
 
@@ -1297,41 +1303,47 @@ export function writePerson(p, i) {
 
   // The torso pivots at the waist and the head and arms ride on it, so bending
   // to forage takes the whole upper body with it.
-  _mLocal.makeRotationX(p.bend);
+  /* What they are doing with their hands decides a little of how they stand —
+     a pick is swung from the hips — so it is worked out before the torso.
+     These are the library's working poses: a pick swung two-handed, a knife
+     worked in one hand while the other holds, an arm up into the branches. */
+  const act = p.state === 'work'
+    ? (p.job === 'quarry' ? 'mining' : p.job === 'craft' ? 'cutting' : p.job === 'gather' && p.climbed ? 'picking' : null)
+    : null;
+  const stroke = Math.sin(p.work * 0.7);
+  const lean = act === 'mining' ? 0.16 + 0.11 * (1 - stroke) : 0;
+  _mLocal.makeRotationX(p.bend + lean);
   _mLocal.setPosition(0, 0, 0);
   _mTorso.multiplyMatrices(_mBody, _mLocal);
   _mLocal.makeScale(p.shoulder, 1, 1);
   _mChain.multiplyMatrices(_mTorso, _mLocal);
-  /* A woman's torso on a grown woman; a child of either sex has the other. The
-     joints follow the torso they belong to — the arms hang from its shoulders
-     and the legs from its hips — so a girl's arms move out to a woman's
-     shoulders on the day she comes of age. The torso not in use is parked, and
-     it is parked every frame because the slot may have been somebody else's
-     until a death shifted the band up one. */
+  /* The torso is dressed rather than drawn: what you see of it is the hide,
+     cut to the sex and the build (looks.js). A woman's on a grown woman; a
+     child of either sex wears the other, and the joints follow the hide they
+     are in — the arms hang from its shoulders and the legs from its hips, and
+     a broad or a full build carries them further out. */
   const woman = p.sex === 'f' && !p.child;
-  personParts[woman ? 'torsoF' : 'torso'].setMatrixAt(i, _mChain);
-  personParts[woman ? 'torso' : 'torsoF'].setMatrixAt(i, HIDDEN);
-  const armX = (woman ? S.armXF : S.armX) * p.shoulder;
-  const hipX = (woman ? S.hipXF : S.hipX) * p.hip;
+  const fit = fitOf(p);
+  const tunic = wear(p, 'tunic', tunicKey(p, woman));
+  looks[tunic].setMatrixAt(p.wornAt.tunic, _mChain);
+  const armX = (woman ? S.armXF : S.armX) * p.shoulder * fit.armX;
+  const hipX = (woman ? S.hipXF : S.hipX) * p.hip * fit.hipX;
 
   // A neck, hung from its base at the top of the chest.
   _mLocal.makeTranslation(0, S.neckY, 0);
   _mChain.multiplyMatrices(_mTorso, _mLocal);
-  personParts.neck.setMatrixAt(i, _mChain);
+  personParts.neck.setMatrixAt(i, _mChain.scale(fit.neck));
 
   _mOff.makeScale(p.headScale, p.headScale, p.headScale);
   _mOff.setPosition(0, S.headY, 0);
   _mHead.multiplyMatrices(_mTorso, _mOff);
   personParts.head.setMatrixAt(i, _mHead);
-  /* Scaled down the head and back, so long hair falls behind rather than
-     ballooning: the box grows in Y and Z from a pivot that stays on the skull.
-     This is the male/female indicator, and it is the only one — no icon, no
-     colour code, just a silhouette you can tell apart across a valley. */
-  const hl = p.hairLen || 1;
-  _mLocal.makeScale(1, hl, 1 + (hl - 1) * 0.35);
-  _mOff.makeTranslation(0, S.head[1] * 0.5 + S.hair[1] * 0.4 * hl, -S.hair[2] * 0.16 * (hl - 1));
-  _mChain.multiplyMatrices(_mHead, _mOff);
-  personParts.hair.setMatrixAt(i, _mChain.multiply(_mLocal));
+  /* Hair, a face, and on whoever leads a band round the brow — all in the
+     head's own space, so they carry its size, its bob and where it looks. */
+  for (const group of HEAD_GROUPS) {
+    const key = wear(p, group, headKey(p, group));
+    if (key) looks[key].setMatrixAt(p.wornAt[group], _mHead);
+  }
 
   const swing = Math.min(p.speed * 0.32, 0.62);
   const busy = Math.sin(p.work) * 0.5 * (p.crouch > 0.2 || p.bend > 0.2 ? 1 : 0);
@@ -1348,6 +1360,19 @@ export function writePerson(p, i) {
     let elbow = 0.22 + Math.max(0, Math.sin(phase + 0.9)) * swing * 0.9;
     if (p.carry) elbow = 1.30;
     else if (p.hasSpear && side === 0) elbow = 0.75;
+    if (act && !p.carry) {
+      if (act === 'mining') {
+        // Both arms together: the pick is held in two hands.
+        arm = -1.45 + 0.8 * stroke;
+        elbow = 0.35;
+      } else if (act === 'cutting') {
+        arm = side === 0 ? -1.05 + 0.25 * Math.sin(p.work * 1.3) : -0.9;
+        elbow = side === 0 ? 0.9 : 1.05;
+      } else {
+        arm = side === 0 ? -2.35 + 0.14 * Math.sin(p.work) : -0.4;
+        elbow = side === 0 ? 0.2 : 0.3;
+      }
+    }
     // Throwing (hunt.js): the spear arm back over the shoulder, then through.
     if (side === 0 && p.throwPose > 0) {
       const k = p.throwPose;
@@ -1358,12 +1383,12 @@ export function writePerson(p, i) {
     _mLocal.makeRotationX(arm);
     _mLocal.setPosition(dir * armX, S.shoulderY, 0);
     _mUpper.multiplyMatrices(_mTorso, _mLocal);
-    personParts.upperArm.setMatrixAt(i * 2 + side, _mUpper);
+    personParts.upperArm.setMatrixAt(i * 2 + side, _mFit.copy(_mUpper).scale(fit.upperArm));
 
     _mOff.makeRotationX(elbow);
     _mOff.setPosition(0, -S.upperArm[1], 0);
     _mLower.multiplyMatrices(_mUpper, _mOff);
-    personParts.foreArm.setMatrixAt(i * 2 + side, _mLower);
+    personParts.foreArm.setMatrixAt(i * 2 + side, _mFit.copy(_mLower).scale(fit.foreArm));
     /* The elbow itself. The limbs are capsules, so a bend has no corner in it —
        what is missing is the joint reading as a joint rather than as the place
        two capsules happen to meet. A ball at the seam is what an elbow is. */
@@ -1380,9 +1405,15 @@ export function writePerson(p, i) {
        The fingers themselves are in the near set, on the one person you are
        looking at, and they only exist when the hand is open. A fist is a fist. */
     const closed = p.carry || (p.hasSpear && side === 0) || p.state === 'work';
+    /* The tool, in the right hand before it closes: a fist is a squashed hand,
+       and a squashed pick is not a pick. */
+    if (side === 0) {
+      const tool = wear(p, 'tool', act === 'mining' ? 'tool:pickaxe' : act === 'cutting' ? 'tool:knife' : null);
+      if (tool) looks[tool].setMatrixAt(p.wornAt.tool, _mChain);
+    }
     if (closed) _mChain.scale(FIST);
     if (i === followIdx) p.handOpen = !closed;
-    personParts.hand.setMatrixAt(i * 2 + side, _mChain);
+    personParts.hand.setMatrixAt(i * 2 + side, _mFit.copy(_mChain).scale(fit.hand));
     nearJoint(nearParts?.wrist?.[side], i, _mChain);
     if (nearParts && i === followIdx && P.view === 'follow' && !closed) {
       /* Four fingers and a thumb, hung off the hand's own matrix. Two hands is
@@ -1423,19 +1454,19 @@ export function writePerson(p, i) {
     _mLocal.makeRotationX(leg);
     _mLocal.setPosition(dir * hipX, 0, 0);
     _mUpper.multiplyMatrices(_mBody, _mLocal);
-    personParts.thigh.setMatrixAt(i * 2 + side, _mUpper);
+    personParts.thigh.setMatrixAt(i * 2 + side, _mFit.copy(_mUpper).scale(fit.thigh));
 
     _mOff.makeRotationX(knee);
     _mOff.setPosition(0, -S.thigh[1], 0);
     _mLower.multiplyMatrices(_mUpper, _mOff);
-    personParts.shin.setMatrixAt(i * 2 + side, _mLower);
+    personParts.shin.setMatrixAt(i * 2 + side, _mFit.copy(_mLower).scale(fit.shin));
     nearJoint(nearParts?.knee?.[side], i, _mLower);
 
     // Undo both joints so the sole stays parallel to the ground it is on.
     _mOff.makeRotationX(-(leg + knee));
     _mOff.setPosition(0, -S.shin[1], 0);
     _mChain.multiplyMatrices(_mLower, _mOff);
-    personParts.foot.setMatrixAt(i * 2 + side, _mChain);
+    personParts.foot.setMatrixAt(i * 2 + side, _mFit.copy(_mChain).scale(fit.foot));
   }
 
   if (p.hasSpear) {
@@ -1445,26 +1476,6 @@ export function writePerson(p, i) {
     personParts.spear.setMatrixAt(i, _mChain);
   } else {
     personParts.spear.setMatrixAt(i, HIDDEN);
-  }
-
-  /* And the face, on whoever you are behind. Placed in the head's own space, so
-     it carries the build, the crouch, the bob of the walk and which way they are
-     looking without any of that being worked out twice. */
-  if (nearParts && i === followIdx && P.view === 'follow') {
-    const H = S.head;
-    const put = (mesh, x, y, z) => {
-      _mLocal.makeTranslation(x, y, z);
-      mesh.matrixAutoUpdate = false;
-      mesh.matrix.multiplyMatrices(_mHead, _mLocal);
-      mesh.visible = true;
-    };
-    // Eyes two thirds up the face and a little proud of it, so they catch light.
-    put(nearParts.eyeL, -H[0] * 0.22, H[1] * 0.10, H[2] * 0.46);
-    put(nearParts.eyeR, H[0] * 0.22, H[1] * 0.10, H[2] * 0.46);
-    put(nearParts.browL, -H[0] * 0.22, H[1] * 0.22, H[2] * 0.44);
-    put(nearParts.browR, H[0] * 0.22, H[1] * 0.22, H[2] * 0.44);
-    put(nearParts.mouth, 0, -H[1] * 0.20, H[2] * 0.46);
-    nearShown = true;
   }
 
   if (p.carry) {
@@ -1479,23 +1490,42 @@ export function writePerson(p, i) {
        of the food. */
     const key = bagKind(p.bag) || LOAD_FOR_JOB[p.job] || 'berries';
     const kind = LOADS[key];
-    if (kind.basket) {
+    /* Food is the library's cargo — fruit, a catch, cuts of meat — heaped in
+       the basket, and a rabbit or a boar is carried whole in the arms. Stone,
+       ore and wood are this world's own and keep the heap they always had.
+       A change of load is taken off and put on again, so it comes in its own
+       colour: the same fruit heap is berries when it is darker. */
+    const cargo = cargoKey(key, p.bag);
+    if (p.loadKind !== key) wear(p, 'cargo', null);
+    const worn = wear(p, 'cargo', cargo);
+    // Heaped to how full it is, and never so low it sinks below the rim.
+    const full = clamp(p.haul / BASKET_FULL, 0.45, 1.15);
+    if (worn === 'cargo:animal') {
+      personParts.basket.setMatrixAt(i, HIDDEN);
+      personParts.load.setMatrixAt(i, HIDDEN);
+      _mLocal.makeTranslation(0, S.shoulderY + BASKET_AT.y + 0.10, BASKET_AT.z);
+      _mChain.multiplyMatrices(_mTorso, _mLocal);
+      looks[worn].setMatrixAt(p.wornAt.cargo, _mChain.scale(_sLoad.setScalar(animalSize(p.bag))));
+    } else if (kind.basket || worn) {
       _mLocal.makeTranslation(0, S.shoulderY + BASKET_AT.y, BASKET_AT.z);
       _mChain.multiplyMatrices(_mTorso, _mLocal);
       personParts.basket.setMatrixAt(i, _mChain);
-      // Heaped to how full it is, and never so low it sinks below the rim.
-      const full = clamp(p.haul / BASKET_FULL, 0.45, 1.15);
       _mLocal.makeTranslation(0, S.shoulderY + BASKET_AT.y + BASKET_AT.rim, BASKET_AT.z);
       _mChain.multiplyMatrices(_mTorso, _mLocal);
-      _sLoad.set(kind.scale.x, kind.scale.y * full, kind.scale.z);
-      _mChain.scale(_sLoad);
+      if (worn) {
+        looks[worn].setMatrixAt(p.wornAt.cargo, _mChain.scale(_sLoad.setScalar(0.75 + 0.25 * Math.min(full, 1))));
+        personParts.load.setMatrixAt(i, HIDDEN);
+      } else {
+        _sLoad.set(kind.scale.x, kind.scale.y * full, kind.scale.z);
+        personParts.load.setMatrixAt(i, _mChain.scale(_sLoad));
+      }
     } else {
       personParts.basket.setMatrixAt(i, HIDDEN);
       _mLocal.makeTranslation(0, S.shoulderY + 0.04, -0.10);
       _mChain.multiplyMatrices(_mTorso, _mLocal);
       _mChain.scale(kind.scale);
+      personParts.load.setMatrixAt(i, _mChain);
     }
-    personParts.load.setMatrixAt(i, _mChain);
     /* Only when it changes hands. The colour of a load is a fact about the
        errand, not about the frame, and writing it every frame is an upload of
        the whole instance colour buffer for every carrier in the world. */
@@ -1507,6 +1537,7 @@ export function writePerson(p, i) {
   } else {
     personParts.basket.setMatrixAt(i, HIDDEN);
     personParts.load.setMatrixAt(i, HIDDEN);
+    wear(p, 'cargo', null);
     p.loadKind = null;
   }
 }
@@ -1539,6 +1570,9 @@ export const BASKET_AT = { y: -0.36, z: 0.28, rim: 0.07 };
 export const BASKET_FULL = 0.8;
 export const _cLoad = new THREE.Color();
 const _sLoad = new THREE.Vector3();
+/* A limb's matrix widened for its build, written without widening the chain the
+   next piece hangs from. */
+const _mFit = new THREE.Matrix4();
 
 /* A closed hand: shorter, thicker, squarer. The box is the same box. */
 export const FIST = new THREE.Vector3(1.25, 0.72, 1.45);
@@ -1860,6 +1894,7 @@ export function rebuildPeople() {
       personParts[key].geometry.dispose();
     }
   }
+  clearLooks();
   people.length = 0;
   setPersonParts(null);
   buildPeople(P.counts.people | 0);

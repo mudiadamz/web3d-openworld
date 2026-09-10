@@ -281,7 +281,6 @@ export const PERSON = {
      base of the skull the model hangs it from. */
   headY: MODEL.headCentre[1] - MODEL.hip[1], head: HEAD,
   headDrop: MODEL.headCentre[1] - MODEL.headBase[1],
-  hair: [HEAD[0] * 1.08, 0.085, HEAD[2] * 1.08],
   spear: [0.045, 2.1, 0.045],
   load: [0.30, 0.11, 0.26],       // the heap: across, high, deep
   basket: [0.19, 0.15, 0.17],     // the basket: rim, base, height
@@ -296,7 +295,7 @@ export const PERSON = {
 export const SHIN_MAX = 1.35;
 
 export const PERSON_PARTS = {
-  torso: 1, torsoF: 1, neck: 1, head: 1, hair: 1,
+  neck: 1, head: 1,
   upperArm: 2, foreArm: 2, hand: 2,
   thigh: 2, shin: 2, foot: 2,
   spear: 1, load: 1, basket: 1,

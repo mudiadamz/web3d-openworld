@@ -1213,8 +1213,9 @@ let bodyReport = 'not checked';
      reading a hidden slot measures a body of all noughts. */
   let sample = 0;
   {
-    const m = part.torso?.instanceMatrix.array;
-    for (let k = 0; k < (part.torso?.count || 0); k++) {
+    // The head: one a person, in their slot. The torso is a hide in the wardrobe now.
+    const m = part.head?.instanceMatrix.array;
+    for (let k = 0; k < (part.head?.count || 0); k++) {
       if (m && m[k * 16] !== 0) { sample = k; break; }
     }
   }
@@ -1229,10 +1230,10 @@ let bodyReport = 'not checked';
     const b = idx * 16;
     return { x: m[b + 12], y: m[b + 13], z: m[b + 14] };
   };
-  const torso = at('torso'), head = at('head'), neck = at('neck');
+  const head = at('head'), neck = at('neck');
   const hip = at('thigh'), knee = at('shin'), foot = at('foot');
   const shoulder = at('upperArm'), elbow = at('foreArm'), hand = at('hand');
-  const have = [torso, head, neck, hip, knee, foot, shoulder, elbow, hand];
+  const have = [head, neck, hip, knee, foot, shoulder, elbow, hand];
   check('every piece of the first person has a place', have.every(Boolean),
     have.map((h, i) => (h ? '' : i)).filter(String).join(','));
 
@@ -1477,7 +1478,9 @@ let travelReport = 'not measured';
 {
   let torso = null;
   globalThis.__scene?.traverse((o) => {
-    if (o.isInstancedMesh && o.name === 'person-torso') torso = o;
+    /* The head, now that the torso is a hide in its own packed list: the head is
+       still one instance per person, in their slot, zeroed when they are out of sight. */
+    if (o.isInstancedMesh && o.name === 'person-head') torso = o;
   });
   const at = (i) => { const b = i * 16, m = torso.instanceMatrix.array; return [m[b + 12], m[b + 14]]; };
   const n = Math.min(torso.count, 30);
@@ -2995,11 +2998,18 @@ if (chronicleModule?.keepFocus && chronicleModule.restoreFocus && livePeople.len
    room doubles, every piece is the new size, and what was already drawn is
    still where it was.
    ------------------------------------------------------------------------- */
-if (peopleModule?.growPeople && lifeModule && peopleModule.personParts?.torso) {
+if (peopleModule?.growPeople && lifeModule && peopleModule.personParts?.head) {
   const PP = peopleModule.personParts;
+  const LK = await import(pathToFileURL(join(stubDir, 'looks.js')).href);
   const was = lifeModule.peopleCapacity;
-  const before = Array.from(PP.torso.instanceMatrix.array.slice(0, 16));
-  const drawn = PP.torso.count;
+  // The head: one a person, in their slot. The torso is the wardrobe's now.
+  const before = Array.from(PP.head.instanceMatrix.array.slice(0, 16));
+  const drawn = PP.head.count;
+  /* And the wardrobe, which grows alongside: the first of its meshes with
+     anybody in it, and where its first wearer was. */
+  const worn = Object.values(LK.looks || {}).find((m) => m.count > 0);
+  const wornName = worn?.name, wornCount = worn?.count;
+  const wornBefore = worn ? Array.from(worn.instanceMatrix.array.slice(0, 16)) : [];
   peopleModule.growPeople(was + 1);
   const now = lifeModule.peopleCapacity;
   check('a band that fills its room is given twice as much', now === was * 2, `${was} -> ${now}`);
@@ -3008,9 +3018,15 @@ if (peopleModule?.growPeople && lifeModule && peopleModule.personParts?.torso) {
       || k === 'hand' || k === 'thigh' || k === 'shin' || k === 'foot' ? 2 : 1)),
     Object.entries(PP).map(([k, m]) => `${k} ${m.instanceMatrix.count}`).join(' '));
   check('and what was drawn is still where it was, and still drawn',
-    PP.torso.count === drawn
-    && before.every((v, i) => Math.abs(v - PP.torso.instanceMatrix.array[i]) < 1e-6),
-    `count ${drawn} -> ${PP.torso.count}`);
+    PP.head.count === drawn
+    && before.every((v, i) => Math.abs(v - PP.head.instanceMatrix.array[i]) < 1e-6),
+    `count ${drawn} -> ${PP.head.count}`);
+  const grown = Object.values(LK.looks || {}).find((m) => m.name === wornName);
+  check('and the wardrobe grows with it, keeping who is wearing what',
+    Object.values(LK.looks || {}).every((m) => m.instanceMatrix.count >= now)
+    && Boolean(grown) && grown.count === wornCount
+    && wornBefore.every((v, i) => Math.abs(v - grown.instanceMatrix.array[i]) < 1e-6),
+    `${wornName}: ${wornCount} worn -> ${grown?.count}`);
 }
 
 /* -------------------------------------------------------------------------
@@ -3027,18 +3043,37 @@ if (peopleModule?.personParts?.basket && moveModule?.writePerson && livePeople.l
     const e = mesh.instanceMatrix.array;
     return Math.hypot(e[0], e[1], e[2]);
   };
+  /* What is in the basket is the wardrobe's now: the library's cargo, in a mesh
+     holding only the people carrying it. Their instance is wherever they are in
+     its list. */
+  const LK = await import(pathToFileURL(join(stubDir, 'looks.js')).href);
+  const cargo = () => {
+    const key = p.worn?.cargo;
+    if (!key) return { key: null, scale: 0 };
+    const e = LK.looks[key].instanceMatrix.array, b = p.wornAt.cargo * 16;
+    return { key, scale: Math.hypot(e[b], e[b + 1], e[b + 2]) };
+  };
   const was = { carry: p.carry, bag: p.bag, haul: p.haul, loadKind: p.loadKind };
   Object.assign(p, { carry: 1, haul: 0.6, bag: { fruit: 10, berries: 0, fish: 0, game: 0, animal: null } });
   moveModule.writePerson(p, 0);
-  const withFruit = scaleOf(PP.basket), heap = scaleOf(PP.load);
+  const withFruit = scaleOf(PP.basket), fruit = cargo();
   Object.assign(p, { haul: 20, bag: { fruit: 0, berries: 0, fish: 0, game: 1, animal: 'deer' } });
   moveModule.writePerson(p, 0);
-  const withDeer = scaleOf(PP.basket), carcass = scaleOf(PP.load);
+  const withDeer = scaleOf(PP.basket), meat = cargo();
+  Object.assign(p, { haul: 2, bag: { fruit: 0, berries: 0, fish: 0, game: 1, animal: 'rabbit' } });
+  moveModule.writePerson(p, 0);
+  const withRabbit = scaleOf(PP.basket), rabbit = cargo();
   Object.assign(p, was);
   check('somebody bringing fruit home has a basket in their hands, with the fruit in it',
-    withFruit > 0.01 && heap > 0.01, `basket ${withFruit.toFixed(3)} heap ${heap.toFixed(3)}`);
-  check('and somebody bringing a deer home carries it without one',
-    withDeer < 1e-6 && carcass > 0.01, `basket ${withDeer.toFixed(3)} load ${carcass.toFixed(3)}`);
+    withFruit > 0.01 && fruit.key === 'cargo:fruit' && fruit.scale > 0.01,
+    `basket ${withFruit.toFixed(3)} ${fruit.key} ${fruit.scale.toFixed(3)}`);
+  /* A deer is too big to carry whole; it comes home as meat, in the basket. */
+  check('and somebody bringing a deer home brings it as meat, in the basket',
+    withDeer > 0.01 && meat.key === 'cargo:meat' && meat.scale > 0.01,
+    `basket ${withDeer.toFixed(3)} ${meat.key} ${meat.scale.toFixed(3)}`);
+  check('and a rabbit whole, in the arms, with no basket',
+    withRabbit < 1e-6 && rabbit.key === 'cargo:animal' && rabbit.scale > 0.01,
+    `basket ${withRabbit.toFixed(3)} ${rabbit.key} ${rabbit.scale.toFixed(3)}`);
 }
 
 /* -------------------------------------------------------------------------
@@ -3407,8 +3442,10 @@ if (peopleModule?.nearParts && livePeople.length) {
      while ten fingers stay on the world. */
   const parts = [];
   peopleModule.eachNearPart((m) => parts.push(m));
-  check('a face is built with the world', parts.length >= 5);
-  check('and the joints and fingers with it', parts.length >= 20,
+  /* The face is on everybody now (the wardrobe), so the set is the joints and
+     the fingers: six and ten. */
+  check('the near set is built with the world', parts.length >= 5);
+  check('and the joints and fingers with it', parts.length >= 16,
     `${parts.length} pieces in the near set`);
 
   /* Out of Follow it belongs to nobody. */
@@ -3429,14 +3466,20 @@ if (peopleModule?.nearParts && livePeople.length) {
   faceReport = `${worn} of ${parts.length} pieces on ${p ? p.name : 'nobody'}`;
   check('and is on them once you are', worn >= 5 && Boolean(p), faceReport);
   if (p) {
-    /* On the head, not near it. The eyes hang off the head's own matrix, so
-       this is the check that the matrix they hang off is the right one. */
-    const eye = face.eyeL;
-    eye.updateMatrixWorld(true);
-    const at = new (Object.getPrototypeOf(eye.position).constructor)();
-    at.setFromMatrixPosition(eye.matrixWorld);
-    const off = Math.hypot(at.x - p.x, at.z - p.z);
-    check('and on their head rather than somewhere near them', off < 1,
+    /* On the head, not near it. The face is the wardrobe's now and on
+       everybody, hung off the head's own matrix, so this is the check that the
+       matrix it hangs off is the right one: find the face mesh they are in and
+       read their instance of it. */
+    let off = Infinity;
+    globalThis.__scene?.traverse((o) => {
+      const who = o.isInstancedMesh && o.name.startsWith('look-face:') ? o.userData.who : null;
+      const at = who ? who.indexOf(p) : -1;
+      if (at >= 0) {
+        const m = o.instanceMatrix.array;
+        off = Math.hypot(m[at * 16 + 12] - p.x, m[at * 16 + 14] - p.z);
+      }
+    });
+    check('and their face on their head rather than somewhere near them', off < 1,
       `${off.toFixed(2)}m from the person wearing it`);
   }
 
@@ -3460,7 +3503,7 @@ if (peopleModule?.nearParts && livePeople.length) {
     const shut = pose({ carry: 1, hasSpear: false, state: 'goto' });
     check('an open hand has fingers on it', open > shut,
       `${open} pieces open, ${shut} closed`);
-    check('and a full one is a fist, with none', shut === 11,
+    check('and a full one is a fist, with none', shut === 6,
       `${shut} pieces on a closed hand`);
   }
 

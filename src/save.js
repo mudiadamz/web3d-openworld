@@ -158,7 +158,6 @@ export function personFromRecord(r) {
     sex: r.k === 'adultA' ? 'm' : r.k === 'adultB' ? 'f' : r.k,
     child: true, name: r.n, born: r.b,
     adultScale: r.as, adultShoulder: r.ash, adultHip: r.ahp, adultHead: r.ahd,
-    adultHair: BUILDS[r.k === 'adultA' ? 'm' : r.k === 'adultB' ? 'f' : r.k]?.hair ?? 1,
     x: r.x, z: r.z, yaw: r.y, speed: 0, phase: Math.random() * Math.PI * 2,
     scale: r.as, shoulder: r.ash, hip: r.ahp, headScale: r.ahd,
     state: r.s || 'idle', job: r.j || 'tend', timer: Math.random() * 5,

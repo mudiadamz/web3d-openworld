@@ -4,8 +4,10 @@ What [humans-threejs](https://github.com/mudiadamz/humans-threejs) has to change
 for its body to be fitted to this repo's people.
 
 > **Status:** items 1–7 shipped in humans-threejs `aae2d2c` and the body is
-> fitted: `src/human-parts.js` is that commit's export, byte for byte. Items 8
-> (accessory shapes) and 9 (a fist) are still open.
+> fitted: `src/human-parts.js` is that commit's export, byte for byte. Item 8
+> (accessory shapes) is done on this side instead: `src/looks.js` ports the
+> builds, hide, hair, faces, cargo and tools from `create-humans.js`. Exported as
+> data upstream it could be vendored like the body. Item 9 (a fist) is open.
 
 Measured against humans-threejs `e3ddeda`, the male GLB unless stated. All
 heights are from the grounded soles. Metres, +Y up, +Z forward.

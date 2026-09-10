@@ -7,6 +7,7 @@ import { HIDDEN, _c, _e, _m4, _q, _s, _v, stats, world } from './world.js';
 import { recordPerson, setLineage, tribeVoice, uniqueName, usedCodes, usedNames } from './wildlife.js';
 import { PERSON, PERSON_PARTS, partsPer } from './clock.js';
 import { HUMAN_PARTS } from './human-parts.js';
+import { buildLooks, clearLooks, growLooks, undressAll } from './looks.js';
 import {
   FOOD, LIFE, chiefOf, emptySkills, hidePeopleFrom, nearestShore, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay
 } from './life.js';
@@ -65,15 +66,17 @@ export function roundLimb(w, h, d) {
    is 1.67 / 1.735 of what it was: the same people, the same heights, a
    different body. Shoulder and hip are 1 for a grown man or woman because the
    difference between them is in the model's joints now (PERSON.armXF, hipXF);
-   what is left is a child being narrower than the adult they grow into. */
+   what is left is a child being narrower than the adult they grow into. Hair
+   is not here any more: it is a style, one of the library's (looks.js). */
 export const BUILDS = {
-  m:     { scale: [0.963, 1.030], shoulder: 1.00, hip: 1.00, head: 1.00, hair: 0.85 },
-  f:     { scale: [0.886, 0.943], shoulder: 1.00, hip: 1.00, head: 1.00, hair: 4.20 },
-  child: { scale: [0.558, 0.731], shoulder: 0.95, hip: 0.98, head: 1.18, hair: 1.20 },
+  m:     { scale: [0.963, 1.030], shoulder: 1.00, hip: 1.00, head: 1.00 },
+  f:     { scale: [0.886, 0.943], shoulder: 1.00, hip: 1.00, head: 1.00 },
+  child: { scale: [0.558, 0.731], shoulder: 0.95, hip: 0.98, head: 1.18 },
 };
 
-export const SKIN = [0x8d5a3b, 0x6f4429, 0xa9754c, 0x5a3620, 0xc08a5e, 0x7b4e33];
-export const GARMENT = [0x7a6248, 0x8e7355, 0x5f5340, 0x9a7f5c, 0x6b543c, 0xa08a63];
+/* humans-threejs's eight skin tones, light to dark, and its five hides. */
+export const SKIN = [0xf3d6c4, 0xe9bfa5, 0xd9a382, 0xc58b65, 0xac704e, 0x8b5438, 0x633c2b, 0x40271f];
+export const GARMENT = [0x967047, 0xb18a59, 0x715039, 0xc2a174, 0x806044];
 export const HAIR = [0x181310, 0x2b1d14, 0x3d2a1a, 0x4a3626];
 
 // Unlit on purpose: a flame is a light source, not a lit surface, and a Lambert
@@ -94,6 +97,7 @@ export function clearTribe() {
   usedCodes.clear();
   camps.length = 0;
   people.length = 0;
+  clearLooks();
   personParts = null;
   campParts = null;
   smoke = null;
@@ -1171,15 +1175,10 @@ export function paintPerson(i, p) {
   }
   /* Whoever leads is wearing it. A camp is a dozen figures the same size doing
      the same things, and finding out which one is in charge meant opening a
-     panel — so the chief gets ochre on the shoulders and a band round the head,
-     and you can pick them out of a crowd from the ridge. Repainted whenever the
-     band changes, which is when a chief can change. */
-  const leads = p.camp && p.camp.chief === p.id;
-  personParts.torso.setColorAt(i, leads
-    ? _c.setHex(CHIEF_CLOTH)
-    : _c.setHex(p.garment).multiplyScalar(p.garmentShade));
-  personParts.torsoF.setColorAt(i, _c);    // the same cloth, whichever they have
-  personParts.hair.setColorAt(i, leads ? _c.setHex(CHIEF_BAND) : _c.setHex(p.hairColor));
+     panel — so the chief's hide is ochre and there is a band round the head,
+     and you can pick them out of a crowd from the ridge. Both are the
+     wardrobe's (looks.js), coloured as they are put on — and everybody is
+     undressed whenever the band changes, which is when a chief can change. */
   personParts.spear.setColorAt(i, _c.setHex(0x6b5334));
   personParts.load.setColorAt(i, _c.setHex(0x7b6a45));
   personParts.basket.setColorAt(i, _c.setHex(0x9a7446));   // wicker
@@ -1223,6 +1222,7 @@ export function growPeople(need) {
     tribeGroup.add(m);
     personParts[key] = m;
   }
+  growLooks(room);
   setPeopleCapacity(room);
 }
 
@@ -1238,6 +1238,7 @@ export function paintPeople() {
      — the band changed — and both used to be settled only when somebody opened
      a panel and asked. */
   dressCamps();
+  undressAll(people);
   for (let i = 0; i < people.length && i < peopleCapacity; i++) paintPerson(i, people[i]);
   for (const key in personParts) {
     if (personParts[key].instanceColor) personParts[key].instanceColor.needsUpdate = true;
@@ -1284,14 +1285,11 @@ export function buildPeople(count) {
     g.setAttribute('normal', new THREE.BufferAttribute(HUMAN_PARTS[key].normals.slice(), 3));
     return g;
   };
-  /* Two torsos, because that is where a man and a woman differ. Every limb is
-     the same shape on both; where it hangs from is the difference. */
-  const torsoGeo = body('torsoMale');
-  const torsoFGeo = body('torsoFemale');
+  /* No torso: nobody is seen without the hide, which is cut from the model's
+     two torsos and worn over where they would be (looks.js). */
   const neckGeo = body('neck');
   // From the base of the skull to its middle, which is where the rig holds it.
   const headGeo = body('head').translate(0, -p.headDrop, 0);
-  const hairGeo = roundBox(...p.hair);
   const upperArmGeo = body('upperArm');
   const foreArmGeo = body('forearm');
   const handGeo = body('hand');
@@ -1338,7 +1336,7 @@ export function buildPeople(count) {
   setPeopleCapacity(Math.max(count, PEOPLE_ROOM));
   const n = peopleCapacity;
   const GEOMETRY = {
-    torso: torsoGeo, torsoF: torsoFGeo, neck: neckGeo, head: headGeo, hair: hairGeo,
+    neck: neckGeo, head: headGeo,
     upperArm: upperArmGeo, foreArm: foreArmGeo, hand: handGeo,
     thigh: thighGeo, shin: shinGeo, foot: footGeo,
     spear: spearGeo, load: loadGeo, basket: basketGeo,
@@ -1354,6 +1352,8 @@ export function buildPeople(count) {
     tribeGroup.add(m);
     personParts[key] = m;
   }
+  // And everything the body is dressed in, as much room again.
+  buildLooks(tribeGroup, n);
 
   const rng = mulberry32(P.seed ^ 0x77aa1234);
   for (let i = 0; i < count; i++) {
@@ -1428,11 +1428,6 @@ export function buildNearParts() {
     tribeGroup.add(m);
     return m;
   };
-  /* Eyes are the whole of a face at this size. A mouth is a line and a brow is
-     a shadow; the eyes are what make a head look at you. */
-  const eye = new THREE.SphereGeometry(S.head[0] * 0.085, 6, 5);
-  const brow = roundBox(S.head[0] * 0.30, S.head[1] * 0.035, S.head[2] * 0.06);
-  const mouth = roundBox(S.head[0] * 0.28, S.head[1] * 0.028, S.head[2] * 0.05);
   /* A joint is a ball at the seam between two capsules, sized off the thinner
      of the two so it never stands proud of the limb it belongs to. */
   const ball = (w) => new THREE.SphereGeometry(w * 0.5, 7, 5);
@@ -1444,9 +1439,6 @@ export function buildNearParts() {
     thumb: mk(thumb, skin),
   });
   nearParts = {
-    eyeL: mk(eye, 0x241c16), eyeR: mk(eye, 0x241c16),
-    browL: mk(brow, 0x3a2c22), browR: mk(brow, 0x3a2c22),
-    mouth: mk(mouth, 0x4a3128),
     /* Two of each, indexed by side the way every other limb is. */
     elbow: [mk(ball(S.foreArm[0]), skin), mk(ball(S.foreArm[0]), skin)],
     wrist: [mk(ball(S.hand[0] * 0.9), skin), mk(ball(S.hand[0] * 0.9), skin)],
