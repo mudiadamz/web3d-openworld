@@ -372,6 +372,36 @@ export const FORGET_WORDS = {
   sewing: 'sew a hide into anything that fits',
 };
 
+/* How each is learned, for the band card: where the practice happens and what
+   it needs. Every one of them is practice — a band gets better at a thing by
+   doing it, the one doing it learns it too, children grow up with most of what
+   the band knows, and no band gets further than a little past what its best
+   living hand remembers. Read off where `practise` is called; the two levels
+   written in are checked against FARM and CONQUEST by test.js. */
+export const SKILL_HOW = {
+  spears: 'at the fire, more when hungry',
+  baskets: 'at the fire, more when hungry',
+  drying: 'at the fire, when the store is full',
+  herbs: 'at the fire, while people are ill',
+  tracking: 'at the fire, more when hungry',
+  fire: 'at the fire, when the band is fed',
+  rites: 'burying the dead, and going back to the graves',
+  art: 'going back to the graves, once there is a graveyard',
+  wares: 'at the fire, when the band is fed',
+  trade: 'visiting other bands, and more when food or stone changes hands',
+  mining: 'trips to an outcrop',
+  tools: 'at the fire, with quarried stone in the pile',
+  war: 'raiding, or being raided',
+  fishing: 'fishing, from the bank or from a raft',
+  woodcraft: 'cutting wood at a tree',
+  irrigation: 'digging ditches and carrying water at the band\'s field',
+  farming: 'working the field, once watering is at 50/100',
+  building: 'at the fire, when the band is fed',
+  stonework: 'at the graveyard, with quarried stone in the pile',
+  conquest: 'winning raids once war is at 50/100, and taking villages',
+  clothing: 'at the fire, most in the autumn',
+};
+
 /* Which rung a mastery is standing on, given the rung it was last said to be
    on. Pulled out of announceSkill because the restore needs the same answer
    without saying anything: `told` is derived from `skill` and is not saved, so

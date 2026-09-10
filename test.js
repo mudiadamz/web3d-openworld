@@ -4625,13 +4625,30 @@ check('and it still counts the people on it',
    interesting is watching one climb while the others do not.
    ------------------------------------------------------------------------- */
 check('the card lists the skills one to a row, in a table like the rest of it',
-  /<table class="skills"><thead><tr><th>skill<\/th><th>acquired<\/th><th>level<\/th><\/tr><\/thead>/.test(html)
+  /<table class="skills"><thead><tr><th>skill<\/th><th>acquired<\/th><th>level<\/th><th>how it is learned<\/th><\/tr><\/thead>/.test(html)
   && /<tr><td class="n">\$\{SKILLS\[k\]\.of\}<\/td>/.test(html)
   && /#tribeList table, #tribeHead table \{/.test(html));
 check('with the number on it, out of a hundred',
   /<td>\$\{pct\}<span>\/100<\/span><\/td>/.test(html));
 check('and the rung it is on, in words',
-  /<td class="n">\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/td><\/tr>/.test(html));
+  /<td class="n">\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/td><td class="n how">\$\{SKILL_HOW\[k\] \|\| ''\}<\/td><\/tr>/.test(html));
+/* And how each is learned, because a number going up says that it is and not
+   what would make it go up faster. */
+{
+  const how = (html.match(/SKILL_HOW = \{([\s\S]*?)\n\};/) || [, ''])[1];
+  const said = Object.fromEntries([...how.matchAll(/^\s{2}(\w+): '((?:[^'\\]|\\.)*)',/gm)].map((m) => [m[1], m[2]]));
+  const skills = [...(html.match(/SKILLS = \{([\s\S]*?)\n\};/) || [, ''])[1]
+    .matchAll(/^\s{2}(\w+): \{ label:/gm)].map((m) => m[1]);
+  const missing = skills.filter((k) => !said[k]);
+  check('every skill says how it is learned', skills.length > 20 && missing.length === 0,
+    missing.length ? `nothing for ${missing.join(', ')}` : `${skills.length} skills`);
+  const num = (re) => Number((html.match(re) || [])[1]);
+  const at = (v) => `${Math.round(v * 100)}/100`;
+  check('and the two levels it names are the ones the code uses',
+    said.farming?.includes(`watering is at ${at(num(/irrigateFirst: ([\d.]+)/))}`)
+    && said.conquest?.includes(`war is at ${at(num(/warFirst: ([\d.]+)/))}`),
+    `${said.farming} / ${said.conquest}`);
+}
 check('and no bar: the number says it', (() => {
   const card = html.slice(html.indexOf('function renderTribeCard'), html.indexOf('function showKeys'));
   return !card.includes('class="sk"') && !card.includes('--v:') && !html.includes('.skillRow');

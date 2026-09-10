@@ -11,6 +11,7 @@ import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from '.
 import {
   FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood, wealthOf, energyOutOfTen, isMilestone, milestonesOnly, personAge, simDay, skillTier, runId, tollOf, traitWord, who
 } from './life.js';
+import { SKILL_HOW } from './skills.js';
 import { fruitNear } from './orchard.js';
 import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
 import { ORES, depositRadius, deposits } from './quarries.js';
@@ -253,7 +254,7 @@ export function renderTribeCard() {
     const v = camp.skill[k] || 0;
     const pct = Math.round(v * 100);
     return `<tr><td class="n">${SKILLS[k].of}</td><td>${pct}<span>/100</span></td>`
-      + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td></tr>`;
+      + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td><td class="n how">${SKILL_HOW[k] || ''}</td></tr>`;
   }).join('');
 
   /* A tribe of more than one village, and what a taken village used to be. */
@@ -299,7 +300,7 @@ export function renderTribeCard() {
   if (lineageShown && tribeTab !== lineageTab) lineageShown = 0;
   if (lineageShown) { $('tribeList').innerHTML = lineageView(lineageShown); return; }
   if (tribeTab === 'skills') {
-    $('tribeList').innerHTML = `<table class="skills"><thead><tr><th>skill</th><th>acquired</th><th>level</th></tr></thead>`
+    $('tribeList').innerHTML = `<table class="skills"><thead><tr><th>skill</th><th>acquired</th><th>level</th><th>how it is learned</th></tr></thead>`
       + `<tbody>${skills}</tbody></table>`;
     return;
   }
