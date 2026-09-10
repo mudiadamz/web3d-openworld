@@ -24,7 +24,7 @@ import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
 import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
-import { STAGES } from './society.js';
+import { STAGES, developmentOf } from './society.js';
 
 /* -------------------------------------------------------------------------
    Food, and hunts that actually catch something
@@ -173,23 +173,31 @@ export function renderTribes(now = 0) {
   if (now && now < nextTribeDraw) return;
   nextTribeDraw = now + 0.5;
 
-  /* A colour, a code, a name and how many. Nothing else.
+  /* A colour, a code, a name, how many, and how far they have come.
 
      It used to carry the sex split, the children, the days of food, three skill
      bars and the toll with its causes, on every row. That is a good paragraph
      about one band and an unreadable wall about twenty — and all of it is on
      the band card already, which is one click away and has room to lay it out.
-     A list you scan and a card you read are different jobs. */
-  el.innerHTML = camps.map((c, i) => {
-    /* A band that has died out keeps its camp in the world — the tents, the
-       granaries, the stones — but not its row here: a list of the living is
-       what this is for, and the record of the dead is the chronicle's. */
-    if (c.gone) return '';
+     A list you scan and a card you read are different jobs.
+
+     The one number it does carry is the one a list is for: development out of
+     a hundred (society.js), and the rows are ranked by it, so the band that has
+     come furthest is at the top. The dot keeps its band's colour and the row
+     keeps its band's index, so the chart and a click still mean the same band. */
+  /* A band that has died out keeps its camp in the world — the tents, the
+     granaries, the stones — but not its row here: a list of the living is what
+     this is for, and the record of the dead is the chronicle's. */
+  const rows = [];
+  camps.forEach((c, i) => { if (!c.gone) rows.push({ c, i, dev: developmentOf(c) }); });
+  rows.sort((x, y) => y.dev - x.dev || x.i - y.i);
+  el.innerHTML = rows.map(({ c, i, dev }) => {
     let pop = 0;
     for (const p of people) if (p.camp === c) pop++;
     return `<div data-camp="${i}"><i style="background:${TRIBE_COLORS[i % TRIBE_COLORS.length]}"></i>`
       + `<b class="wcode" style="background:${c.color}">${c.code}</b>`
-      + `<b>${c.name}</b>${c.stage ? ` <em>${STAGES[c.stage].name}</em>` : ''} <span>${pop || 'empty'}</span></div>`;
+      + `<b>${c.name}</b>${c.stage ? ` <em>${STAGES[c.stage].name}</em>` : ''} <span>${pop || 'empty'}</span>`
+      + `<span class="dev" title="development: what they know, and how far from band to city">${dev}/100</span></div>`;
   }).join('') || '<div><span>' + (camps.length ? 'every band has died out' : 'no camps') + '</span></div>';
 
   drawTribeChart();

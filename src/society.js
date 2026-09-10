@@ -1,6 +1,7 @@
 import { P } from './params.js';
 import { camps } from './people.js';
 import { logEvent, simDay } from './life.js';
+import { SKILLS } from './skills.js';
 
 /* -------------------------------------------------------------------------
    From band to city
@@ -79,6 +80,20 @@ export const nextStage = (camp) => STAGES[(camp.stage || 0) + 1] || null;
 export function stageProgress(camp) {
   if (camp.risingSince == null || !nextStage(camp)) return 0;
   return Math.min(1, (simDay - camp.risingSince) / (SOCIETY.hold * P.yearLength));
+}
+
+/* How far a settlement has come, out of a hundred, for the panel: what it
+   knows — every skill, averaged — and how far up from band to city it has
+   climbed. Seven parts the first to three the second: the ladder is five slow
+   rungs and the skills are twenty-one that move every season, and a band that
+   has learned a great deal without settling has still come a long way. */
+export const DEVELOPMENT = { skills: 0.7, stage: 0.3 };
+export function developmentOf(camp) {
+  const s = camp.skill || {};
+  const keys = Object.keys(SKILLS);
+  const known = keys.reduce((n, k) => n + Math.min(1, Math.max(0, s[k] || 0)), 0) / keys.length;
+  const rung = (camp.stage || 0) / (STAGES.length - 1);
+  return Math.round(100 * (DEVELOPMENT.skills * known + DEVELOPMENT.stage * rung));
 }
 
 const aOr = (word) => (/^[aeiou]/.test(word) ? 'an ' : 'a ') + word;

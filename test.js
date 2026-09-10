@@ -3030,7 +3030,7 @@ check('and night and winter in the open make resting do less — for the person 
 check('every tree is kept where it stands, so one can be climbed', /treeSpots\.push\(\{ x, z \}\);/.test(html));
 
 check('the panel lists the bands still living',
-  /if \(c\.gone\) return '';/.test(html.slice(html.indexOf('function renderTribes'), html.indexOf('function drawTribeChart'))));
+  /camps\.forEach\(\(c, i\) => \{ if \(!c\.gone\) rows\.push\(/.test(html.slice(html.indexOf('function renderTribes'), html.indexOf('function drawTribeChart'))));
 
 /* -------------------------------------------------------------------------
    A ring where you pointed
@@ -7281,6 +7281,36 @@ check('and the day it is learned, what is already worn is recoloured where it is
 check('sleeves and leggings hang from the limb\'s own matrix, so they bend with it',
   /looks\[sleeve\]\.setMatrixAt\(p\.wornAt\[SLEEVES\[side\]\], _mFit\);/.test(moduleSource('move.js'))
   && /looks\[legging\]\.setMatrixAt\(p\.wornAt\[THIGHS\[side\]\], _mFit\);/.test(moduleSource('move.js')));
+
+/* -------------------------------------------------------------------------
+   Development, and the ranking
+
+   The panel carries one number beside each band: how far it has come, out of a
+   hundred — what it knows and how far up from band to city — and the rows are
+   ranked by it.
+   ------------------------------------------------------------------------- */
+group('development');
+
+{
+  const soc = moduleSource('society.js');
+  const devSrc = soc.match(/const DEVELOPMENT = \{[^}]*\};\s*function developmentOf\(camp\) \{[\s\S]*?\n\}/)[0];
+  const skillKeys = Array.from({ length: 21 }, (_, k) => 's' + k);
+  const dev = new Function('SKILLS', 'STAGES', devSrc + '\nreturn developmentOf;')(
+    Object.fromEntries(skillKeys.map((k) => [k, {}])), [0, 1, 2, 3, 4]);
+  const all = (v) => Object.fromEntries(skillKeys.map((k) => [k, v]));
+  check('a band that knows nothing and has not settled is at nothing', dev({ skill: {}, stage: 0 }) === 0);
+  check('a city that has mastered everything is at a hundred', dev({ skill: all(1), stage: 4 }) === 100);
+  check('skills weigh seven parts to the ladder\'s three',
+    dev({ skill: all(1), stage: 0 }) === 70 && dev({ skill: {}, stage: 4 }) === 30,
+    `${dev({ skill: all(1), stage: 0 })} and ${dev({ skill: {}, stage: 4 })}`);
+  check('and a skill past mastery counts as mastery, not more', dev({ skill: all(2), stage: 0 }) === 70);
+}
+check('every band in the panel carries it, out of a hundred',
+  /<span class="dev" title="[^"]*">\$\{dev\}\/100<\/span><\/div>`;/.test(html));
+check('ranked by it, the furthest on top, ties in their old order',
+  /rows\.sort\(\(x, y\) => y\.dev - x\.dev \|\| x\.i - y\.i\);/.test(html));
+check('and a row still opens its own band, and keeps its colour',
+  /data-camp="\$\{i\}"><i style="background:\$\{TRIBE_COLORS\[i % TRIBE_COLORS\.length\]\}">/.test(html));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
