@@ -9,7 +9,7 @@ import { linButton, lineageView } from './kin.js';
 import { PERSON, rateIndex, worldClock } from './clock.js';
 import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from './people.js';
 import {
-  FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood, wealthOf, energyOutOfTen, isMilestone, milestonesOnly, personAge, skillTier, runId, tollOf, traitWord, who
+  FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood, wealthOf, energyOutOfTen, isMilestone, milestonesOnly, personAge, simDay, skillTier, runId, tollOf, traitWord, who
 } from './life.js';
 import { fruitNear } from './orchard.js';
 import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
@@ -199,6 +199,17 @@ export function formerTable(camp) {
 export let lineageShown = 0;
 let lineageTab = 'now';
 
+/* How long a band has been a band: years once it has a year behind it, days
+   before that — "0 years old" reads as a band that does not exist yet, and a
+   band that split off last month very much does. */
+export function bandAge(camp) {
+  const days = Math.max(0, simDay - (camp.founded || 0));
+  const years = Math.floor(days / P.yearLength);
+  if (years >= 1) return `${years} ${years === 1 ? 'year' : 'years'}`;
+  const d = Math.floor(days);
+  return `${d} ${d === 1 ? 'day' : 'days'}`;
+}
+
 export function renderTribeCard() {
   const camp = camps[tribeShown];
   if (!camp || $('tribe').hidden) return;
@@ -245,6 +256,7 @@ export function renderTribeCard() {
   $('tribeHead').innerHTML =
     `<div>Chief <b>${chief ? chief.name : 'nobody'}</b>`
     + `${chief ? ` <span>${Math.floor(personAge(chief))}${sexMarks(chief.sex === 'f' ? '♀' : '♂')}</span>` : ''}</div>`
+    + `<div><b>${bandAge(camp)}</b> <span>old · founded on day ${Math.floor(camp.founded || 0)}</span></div>`
     + `<div><b>${folk.length}</b> <span>here</span>`
     + `${folk.length ? ` · ${sexMarks(`${women}♀ ${men}♂`)}` : ''}`
     + `${kids ? ` · ${kids} ${kids === 1 ? 'child' : 'children'}` : ''}`
@@ -258,7 +270,7 @@ export function renderTribeCard() {
        pile is the only thing here that keeps. */
     + `<div><span>worth taking</span> ${wealthOf(camp).toFixed(0)}`
     + ` <em>(${heldWords(camp)})</em></div>`
-    + `<div><span>founded day ${Math.floor(camp.founded)} · ${camp.born} born · `
+    + `<div><span>${camp.born} born · `
     + `most they were was ${camp.peak}${toll.length
         ? ` · lost ${toll.reduce((n, [, k]) => n + k, 0)}: `
           + toll.map(([k, n]) => `${n} ${TOLL_WORDS[k]}`).join(', ') : ''}</span></div>`;

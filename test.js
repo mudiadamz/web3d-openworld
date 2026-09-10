@@ -4668,6 +4668,20 @@ const obit = html.slice(html.indexOf('function obituary(camp)'),
   html.indexOf('function killPerson'));
 check('the obituary names what killed most of them', /toll\.slice\(0, 2\)/.test(obit));
 check('and how long they lasted', /simDay - \(camp\.founded \|\| 0\)\) \/ P\.yearLength/.test(obit));
+
+/* How old a band is, on its card: from the day it was founded, in years once it
+   has one, in days before — and said once, not again at the foot of the card. */
+const bandAgeFn = new Function('simDay', 'P',
+  moduleSource('chronicle.js').match(/function bandAge\(camp\) \{[\s\S]*?\n\}/)[0] + '\nreturn bandAge;');
+const ageAt = (day, founded) => bandAgeFn(day, { yearLength: 12 })({ founded });
+check('the card says how old the band is',
+  /<div><b>\$\{bandAge\(camp\)\}<\/b> <span>old · founded on day \$\{Math\.floor\(camp\.founded \|\| 0\)\}<\/span><\/div>/.test(html)
+  && !/founded day \$\{Math\.floor\(camp\.founded\)\}/.test(html));
+check('in years once it has one', ageAt(12 * 12 + 5, 0) === '12 years' && ageAt(20, 5) === '1 year',
+  `${ageAt(12 * 12 + 5, 0)}, ${ageAt(20, 5)}`);
+check('and in days before that, so a new band is not "0 years old"',
+  ageAt(40, 31) === '9 days' && ageAt(31, 30) === '1 day' && ageAt(30, 30) === '0 days',
+  `${ageAt(40, 31)}, ${ageAt(31, 30)}, ${ageAt(30, 30)}`);
 check('how many were ever born', /camp\.born/.test(obit));
 check('and the most they ever were', /camp\.peak/.test(obit));
 /* A band that never lost anybody and never existed is not an extinction. */
