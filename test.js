@@ -1468,7 +1468,7 @@ check('everybody is put in the tent they belong in',
    nought, so sixty people walked past four burning fires to stand at the
    first. */
 check('and at the fire it stands round',
-  /const fire = camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\];/.test(html));
+  /const fire = seat \? seat\.fire : camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\];/.test(html));
 check('and that happens whenever the band changes', (() => {
   const i = html.indexOf('function dressCamp');
   return i > 0 && /assignHuts\(camp\);/.test(html.slice(i, i + 900));
@@ -2030,7 +2030,7 @@ check('the defaults are the numbers that were hard-coded', (() => {
 })() === true);
 check('before that, anybody still out keeps the clock honest',
   /if \(p\.asleep\) continue;/.test(html)
-  && /Math\.hypot\(p\.x - p\.camp\.x, p\.z - p\.camp\.z\) > CAMP_CLEARING\) return false;/.test(html));
+  && /Math\.hypot\(p\.x - p\.camp\.x, p\.z - p\.camp\.z\) > campReach\(p\.camp\)\) return false;/.test(html));
 check('an empty world does not wait for nobody', /if \(!people\.length\) return true;/.test(html));
 /* -------------------------------------------------------------------------
    The night is run, not stretched
@@ -5553,7 +5553,7 @@ check('a camp has room for a tent per household, many times over',
   /HEARTHS \* HUTS_PER_HEARTH/.test(villageSrc)
   && /const HEARTHS = 5/.test(villageSrc) && /const HUTS_PER_HEARTH = 10/.test(villageSrc));
 check('and a tent is what a household gets — one, whatever its size',
-  /families\.forEach\(\(f, i\) => \{[^]*?const at = Math\.min\(i, camp\.huts\.length - 1\);\s*const hut = camp\.huts\[at\];/.test(html));
+  /families\.forEach\(\(f, i\) => \{[^]*?const at = Math\.min\(i, camp\.huts\.length - 1\);\s*const hut = seat \? seat\.hut : camp\.huts\[at\];/.test(html));
 /* A pair and their children, with the unpaired sharing — a camp is short of
    shelter, not of ground. */
 check('a household is a pair and the children that belong to them',
@@ -6024,7 +6024,7 @@ check('and "am I home yet" is asked of that fire too',
 /* Which fire is theirs comes off their tent, so a household sits together —
    the same rule that put their tents beside each other. */
 check('a household shares a hearth because it shares a tent',
-  /const fire = camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\]/.test(html));
+  /const fire = seat \? seat\.fire : camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\]/.test(html));
 check('and somebody with no tent yet still has somewhere to go',
   /function homeFire\(p\) \{\s*return p\.hearth \|\| p\.camp;\s*\}/.test(html));
 
@@ -7344,6 +7344,49 @@ check('and a row still opens its own band',
 check('the chip is the band\'s only colour: no dot beside it, and the chart draws in it',
   !/TRIBE_COLORS/.test(html) && !/#tribes i \{/.test(html)
   && /ctx\.strokeStyle = c\.color;/.test(html));
+
+/* -------------------------------------------------------------------------
+   The outskirts
+
+   Past the core's five fires and fifty tents a village keeps growing, in rings
+   of hearths with ten tents round each and a yard of granaries after every
+   few. These are the rules that keep it from standing in itself.
+   ------------------------------------------------------------------------- */
+group('the outskirts');
+
+{
+  const num = (re) => Number((html.match(re) || [])[1]);
+  const reach = new Function(`return ${html.match(/const TENT_REACH = ([^;]+);/)[1]};`)();
+  const first = num(/first: (\d+),/), ring = num(/  ring: (\d+),/), apart = num(/apart: ([\d.]+),/);
+  const core = num(/HEARTH_SPACING = (\d+);/);
+  check('the first ring starts past the core\'s tents', first - reach >= core + reach,
+    `outskirts tents from ${(first - reach).toFixed(1)} m, the core's reach ${(core + reach).toFixed(1)} m`);
+  check('rings are far enough apart that one ring\'s tents do not stand in the next\'s',
+    ring >= 2 * reach, `${ring} m apart, tents reach ${reach.toFixed(2)} m`);
+  check('and so are the fires round one ring', apart >= 2 * reach, `${apart} m apart`);
+}
+check('households past the core\'s fifty go to the outskirts',
+  /const past = families\.length - camp\.huts\.length;\s*const outer = past > 0 \? extendOutskirts\(camp, past\) : null;/.test(html));
+check('laid out by where they are, never off the camp\'s own stream',
+  !/camp\.rng|\brng\(\)/.test(bodyOf('addOuterHearth') || 'rng()') && !/camp\.rng|\brng\(\)/.test(bodyOf('addYard') || 'rng()')
+  && /const jitter = mulberry32\(outerSeed\(camp, slot\)\);/.test(html));
+check('kept off the water, the dead, the field and the next village',
+  ['SEA + 1.5', 'camp.barrow', 'camp.field', 'campReach(c) + TENT_REACH'].every((t) => (bodyOf('outerGround') || '').includes(t)));
+check('an outskirts fire is one of the camp\'s own, after its five',
+  /camp\.fireAt\[HEARTHS \+ o\.hearths\.length - 1\] = fire;/.test(html));
+check('the village\'s ground reaches as far as it does, for everything that asks',
+  /if \(Math\.hypot\(c\.x - x, c\.z - z\) < campReach\(c\) \+ extra\) return true;/.test(html)
+  && /< campReach\(p\.camp\);/.test(moduleSource('vitals.js')));
+check('and the grass goes out to it', /refillTilesNear\(camp\.x, camp\.z, reach\);/.test(html)
+  && /function refillTilesNear\(x, z, r\)/.test(html));
+check('drawn packed, once for all the camps, and grown when full',
+  /for \(const c of camps\) dressCamp\(c, false\);\s*dressOutskirts\(\);/.test(html) && /function roomFor\(key, want\)/.test(html));
+check('and not made at all until a camp needs them', /if \(!campParts\.outHuts\) makeOutskirts\(\);/.test(html)
+  && !/outOf\(campParts\[core\]/.test(html));
+check('with granaries in the yards as the store fills, as in the core',
+  /spots\.slice\(0, camp\.storesUp \|\| 0\)/.test(html));
+check('a camp laid out again loses its outskirts with it',
+  /camp\.outer = null;\s*camp\.reach = 0;/.test(html));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);

@@ -1,5 +1,5 @@
 import { clamp } from './noise.js';
-import { CAMP_CLEARING } from './people.js';
+import { campReach } from './people.js';
 import { PERSON } from './clock.js';
 import { eatFromBag } from './bag.js';
 
@@ -56,7 +56,7 @@ export const EAT = {
 
 /** On their own band's ground, by its fire. */
 export function atHome(p) {
-  return Boolean(p.camp) && Math.hypot(p.x - p.camp.x, p.z - p.camp.z) < CAMP_CLEARING;
+  return Boolean(p.camp) && Math.hypot(p.x - p.camp.x, p.z - p.camp.z) < campReach(p.camp);
 }
 
 /** How much faster energy comes back than it would standing about. */

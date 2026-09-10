@@ -3593,6 +3593,43 @@ if (pathsModule && moveModule && livePeople.length) {
   check('and only the ground somebody walked on', corner === 0, `corner reads ${corner}`);
 }
 
+/* -------------------------------------------------------------------------
+   The outskirts, driven directly
+
+   Whether a band in this run grows past fifty households is a fact about the
+   run, so the outskirts are laid out and drawn here by hand: sixty households
+   past the core, then put away again. Last of all, because the first time any
+   camp needs them their meshes are made, and making anything moves the random
+   stream every check after it would be reading.
+   ------------------------------------------------------------------------- */
+let outskirtsReport = 'not tried';
+if (peopleModule?.extendOutskirts && peopleModule?.dressOutskirts && liveCamps.length) {
+  const PPm = peopleModule;
+  const camp = liveCamps[0];
+  const reachWas = camp.reach;
+  const o = PPm.extendOutskirts(camp, 60);
+  const out = PPm.OUTSKIRTS;
+  const d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  outskirtsReport = `${o.seats.length} households' room round ${o.hearths.length} fires, ${o.yards.length} yards, out to ${PPm.campReach(camp).toFixed(0)} m`;
+  check('a camp grows outskirts past its fifty tents', o.seats.length > 0, outskirtsReport);
+  check('and no two of their fires stand in each other\'s tents',
+    !o.hearths.some((h, i) => o.hearths.some((g, j) => j > i && d(h.fire, g.fire) < out.apart * 0.9)));
+  check('and none stands in the core', !o.hearths.some((h) => d(h.fire, camp) < out.first - 0.5));
+  check('and every one is among the camp\'s own fires', o.hearths.every((h) => (camp.fireAt || []).includes(h.fire)));
+  check('and the camp\'s ground reaches out to take them in',
+    !o.hearths.length || PPm.campReach(camp) > PPm.CAMP_CLEARING, outskirtsReport);
+  camp.outerShown = Math.min(60, o.seats.length);
+  PPm.dressOutskirts();
+  const parts = PPm.campParts;
+  const tents = ['outHuts', 'outTentHide', 'outTentPainted', 'outLodge'].reduce((n, k) => n + (parts[k]?.count || 0), 0);
+  check('and they are drawn, a tent a household', tents === camp.outerShown, `${tents} drawn for ${camp.outerShown}`);
+  check('with a fire for every ring of tents that has anybody in it', (parts.outFire?.count || 0) === camp.outerLit,
+    `${parts.outFire?.count} fires for ${camp.outerLit}`);
+  camp.outerShown = 0;
+  PPm.dressOutskirts();
+  camp.reach = reachWas;
+}
+
 const ms = Date.now() - t0;
 const missing = [...new Set(touched)].filter((id) => !ids.has(id));
 console.log(`\nboot check: the page loaded and built a world in ${ms}ms`);
@@ -3613,6 +3650,7 @@ console.log(`  tribe: ${tribeReport}`);
 console.log(`  paths: ${pathReport}`);
 console.log(`  full map: ${fullMapReport}`);
 console.log(`  hearths: ${hearthReport}`);
+console.log(`  outskirts: ${outskirtsReport}`);
 console.log(`  granaries: ${storeReport}`);
 console.log(`  map marks: ${marksReport}`);
 console.log(`  quarries: ${quarryReport}`);

@@ -504,6 +504,18 @@ export function refillWornTiles() {
   }
 }
 
+/* A village has spread past where its grass stopped: the tiles on screen inside
+   its new edge are scattered again, and fillTile — which asks inCamp, and
+   inCamp asks how far the village reaches now — leaves them trampled. */
+export function refillTilesNear(x, z, r) {
+  for (const t of grassTiles) {
+    if (t.dirty) continue;
+    if (Math.hypot((t.ix + 0.5) * TILE - x, (t.iz + 0.5) * TILE - z) > r + TILE) continue;
+    t.dirty = true;
+    dirtyTiles.push(t);
+  }
+}
+
 export function drainDirtyTiles(budget) {
   if (!dirtyTiles.length) return;
   for (let i = 0; i < budget && dirtyTiles.length; i++) {

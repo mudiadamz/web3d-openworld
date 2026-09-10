@@ -1688,6 +1688,20 @@ export function updateCamps(dt, t, day) {
     }
   }
   campParts.fire.instanceMatrix.needsUpdate = true;
+  /* And the outskirts' fires, each on its own beat like the core's. */
+  if (campParts.outFire) {
+    for (const camp of camps) {
+      for (const { slot, fire, f } of camp.outerFires || []) {
+        const own = 0.78 + 0.22 * Math.sin(t * 11 + camp.flicker + f * 2.1)
+          + 0.12 * Math.sin(t * 27.3 + camp.flicker * 2 + f * 1.3);
+        _v.set(fire.x, fire.y + 0.05, fire.z);
+        _q.identity();
+        _s.set(0.85 + own * 0.25, 0.8 + own * 0.45, 0.85 + own * 0.25);
+        campParts.outFire.setMatrixAt(slot, _m4.compose(_v, _q, _s));
+      }
+    }
+    campParts.outFire.instanceMatrix.needsUpdate = true;
+  }
 
   if (!smoke) return;
   smokeUniforms.uViewportH.value = renderer.domElement.height;

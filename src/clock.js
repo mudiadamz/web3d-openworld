@@ -1,7 +1,7 @@
 import { P } from './params.js';
 import { clamp, mulberry32 } from './noise.js';
 import { sunDir } from './scene.js';
-import { CAMP_CLEARING, people } from './people.js';
+import { campReach, people } from './people.js';
 import { $ } from './save.js';
 import { HUMAN_JOINTS, HUMAN_PARTS } from 'humans-threejs/human-parts.js';
 
@@ -57,7 +57,7 @@ export function nightIdle() {
   if (sunDir.y < deepNight()) return true;
   for (const p of people) {
     if (p.asleep) continue;
-    if (Math.hypot(p.x - p.camp.x, p.z - p.camp.z) > CAMP_CLEARING) return false;
+    if (Math.hypot(p.x - p.camp.x, p.z - p.camp.z) > campReach(p.camp)) return false;
   }
   return true;
 }
