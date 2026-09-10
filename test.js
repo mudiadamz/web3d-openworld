@@ -7309,8 +7309,13 @@ check('every band in the panel carries it, out of a hundred',
   /<span class="dev" title="[^"]*">\$\{dev\}\/100<\/span><\/div>`;/.test(html));
 check('ranked by it, the furthest on top, ties in their old order',
   /rows\.sort\(\(x, y\) => y\.dev - x\.dev \|\| x\.i - y\.i\);/.test(html));
-check('and a row still opens its own band, and keeps its colour',
-  /data-camp="\$\{i\}"><i style="background:\$\{TRIBE_COLORS\[i % TRIBE_COLORS\.length\]\}">/.test(html));
+check('and a row still opens its own band',
+  /<div data-camp="\$\{i\}"><b class="wcode" style="background:\$\{c\.color\}">\$\{c\.code\}<\/b>/.test(html));
+/* One colour a band: its chip. A dot beside it in a second colour said the
+   same thing twice, and differently. */
+check('the chip is the band\'s only colour: no dot beside it, and the chart draws in it',
+  !/TRIBE_COLORS/.test(html) && !/#tribes i \{/.test(html)
+  && /ctx\.strokeStyle = c\.color;/.test(html));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);

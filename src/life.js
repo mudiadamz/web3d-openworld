@@ -161,9 +161,6 @@ export async function loadChronicle() {
   renderChronicle();
 }
 
-/* One colour per tribe, used by the readout, the chart and the map so the same
-   band is the same colour wherever you meet it. */
-export const TRIBE_COLORS = ['#e8a33d', '#6fb2e8', '#c77ee0', '#7fd08a', '#e8746a'];
 export const HISTORY_DAYS = 120;
 export let nextTribeDraw = 0;
 
@@ -183,8 +180,13 @@ export function renderTribes(now = 0) {
 
      The one number it does carry is the one a list is for: development out of
      a hundred (society.js), and the rows are ranked by it, so the band that has
-     come furthest is at the top. The dot keeps its band's colour and the row
-     keeps its band's index, so the chart and a click still mean the same band. */
+     come furthest is at the top. The row keeps its band's index, so a click
+     still means the same band.
+
+     The colour is the chip's and nothing else's. There used to be a dot as
+     well, in one of five colours dealt out by row, and the chip beside it was a
+     second colour for the same band — so the band's colour is its chip now,
+     here, on the map and on the chart below. */
   /* A band that has died out keeps its camp in the world — the tents, the
      granaries, the stones — but not its row here: a list of the living is what
      this is for, and the record of the dead is the chronicle's. */
@@ -194,8 +196,7 @@ export function renderTribes(now = 0) {
   el.innerHTML = rows.map(({ c, i, dev }) => {
     let pop = 0;
     for (const p of people) if (p.camp === c) pop++;
-    return `<div data-camp="${i}"><i style="background:${TRIBE_COLORS[i % TRIBE_COLORS.length]}"></i>`
-      + `<b class="wcode" style="background:${c.color}">${c.code}</b>`
+    return `<div data-camp="${i}"><b class="wcode" style="background:${c.color}">${c.code}</b>`
       + `<b>${c.name}</b>${c.stage ? ` <em>${STAGES[c.stage].name}</em>` : ''} <span>${pop || 'empty'}</span>`
       + `<span class="dev" title="development: what they know, and how far from band to city">${dev}/100</span></div>`;
   }).join('') || '<div><span>' + (camps.length ? 'every band has died out' : 'no camps') + '</span></div>';
@@ -227,7 +228,7 @@ export function drawTribeChart(cv = $('tribeChart')) {
   ctx.lineJoin = 'round';
   camps.forEach((c, i) => {
     if (c.history.length < 2) return;
-    ctx.strokeStyle = TRIBE_COLORS[i % TRIBE_COLORS.length];
+    ctx.strokeStyle = c.color;          // the band's chip, as on the panel and the map
     ctx.beginPath();
     c.history.forEach((h, k) => {
       const x = ((h.day - minDay) / (maxDay - minDay)) * (W - 8) + 4;
