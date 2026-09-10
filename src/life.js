@@ -544,7 +544,7 @@ export function resolveRaid(party, host) {
    a band that has raised stones over its dead is a band the neighbours have a
    reason to come to, and visiting is how everything anybody knows travels. */
 export function campPull(host) {
-  return 1 + SKILL.artDraw * (host.skill?.art || 0);
+  return 1 + SKILL.artDraw * (host.skill?.art || 0) + SKILL.pyramidDraw * (host.skill?.stonework || 0);
 }
 
 export function otherCamp(camp) {
@@ -1184,7 +1184,8 @@ export function updateSickness(days) {
     /* Spread: each sick person is a source, and a crowded camp with an empty
        store catches it faster. */
     if (sick > 0) {
-      const crowd = Math.min(here / PLAGUE.crowding, 1.5);
+      // A well-built village is a less crowded one (SKILL.buildAir).
+      const crowd = Math.min(here / PLAGUE.crowding, 1.5) * (1 - SKILL.buildAir * (camp.skill?.building || 0));
       const weak = 1 + camp.hunger;
       const chance = PLAGUE.spread * sick * crowd * weak * season * days;
       for (const p of people) {

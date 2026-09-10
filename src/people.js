@@ -13,6 +13,7 @@ import {
 } from './life.js';
 import { codeColor, takeTribeCode } from './ui.js';
 import { dressField, farmGeometries } from './farming.js';
+import { TENT_KEYS, tentGeometries, tentMaterial, tentStyle } from './village.js';
 
 /* -------------------------------------------------------------------------
    Bodies
@@ -244,8 +245,12 @@ export function instancedFrom(geo, count, group) {
 export const GRAVE_ROOM = 400;       // room the graves start with; it doubles when full
 export let graveRoom = GRAVE_ROOM;
 export const GRAVE_STONES = 3;       // stones per cairn
+export const GRAVE_SPACING = 1.6;    // metres between graves, both ways
+const PALE = new THREE.Color(0xffffff);
+export const PYRAMID_COURSES = 5;    // steps in the pyramid a band at mastery of masonry has raised
 export let graves = [];              // { x, z, y, day, sex }
 export let graveMesh = null;
+export let stoneMesh = null;          // the kerb and the pyramid: masonry
 
 /* -------------------------------------------------------------------------
    What a band raises over its dead
@@ -309,7 +314,74 @@ export function buildGraves() {
   graveMesh.frustumCulled = false;
   for (let i = 0; i < graveMesh.count; i++) graveMesh.setMatrixAt(i, HIDDEN);
   tribeGroup.add(graveMesh);
+  /* Masonry's pieces: a kerb round the square of graves and the courses of a
+     pyramid behind them. Boxes, drawn in the graves' own pass, so a band that
+     has died out keeps what it built exactly as it keeps its stones. */
+  if (stoneMesh) { tribeGroup.remove(stoneMesh); stoneMesh.geometry.dispose(); stoneMesh.dispose(); }
+  stoneMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), rockMaterial,
+    Math.max(1, campCapacity * (PYRAMID_COURSES + 4)));
+  stoneMesh.castShadow = true;
+  stoneMesh.receiveShadow = true;
+  stoneMesh.frustumCulled = false;
+  for (let i = 0; i < stoneMesh.count; i++) stoneMesh.setMatrixAt(i, HIDDEN);
+  tribeGroup.add(stoneMesh);
   drawGraves();
+}
+
+/* Where the n-th grave of a band goes: round and round a square, from the
+   middle out — so the oldest are at the centre, the ground stays square
+   however many it holds, and its size is how long they have been burying. */
+export function squareSeat(n) {
+  if (n === 0) return [0, 0];
+  const k = Math.ceil((Math.sqrt(n + 1) - 1) / 2);
+  const m = n - (2 * k - 1) ** 2, side = 2 * k, edge = Math.floor(m / side), t = m % side;
+  if (edge === 0) return [-k + 1 + t, -k];
+  if (edge === 1) return [k, -k + 1 + t];
+  if (edge === 2) return [k - 1 - t, k];
+  return [-k, k - 1 - t];
+}
+
+/* The kerb and the pyramid, as far as each band's masonry has got. The kerb
+   goes up with the first course and follows the square as it grows; the
+   pyramid stands behind the graves, on the side away from the camp. */
+function drawMasonry() {
+  if (!stoneMesh) return;
+  const per = PYRAMID_COURSES + 4;
+  const box = (slot, cx, cz, y, w, h, d, yaw, hex) => {
+    _e.set(0, yaw, 0);
+    _q.setFromEuler(_e);
+    _v.set(cx, y, cz);
+    _s.set(w, h, d);
+    stoneMesh.setMatrixAt(slot, _m4.compose(_v, _q, _s));
+    stoneMesh.setColorAt(slot, _c.setHex(hex));
+  };
+  for (const camp of camps) {
+    const base = camp.index * per;
+    if (base + per > stoneMesh.count) continue;
+    const ground = camp.barrow;
+    const courses = ground ? Math.round(PYRAMID_COURSES * (camp.skill?.stonework || 0)) : 0;
+    const ax = ground ? Math.cos(ground.a) : 1, az = ground ? Math.sin(ground.a) : 0;
+    const ring = Math.ceil((Math.sqrt(Math.max(1, camp.buried || 0)) - 1) / 2);
+    const half = (ring + 0.5) * GRAVE_SPACING + 0.3;
+    // The kerb: front and back across the rows, and the two sides along them.
+    const sides = [[half, 0, Math.PI / 2], [-half, 0, Math.PI / 2], [0, half, 0], [0, -half, 0]];
+    sides.forEach(([along, across, turn], s) => {
+      const slot = base + PYRAMID_COURSES + s;
+      if (courses < 1 || !(camp.buried > 0)) { stoneMesh.setMatrixAt(slot, HIDDEN); return; }
+      const cx = ground.x + ax * along - az * across, cz = ground.z + az * along + ax * across;
+      box(slot, cx, cz, sampleHeight(cx, cz) + 0.15, half * 2 + 0.4, 0.45, 0.3, -(ground.a + turn), 0x8f877b);
+    });
+    // The pyramid, a course at a time, each narrower than the one under it.
+    const cx = ground ? ground.x + ax * (half + 6.5) : 0, cz = ground ? ground.z + az * (half + 6.5) : 0;
+    const floor = ground ? sampleHeight(cx, cz) - 0.25 : 0;
+    for (let c = 0; c < PYRAMID_COURSES; c++) {
+      if (c >= courses) { stoneMesh.setMatrixAt(base + c, HIDDEN); continue; }
+      const w = 7 - c * 1.3;
+      box(base + c, cx, cz, floor + c * 0.9 + 0.45, w, 0.9, w, -ground.a, c % 2 ? 0x9d9384 : 0x958b7c);
+    }
+  }
+  stoneMesh.instanceMatrix.needsUpdate = true;
+  if (stoneMesh.instanceColor) stoneMesh.instanceColor.needsUpdate = true;
 }
 
 /* Stacked rather than scattered: three stones getting smaller, each one turned
@@ -329,6 +401,18 @@ export function drawGraves() {
   for (let g = 0; g < n; g++) {
     const it = graves[g];
     const rng = mulberry32((it.x * 131 + it.z * 977 + it.day * 7) | 0);
+    /* A headstone: one dressed slab stood upright, facing down the rows. A
+       cairn stays a cairn — the band's older dead keep what they were given. */
+    if (it.k === 's') {
+      _e.set((rng() - 0.5) * 0.06, -(it.a || 0), (rng() - 0.5) * 0.06);
+      _q.setFromEuler(_e);
+      _v.set(it.x, it.y + 0.34, it.z);
+      _s.set(0.36, 0.62, 0.12);
+      graveMesh.setMatrixAt(g * GRAVE_STONES, _m4.compose(_v, _q, _s));
+      graveMesh.setColorAt(g * GRAVE_STONES, _c.setHex(0xa39d92).multiplyScalar(0.85 + rng() * 0.2));
+      for (let k = 1; k < GRAVE_STONES; k++) graveMesh.setMatrixAt(g * GRAVE_STONES + k, HIDDEN);
+      continue;
+    }
     let up = 0;
     for (let k = 0; k < GRAVE_STONES; k++) {
       const size = 0.30 - k * 0.07;
@@ -367,6 +451,8 @@ export function drawGraves() {
     }
   }
 
+  drawMasonry();
+
   for (let i = n * GRAVE_STONES; i < graveRoom * GRAVE_STONES; i++) {
     graveMesh.setMatrixAt(i, HIDDEN);
   }
@@ -388,13 +474,15 @@ export function buryPerson(p) {
      outward with the count, so the oldest stones are at the middle: a band's
      history has a shape you can walk along. */
   const ground = p.camp?.barrow;
+  // A band that can dress stone stands a headstone rather than piling a cairn.
+  const headstone = (p.camp?.skill?.stonework || 0) >= 0.5;
   let x = p.x, z = p.z;
   if (ground) {
     const n = (p.camp.buried = (p.camp.buried || 0) + 1) - 1;
-    const row = Math.floor(n / 5), seat = (n % 5) - 2;
+    const [col, row] = squareSeat(n);
     const ax = Math.cos(ground.a), az = Math.sin(ground.a);
-    x = ground.x + (-az * seat * 1.6) + ax * row * 1.5;
-    z = ground.z + (ax * seat * 1.6) + az * row * 1.5;
+    x = ground.x + (-az * col * GRAVE_SPACING) + ax * row * GRAVE_SPACING;
+    z = ground.z + (ax * col * GRAVE_SPACING) + az * row * GRAVE_SPACING;
   }
   graves.push({
     x: Math.round(x * 100) / 100,
@@ -402,6 +490,7 @@ export function buryPerson(p) {
     y: sampleHeight(x, z),
     day: Math.floor(simDay),
     sex: p.sex,
+    ...(headstone ? { k: 's', a: Math.round((ground?.a || 0) * 100) / 100 } : {}),
   });
   drawGraves();
 }
@@ -484,6 +573,11 @@ const STORE_WALL = 0x8f7350, STORE_THATCH = 0xb59d62;
 
 export const CAMP_PIECES = {
   huts: HEARTHS * HUTS_PER_HEARTH,
+  /* The better tents (village.js), a slot for every tent in each kind. A band
+     puts up one kind; the others are parked. */
+  tentHide: HEARTHS * HUTS_PER_HEARTH,
+  tentPainted: HEARTHS * HUTS_PER_HEARTH,
+  lodge: HEARTHS * HUTS_PER_HEARTH,
   // Nine stones and four logs *per hearth*: a fire nobody can sit at is a
   // bonfire, not a hearth.
   stones: 9 * HEARTHS,
@@ -687,12 +781,21 @@ export function dressCamp(camp) {
   assignHuts(camp);
   const here = people.reduce((n, p) => n + (p.camp === camp ? 1 : 0), 0);
   const want = here === 0 ? 0 : clamp(camp.families || Math.ceil(here / 2), 1, P0.huts);
-  for (let i = 0; i < P0.huts; i++) {
-    const slot = index * P0.huts + i;
-    if (i < want && camp.hutAt?.[i]) campParts.huts.setMatrixAt(slot, camp.hutAt[i]);
-    else campParts.huts.setMatrixAt(slot, HIDDEN);
+  /* Which kind of tent they put up is how well they build (village.js): the
+     plain cone, then hides on poles, then painted, then a lodge. Every kind has
+     a slot for every tent; the kinds this band does not build are parked. */
+  const style = tentStyle(camp);
+  for (const key of TENT_KEYS) {
+    const mesh = campParts[key];
+    if (!mesh) continue;
+    for (let i = 0; i < P0.huts; i++) {
+      const slot = index * P0.huts + i;
+      mesh.setMatrixAt(slot, key === style && i < want && camp.hutAt?.[i] ? camp.hutAt[i] : HIDDEN);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    // Only as far as the bands there are: the rest of the room is for bands not yet founded.
+    mesh.count = Math.min(mesh.instanceMatrix.count, camps.length * P0.huts);
   }
-  campParts.huts.instanceMatrix.needsUpdate = true;
 
   /* And a fire for every ring of tents that has anybody in it. A hearth with
      no tents round it is a fire nobody is sitting at, which reads as a camp
@@ -896,7 +999,12 @@ export function layoutCamp(camp, index) {
            and the last hut in the ring was never placed at all. */
     campParts.huts.setMatrixAt(slot, _m4.compose(_v, _q, _s));
     camp.hutAt[i] = _m4.clone();
-    campParts.huts.setColorAt(slot, _c.setHex(0x6d5740 + ((rng() * 0x101010) | 0)));
+    const hide = 0x6d5740 + ((rng() * 0x101010) | 0);
+    campParts.huts.setColorAt(slot, _c.setHex(hide));
+    /* The better tents carry their colours in the hide itself, so the instance
+       only tints them — the same hide, paled, and no new draw off the camp's
+       stream, which the rest of its layout is still reading. */
+    for (const key of TENT_KEYS.slice(1)) campParts[key]?.setColorAt(slot, _c.setHex(hide).lerp(PALE, 0.72));
   }
 
   /* Every hearth gets its own ring of stones and its own logs, laid out where
@@ -1087,6 +1195,15 @@ export function buildCamps() {
 
   campParts = {};
   campParts.huts = instancedFrom(hutGeo, campCapacity * CAMP_PIECES.huts, tribeGroup);
+  const tents = tentGeometries();
+  for (const key of TENT_KEYS.slice(1)) {
+    const m = new THREE.InstancedMesh(tents[key], tentMaterial, Math.max(1, campCapacity * CAMP_PIECES[key]));
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.frustumCulled = false;
+    tribeGroup.add(m);
+    campParts[key] = m;
+  }
   campParts.stones = instancedFrom(stoneGeo, campCapacity * CAMP_PIECES.stones, tribeGroup);
   campParts.logs = instancedFrom(logGeo, campCapacity * CAMP_PIECES.logs, tribeGroup);
   campParts.poles = instancedFrom(poleGeo, campCapacity * CAMP_PIECES.poles, tribeGroup);

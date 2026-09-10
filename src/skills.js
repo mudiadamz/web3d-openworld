@@ -1,6 +1,6 @@
 import { clamp } from './noise.js';
 import { luck } from './clock.js';
-import { MONUMENT_MAX, camps, dressCamp, drawGraves, people } from './people.js';
+import { MONUMENT_MAX, PYRAMID_COURSES, camps, dressCamp, drawGraves, people } from './people.js';
 import { FISH, logEvent } from './life.js';
 
 /* -------------------------------------------------------------------------
@@ -134,6 +134,17 @@ export const SKILLS = {
      first food anybody on the island makes rather than finds (farming.js). */
   irrigation: { label: 'irrigation', of: 'watering' },
   farming: { label: 'farming', of: 'farming' },
+  /* Eighteenth: keeping a village. Learned at the fire like weaving, and what
+     it shows is the tents — a cone of hides, then hides on long poles with a
+     door, then painted, then a lodge under thatch (village.js). What it moves
+     is how fast a sickness goes through a crowded camp: see SKILL.buildAir. */
+  building: { label: 'building', of: 'building' },
+  /* Nineteenth: masonry. Learned at the graveyard with stone out of the camp's
+     pile, and what it raises is the graveyard itself — a kerb round the square
+     of graves, the graves stood up as headstones, and in the end a stepped
+     pyramid behind them. What it moves is who comes to visit: see
+     SKILL.pyramidDraw. */
+  stonework: { label: 'stonework', of: 'masonry' },
 };
 
 /* Every skill at nothing. Built from SKILLS rather than written out, because it
@@ -242,6 +253,17 @@ export const SKILL = {
   warEdge: 1.5,
   perRaid: 0.045,     // learned by raiding, and by being raided
   perCatch: 0.022,    // learned standing in the water
+  /* Building. A well-kept village is a less crowded one — room between the
+     tents, air through them — so a sickness goes through it slower: at mastery
+     half as fast as through a band still in cones pitched shoulder to shoulder. */
+  buildAir: 0.5,
+  /* Masonry, learned at the graveyard, and the stone one session sets. And
+     what it is worth: a pyramid pulls visitors the way a monument does, less
+     than the monument per unit of skill because it is the grander version of
+     the same reason to come. */
+  perCourse: 0.022,
+  stonePerCourse: 0.5,
+  pyramidDraw: 1.6,
   /* Fire-keeping. A tiger will not come within PANIC.safe of a fire, and a
      better-kept fire pushes that out — see safeGround in wildlife.js, where the
      metres live next to the tiger that respects them. */
@@ -276,6 +298,11 @@ export function practise(camp, key, amount) {
   if (key === 'art') {
     const up = Math.round(MONUMENT_MAX * camp.skill.art);
     if (up !== camp.stonesUp) { camp.stonesUp = up; drawGraves(); }
+  }
+  // And masonry, a course of the pyramid at a time (and the kerb with the first).
+  if (key === 'stonework') {
+    const up = Math.round(PYRAMID_COURSES * camp.skill.stonework);
+    if (up !== camp.coursesUp) { camp.coursesUp = up; drawGraves(); }
   }
 }
 
@@ -319,6 +346,9 @@ export const FORGET_WORDS = {
   /* The ditches are still there. Nobody remembers where the water came in. */
   watering: 'get water onto a field',
   farming: 'bring anything up out of the ground',
+  building: 'put up anything better than a cone of hides',
+  /* The pyramid is still standing. Nobody can dress a stone to go on it. */
+  masonry: 'dress a stone',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be
@@ -341,7 +371,7 @@ export function announceSkill(camp, key) {
   // The rack goes up, or comes down, the moment drying crosses the line.
   if (key === 'drying') dressCamp(camp);
   // And the field, the moment digging or farming crosses a line (farming.js).
-  if (key === 'irrigation' || key === 'farming') dressCamp(camp);
+  if (key === 'irrigation' || key === 'farming' || key === 'building') dressCamp(camp);
   logEvent(tier > told ? 'learned' : 'lost',
     tier > told
       ? `[${camp.code}] ${camp.name} has ${SKILL_WORDS[tier]} ${SKILLS[key].of}`
@@ -402,6 +432,9 @@ export function craftChoice(camp) {
        there being two skills rather than one: somebody has to go to the rocks
        first. */
     ['tools', (camp.stone || 0) >= SKILL.stonePerTool ? 0.30 + 0.35 * h : 0],
+    /* And the tents: mended, re-poled, painted, rebuilt. A thing a fed band
+       does with an afternoon, like carving. */
+    ['building', 0.14 + 0.45 * (1 - h)],
   ];
   /* Six weights for eight skills, and that is the shape of it: these are the
      things a band gets better at by sitting down and working at them. The other

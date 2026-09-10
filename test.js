@@ -1476,7 +1476,7 @@ check('and that happens whenever the band changes', (() => {
 /* Laying the camp out again would shuffle it around them, because the layout
    comes off the camp's own rng and that rng moves on every call. */
 check('without laying the camp out again', /camp\.hutAt\[i\] = _m4\.clone\(\);/.test(html)
-  && /campParts\.huts\.setMatrixAt\(slot, camp\.hutAt\[i\]\)/.test(html));
+  && /mesh\.setMatrixAt\(slot, key === style && i < want && camp\.hutAt\?\.\[i\] \? camp\.hutAt\[i\] : HIDDEN\)/.test(html));
 check('the drying rack only stands once they know what it is for',
   /RACK_KNOWN = [\d.]+;/.test(html)
   && /const knows = \(camp\.skill\?\.drying \|\| 0\) >= RACK_KNOWN;/.test(html));
@@ -4437,11 +4437,11 @@ check('and the save carries the mastery, not the announcement', (() => {
    the simulation already had, because a skill that only shows on a readout is a
    readout.
    ------------------------------------------------------------------------- */
-check('there are seventeen of them', Object.keys(
+check('there are nineteen of them', Object.keys(
   (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
     .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
     .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
-).length === 17);
+).length === 19);
 check('and every one of them does something', (() => {
   const want = [
     ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
@@ -4477,7 +4477,7 @@ const CRAFT_WEIGHTS = (() => {
   return m ? (m[1].match(/\['(\w+)',/g) || []).map((t) => t.slice(2, -2)) : [];
 })();
 check('and there is a weight for every skill worked at',
-  CRAFT_WEIGHTS.length === 8, `${CRAFT_WEIGHTS.length} weights: ${CRAFT_WEIGHTS.join(' ')}`);
+  CRAFT_WEIGHTS.length === 9, `${CRAFT_WEIGHTS.length} weights: ${CRAFT_WEIGHTS.join(' ')}`);
 /* Four of the twelve are not worked at the fire: the two learned at the
    graveyard, trading (learned by trading), and mining (learned at the rock). */
 /* Six of the fourteen are not worked at the fire: the two at the graveyard,
@@ -6045,10 +6045,21 @@ check('an island with nowhere flat still buries its dead somewhere',
   /if \(!camp\.barrow\) \{/.test(barrowSrc));
 
 check('the dead are carried back to it', /const ground = p\.camp\?\.barrow;/.test(barrowSrc));
-/* Laid in rows off the ground's own line, growing outward, so the oldest stones
-   are at the middle and the size of it is how long they have been here. */
-check('and laid in rows rather than dropped in a heap',
-  /const row = Math\.floor\(n \/ 5\), seat = \(n % 5\) - 2;/.test(barrowSrc));
+/* Laid round and round a square from the middle out, so the oldest stones are
+   at the centre, the ground stays square, and its size is how long they have
+   been burying. The seat function is run, not just read. */
+check('and laid out in a square rather than dropped in a heap',
+  /const \[col, row\] = squareSeat\(n\);/.test(barrowSrc));
+check('which fills a square from the middle out, one grave to a place', (() => {
+  const src = moduleSource('people.js');
+  const at = src.indexOf('function squareSeat(n)');
+  const body = src.slice(at, src.indexOf('\n}\n', at) + 2);
+  const seat = new Function(`${body}; return squareSeat;`)();
+  const first = Array.from({ length: 25 }, (_, n) => seat(n));
+  const keys = new Set(first.map(([c, r]) => `${c},${r}`));
+  const inFive = first.every(([c, r]) => Math.abs(c) <= 2 && Math.abs(r) <= 2);
+  return keys.size === 25 && inFive && seat(0).join() === '0,0' ? true : JSON.stringify(first.slice(0, 10));
+})() === true);
 
 /* The seventh skill: the only one that is not a technique. */
 check('going back to them is a job somebody can be doing',
@@ -6125,7 +6136,7 @@ check('and only where there is a ground to raise them on',
    is a band other bands walk to, and visiting is how everything one band knows
    reaches another. */
 check('a monument pulls the neighbours toward it',
-  /function campPull\(host\) \{\s*return 1 \+ SKILL\.artDraw \* \(host\.skill\?\.art \|\| 0\);/.test(html)
+  /function campPull\(host\) \{\s*return 1 \+ SKILL\.artDraw \* \(host\.skill\?\.art \|\| 0\)(?: \+ SKILL\.pyramidDraw \* \(host\.skill\?\.stonework \|\| 0\))?;/.test(html)
   && /Math\.hypot\(c\.x - camp\.x, c\.z - camp\.z\) \/ campPull\(c\)/.test(html));
 check('by counting as nearer than it is, not by teleporting anybody',
   (() => {
@@ -7078,6 +7089,38 @@ check('the pen has room for the biggest flock', (() => {
 check('nothing crosses the farming import cycle while a module loads',
   !/^(?:const|let|export const|export let)[^\n]*\b(camps|people|CAMP_PIECES|CAMP_CLEARING|streams)\b/m.test(
     farmSrc.replace(/^import .*$/gm, '')));
+
+/* -------------------------------------------------------------------------
+   Building and masonry
+
+   Tents follow how well a band builds; the graveyard follows how well it
+   dresses stone — a kerb, headstones, and a pyramid, kept after the band is
+   gone like everything else it raised.
+   ------------------------------------------------------------------------- */
+group('building and masonry');
+const villageSrc2 = moduleSource('village.js');
+check('four kinds of tent, climbed by building',
+  /TENT_KEYS = \['huts', 'tentHide', 'tentPainted', 'lodge'\]/.test(villageSrc2)
+  && /b >= 0\.75 \? 'lodge' : b >= 0\.5 \? 'tentPainted' : b >= 0\.25 \? 'tentHide' : 'huts'/.test(villageSrc2));
+check('and every kind has a mesh with a slot for every tent', (() => {
+  const src = moduleSource('people.js');
+  return ['tentHide', 'tentPainted', 'lodge'].every((k) => new RegExp(`${k}: HEARTHS \\* HUTS_PER_HEARTH,`).test(src))
+    && /for \(const key of TENT_KEYS\.slice\(1\)\)/.test(src);
+})());
+check('painted in the geometry, not in one colour an instance can hold',
+  /vertexColors: true/.test(villageSrc2) && /\[0\.65, 0\.92, OCHRE\], \[1\.45, 1\.62, RED\]/.test(villageSrc2));
+check('a well-built village is a less crowded one',
+  /\* \(1 - SKILL\.buildAir \* \(camp\.skill\?\.building \|\| 0\)\)/.test(html));
+check('masonry is learned at the graveyard, out of the stone pile',
+  /p\.camp\.stone -= SKILL\.stonePerCourse;\s*practise\(p\.camp, 'stonework', SKILL\.perCourse\);/.test(html));
+check('and pulls visitors, like a monument',
+  /SKILL\.pyramidDraw \* \(host\.skill\?\.stonework \|\| 0\)/.test(html));
+check('a band that can dress stone stands its graves up, and older cairns stay cairns',
+  /const headstone = \(p\.camp\?\.skill\?\.stonework \|\| 0\) >= 0\.5;/.test(html)
+  && /if \(it\.k === 's'\) \{/.test(html));
+check('the kerb and the pyramid are drawn with the graves, so a dead band keeps them',
+  /drawMasonry\(\);\n\n  for \(let i = n \* GRAVE_STONES/.test(html)
+  && /const courses = ground \? Math\.round\(PYRAMID_COURSES \* \(camp\.skill\?\.stonework \|\| 0\)\) : 0;/.test(html));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);

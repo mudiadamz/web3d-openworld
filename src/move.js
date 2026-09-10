@@ -1062,6 +1062,15 @@ export function updatePeople(dt, day) {
               practise(p.camp, 'art', SKILL.perStone);
               p.knows.art = Math.max(p.knows.art || 0, p.camp.skill.art);
             }
+            /* And with stone in the camp, the stones are dressed and set as well
+               as raised: masonry, which squares off the ground, stands the
+               graves up and in the end raises a pyramid behind them. It spends
+               what the quarriers brought home, the way toolmaking does. */
+            if (p.camp.barrow && (p.camp.stone || 0) >= SKILL.stonePerCourse) {
+              p.camp.stone -= SKILL.stonePerCourse;
+              practise(p.camp, 'stonework', SKILL.perCourse);
+              p.knows.stonework = Math.max(p.knows.stonework || 0, p.camp.skill.stonework);
+            }
           }
           /* Only if they actually arrived. This case is reached both by
              arriving and by giving up on the way, which is right for foraging —

@@ -2,7 +2,7 @@
 
 **An island that runs itself.** Procedural terrain, a physical sky on a running
 clock, five species of wildlife — and a few hundred hunter-gatherers who forage
-it, hunt it, learn seventeen crafts, trade with each other, split off to found
+it, hunt it, learn nineteen crafts, trade with each other, split off to found
 new bands, bury their dead, and are still at it a century later.
 
 Nobody scripts any of that. It is a simulation, and the history is whatever
@@ -26,7 +26,7 @@ and a pick and a knife for the work that uses them (`src/looks.js`).
   They forage where it paid last time, hunt what they can catch, come home at
   dusk, sleep in a hut, fall ill, recover or do not. A tiger takes the ones who
   went out alone.
-- **Bands that learn.** Seventeen skills, each moving a number the simulation
+- **Bands that learn.** Nineteen skills, each moving a number the simulation
   already had — curing meat means less of the store spoils, tracking means a
   hunter sees further, fire-keeping means a tiger will not come as close. What
   a band practises is what it has been worrying about, so a band good at
@@ -2430,7 +2430,8 @@ src/
   world.js      terrain, water, creeks, trees, rocks, grass tiles
   wildlife.js   models, herds, the tiger, the record of who lived
   clock.js      day length, pace, the simulation's stream of luck
-  people.js     bodies, camps, the cairns
+  people.js     bodies, camps, the graveyard: cairns, headstones, the pyramid
+  village.js    tents by how well a band builds: cone, hide, painted, lodge
   life.js       food, hunts, skills, visits, splits, births, deaths
   orchard.js    fruit on the trees: picking it, and it growing back
   move.js       getting there, jobs, the camera rig
