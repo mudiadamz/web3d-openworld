@@ -5532,8 +5532,17 @@ check('and the smoke is shared out between the ones that are lit',
 check('but the village is lit by one light, not one per hearth',
   (villageSrc.match(/new THREE\.PointLight/g) || []).length === 1);
 
-/* And the band has to be allowed to grow into it. */
-check('a band grows to village size before it splits', /at: 60,/.test(html));
+/* A band splits when it has filled the ground it forages, not the tents it
+   has room for. At sixty, six hundred recorded days saw no split at all: the
+   biggest band was 32, because that is what a hundred metres round a fire
+   feeds. And only with food to spare, but spare food a band can actually have. */
+const splitAt = Number((html.match(/^\s*at: (\d+),\s*\/\/ people in one camp/m) || [, NaN])[1]);
+const splitFood = Number((html.match(/needFood: ([\d.]+),\s*\/\/ days of store before/) || [, NaN])[1]);
+const comfortable = Number((html.match(/comfortable: ([\d.]+),/) || [, NaN])[1]);
+check('a band splits at the size its own ground feeds, not one it never reaches',
+  splitAt >= 16 && splitAt <= 40, `at ${splitAt}`);
+check('and only with food to spare, but an amount a band can actually put by',
+  splitFood >= comfortable && splitFood <= comfortable * 1.5, `${splitFood} days against comfortable ${comfortable}`);
 /* The trampled ground has to cover the village, and so does the ground a
    well-kept fire keeps a tiger off — otherwise somebody reaches their own tent,
    is inside the camp by every other rule, and is taken there. */

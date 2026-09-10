@@ -757,17 +757,26 @@ export const SPLIT = {
      than a crowd, and the thing that eventually sends half of them over the
      hill is the walk to the foraging rather than the room by the fire.
 
-     Sixty is about twenty-five households, half the tents a village has. The
-     rest is headroom for the years when a band is doing well and nobody has
-     died yet. */
-  at: 60,              // people in one camp before it is too many
+     But a village is room, and room is not food. A band forages within about a
+     hundred metres of its fire, and that ground feeds twenty to thirty: over
+     six hundred recorded days the biggest band ever reached was 32 and not one
+     reached sixty, so not one band ever split. Five bands filled their ground,
+     seven died out, nobody settled anywhere new, and the island sat under a
+     hundred people on land that could hold thousands. So a band now goes when
+     it has filled the ground it can reach, not the tents it has room for. */
+  at: 24,              // people in one camp before it is too many
   takes: 0.42,         // share of them who go
   /* Three and a half days is not a surplus, it is next week's dinner. Splitting
      on it turned one band that was coping into two that were not — measured
      over eight years, the third band founded in a squeeze starved out and took
      the parent most of the way down with it. A band leaves because it has more
-     than it needs, which is the only reason anybody ever has. */
-  needFood: 11,        // days of store before anybody can be spared to walk
+     than it needs, which is the only reason anybody ever has.
+
+     Eleven was more than it needs by a margin no band could reach: bands of
+     twenty-four and up held 4.8 days on average and never eleven for long.
+     Six is FOOD.comfortable, the store above which nobody worries — past the
+     squeeze that starved that third band, and reached often enough to happen. */
+  needFood: 6,         // days of store before anybody can be spared to walk
   minAway: 300,        // metres from every existing camp. Plain metres: a
                        // bigger island holds more bands rather than the same
                        // number further apart.
