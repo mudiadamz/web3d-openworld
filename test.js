@@ -4619,12 +4619,18 @@ check('and it still counts the people on it',
    how much, was only reachable by hovering — and the whole reason skills are
    interesting is watching one climb while the others do not.
    ------------------------------------------------------------------------- */
-check('the card lists the skills one to a row',
-  /<div class="skillRow"><span>\$\{SKILLS\[k\]\.of\}<\/span>/.test(html));
-check('with the number on it',
-  /<b>\$\{pct\}%<\/b>/.test(html));
+check('the card lists the skills one to a row, in a table like the rest of it',
+  /<table class="skills"><thead><tr><th>skill<\/th><th>acquired<\/th><th>level<\/th><\/tr><\/thead>/.test(html)
+  && /<tr><td class="n">\$\{SKILLS\[k\]\.of\}<\/td>/.test(html)
+  && /#tribeList table, #tribeHead table \{/.test(html));
+check('with the number on it, out of a hundred',
+  /<td>\$\{pct\}<span>\/100<\/span><\/td>/.test(html));
 check('and the rung it is on, in words',
-  /<em>\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/em>/.test(html));
+  /<td class="n">\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/td><\/tr>/.test(html));
+check('and no bar: the number says it', (() => {
+  const card = html.slice(html.indexOf('function renderTribeCard'), html.indexOf('function showKeys'));
+  return !card.includes('class="sk"') && !card.includes('--v:') && !html.includes('.skillRow');
+})());
 /* SKILL_WORDS is written to sit inside a sentence — "has a fair hand at
    knapping" — so a column of them reads as a column of half-sentences. */
 check('which are labels, not the middles of sentences',
@@ -4639,7 +4645,7 @@ check('and everything it dropped is on the card', (() => {
   const card = html.slice(html.indexOf('function renderTribeCard'), html.indexOf('function showKeys'));
   if (!card) return 'no renderTribeCard';
   const want = [['the sex split', 'sexMarks'], ['the children', 'children'],
-    ['the ill', 'ill</em>'], ['the skills', 'class="sk"'], ['the days of food', 'daysOfFood(camp)']];
+    ['the ill', 'ill</em>'], ['the skills', 'class="skills"'], ['the days of food', 'daysOfFood(camp)']];
   const missing = want.filter(([, t]) => !card.includes(t)).map(([n]) => n);
   return missing.length ? `missing: ${missing.join(', ')}` : true;
 })() === true);

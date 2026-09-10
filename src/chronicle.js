@@ -222,16 +222,16 @@ export function renderTribeCard() {
     if (p.child) kids++;
     if (p.sick) ill++;
   }
-  /* A row each, rather than three anonymous bars. The bars said a band knew
-     *something*; which of the three, and how much, was a thing you could only
-     get at by hovering — and the whole reason skills are interesting is
-     watching one of them climb while the others do not. */
+  /* A row each, in a table like the rest of the card: which skill, how much of
+     it they have out of a hundred, and the rung that amounts to. A number
+     rather than a bar — 62/100 says exactly what a bar could only suggest, and
+     the whole reason skills are interesting is watching one climb while the
+     others do not. */
   const skills = Object.keys(SKILLS).map((k) => {
     const v = camp.skill[k] || 0;
     const pct = Math.round(v * 100);
-    return `<div class="skillRow"><span>${SKILLS[k].of}</span>`
-      + `<i class="sk" style="--v:${pct}%"></i>`
-      + `<b>${pct}%</b><em>${SKILL_RUNGS[skillTier(v)]}</em></div>`;
+    return `<tr><td class="n">${SKILLS[k].of}</td><td>${pct}<span>/100</span></td>`
+      + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td></tr>`;
   }).join('');
 
   $('tribeHead').innerHTML =
@@ -250,7 +250,8 @@ export function renderTribeCard() {
        pile is the only thing here that keeps. */
     + `<div><span>worth taking</span> ${wealthOf(camp).toFixed(0)}`
     + ` <em>(${heldWords(camp)})</em></div>`
-    + `<div class="skills">${skills}</div>`
+    + `<table class="skills"><thead><tr><th>skill</th><th>acquired</th><th>level</th></tr></thead>`
+    + `<tbody>${skills}</tbody></table>`
     + `<div><span>founded day ${Math.floor(camp.founded)} · ${camp.born} born · `
     + `most they were was ${camp.peak}${toll.length
         ? ` · lost ${toll.reduce((n, [, k]) => n + k, 0)}: `

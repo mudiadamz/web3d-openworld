@@ -266,22 +266,10 @@
     line-height: 1; padding: 0 2px;
   }
   #tribeHead { margin: 10px 0 8px; font-size: 9px; line-height: 1.7; }
-  /* One row per skill: what it is, how far along, the number, and the rung in
-     words. The number and the word say the same thing twice on purpose — 62%
+  /* The skills are a table, drawn by the same rules as the band's other tables
+     below: the number and the rung say the same thing twice on purpose — 62/100
      is precise and "a fair hand" is what it means. */
-  #tribeHead .skills { margin-top: 5px; }
-  #tribeHead .skillRow {
-    display: grid; grid-template-columns: 62px 1fr 34px auto; gap: 7px;
-    align-items: center; line-height: 1.5;
-  }
-  #tribeHead .skillRow > span { color: var(--muted); }
-  #tribeHead .skillRow > b { color: var(--text); font-weight: 600; text-align: right;
-    font-variant-numeric: tabular-nums; }
-  #tribeHead .skillRow > em { color: var(--muted); font-style: normal; font-size: 8px; }
-  #tribeHead .skillRow .sk {
-    display: block; height: 4px; border-radius: 2px;
-    background: linear-gradient(to right, #7fd08a var(--v), rgba(255,255,255,0.13) var(--v));
-  }
+  #tribeHead table.skills { margin-top: 5px; }
   #tribeHead b { color: var(--accent); font-weight: 400; }
   #tribeHead span { color: var(--muted); }
   /* Beside the close button rather than in the body: it acts on the band the
@@ -304,13 +292,13 @@
   }
   #tribeTabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
   #tribeList { overflow-y: auto; font-size: 9px; }
-  #tribeList table { width: 100%; border-collapse: collapse; }
-  #tribeList th {
+  #tribeList table, #tribeHead table { width: 100%; border-collapse: collapse; }
+  #tribeList th, #tribeHead th {
     text-align: left; font-weight: 400; color: var(--muted); font-size: 8px;
     padding: 0 6px 4px 0; position: sticky; top: 0; background: var(--panel);
   }
-  #tribeList td { padding: 2px 6px 2px 0; font-variant-numeric: tabular-nums; }
-  #tribeList td.n { color: var(--text); font-variant-numeric: normal; }
+  #tribeList td, #tribeHead td { padding: 2px 6px 2px 0; font-variant-numeric: tabular-nums; }
+  #tribeList td.n, #tribeHead td.n { color: var(--text); font-variant-numeric: normal; }
   #tribeList tr.chief td.n::after { content: ' · chief'; color: var(--accent); font-size: 8px; }
   #tribeList tr.gone td { opacity: 0.45; }
   #tribeList tr[data-p] { cursor: pointer; }
