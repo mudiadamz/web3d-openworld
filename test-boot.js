@@ -3382,7 +3382,8 @@ if (liveCamps.length && peopleModule?.campParts?.stores && lifeModule?.daysOfFoo
   for (const c of live) {
     for (let k = 0; k < STORES; k++) {
       const slot = c.index * STORES + k;
-      const up = k < (c.storesUp || 0);
+      // A village or a city stores in something better, which stands in the packed lists instead.
+      const up = k < (c.storesUp || 0) && (c.stage || 0) < 3;
       /* A band whose free side runs into the sea has fewer places for one,
          and a slot with nowhere to stand must never be shown. */
       const laid = c.storeAt[k]?.elements;
@@ -3657,15 +3658,19 @@ if (peopleModule?.dressCamp && liveCamps.length) {
   const inPlaza = homes.some((h) => Math.hypot(h.x - camp.x, h.z - camp.z) < PPm.CITY.plaza - 0.1);
   cityReport = `${camp.cityShown} houses on streets (${ringHouses} round fires, ${tents} tents), `
     + `${parts.civHall?.count || 0} hall, ${parts.civStall?.count || 0} stalls, ${parts.civWell?.count || 0} well, `
-    + `${parts.civWall?.count || 0} lengths of wall, ${parts.civTower?.count || 0} gate towers, ${camp.hearths} fire`;
+    + `${parts.civWall?.count || 0} lengths of wall, ${parts.civTower?.count || 0} gate towers, ${camp.hearths} fires, `
+    + `${parts.civCityHall?.count || 0} city hall`;
   check('a city builds in brick along streets, not round fires',
     camp.cityShown > 0 && (parts.outTownhouse?.count || 0) >= camp.cityShown && ringHouses === 0 && tents === 0, cityReport);
   check('and no two of its houses stand in each other, nor in its plaza', !crowded && !inPlaza);
   check('and every household lives in one, at its own door', livePeople.filter((q) => q.camp === camp)
     .every((q) => homes.some((h) => h.door === q.hut) || homes.length === 0), cityReport);
-  check('and it keeps one fire, at the middle', camp.hearths === 1);
-  check('and has a hall, a market round a well, and a wall with gates',
-    (parts.civHall?.count || 0) >= 1 && (parts.civStall?.count || 0) >= 1 && (parts.civWell?.count || 0) >= 1
+  check('and no fire: its middle is the city hall', camp.hearths === 0 && (parts.civCityHall?.count || 0) >= 1,
+    `${camp.hearths} fires, ${parts.civCityHall?.count || 0} city hall`);
+  const paved = pathsModule?.pathStats?.().roads || 0;
+  check('and its plaza and streets are paved', paved > 0, `${paved} cells of road`);
+  check('and has a market round a well, and a wall with gates',
+    (parts.civStall?.count || 0) >= 1 && (parts.civWell?.count || 0) >= 1
     && (parts.civWall?.count || 0) > 0 && (parts.civTower?.count || 0) > 0, cityReport);
   camp.stage = stageWas;
   PPm.dressCamp(camp);

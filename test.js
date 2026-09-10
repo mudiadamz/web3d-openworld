@@ -5512,7 +5512,7 @@ check('zooming crops the relief rather than rebuilding it',
 /* A track a metre and a half wide is a third of a pixel at island scale, so it
    is drawn thicker than it is — which is what a map does with a road. */
 check('the paths are drawn as roads', /function drawPathLayer\(\)/.test(mapMod)
-  && /const w = Math\.max\(1, cell \* k\)/.test(mapMod));
+  && /const w = Math\.max\(road \? 1\.6 : 1, cell \* k \* \(road \? 1\.3 : 1\)\)/.test(mapMod));
 /* The same threshold the terrain shader browns from, so the map and the ground
    agree about what counts as a path — a road on the map that is not under your
    feet when you get there is worse than no road. */
@@ -5592,7 +5592,7 @@ check('and its own stones to ring it and logs to sit at',
 check('a fire is lit only once there are tents round it',
   /function hearthsFor\(families\) \{\s*return clamp\(Math\.ceil\(\(families \|\| 1\) \/ HUTS_PER_HEARTH\), 1, HEARTHS\)/
     .test(villageSrc)
-  && /camp\.hearths = here === 0 \? 0 : city \? 1 : hearthsFor\(want\)/.test(villageSrc));
+  && /camp\.hearths = here === 0 \|\| city \? 0 : hearthsFor\(want\)/.test(villageSrc));
 check('so a band of one household still looks like one camp',
   /const lit = f < camp\.hearths;/.test(villageSrc));
 
@@ -7482,10 +7482,59 @@ group('cities');
     && /return out\.sort\(\(a, b\) => a\.d - b\.d\);/.test(html));
   check('and no rings round fires any more: only the fire at the middle of the plaza',
     /const coreWant = city \? 0 : want;/.test(html) && /camp\.outerShown = city \|\| here === 0/.test(html));
-  check('the houses keep off the hall and the market, which are placed first',
-    /claimCivic\(camp, 'hall'\);\s*claimCivic\(camp, 'market'\);\s*c\.cand \|\|= cityCandidates\(camp\);/.test(html)
-    && ['camp.barrow', 'camp.field', 'camp.storeSpots', "['hall', 'market']", 'trees.some'].every((t) => (bodyOf('cityGround') || '').includes(t)));
+  check('the houses keep off the market, which is placed first',
+    /claimCivic\(camp, 'market'\);\s*c\.cand \|\|= cityCandidates\(camp\);/.test(html)
+    && ['camp.barrow', 'camp.field', 'camp.storeSpots', 'civic?.market', 'trees.some'].every((t) => (bodyOf('cityGround') || '').includes(t)));
+  check('a city has no fire: no flame, no smoke, no firelight, no rack',
+    /camp\.hearths = here === 0 \|\| city \? 0 : hearthsFor\(want\);/.test(html)
+    && /if \(!camp \|\| \(camp\.stage \|\| 0\) >= CITY\.at\) \{/.test(html)
+    && /camp\.light\.intensity = \(camp\.stage \|\| 0\) >= CITY\.at \? 0 :/.test(moduleSource('move.js'))
+    && /if \(knows && !city && camp\.rackAt\?\.\[i\]\)/.test(html));
+  check('and where it burned, the city hall, with the flag on its tower',
+    /cityHalls\.push\(\{ at: place\(camp\.x, camp\.z,/.test(html) && /sampleHeight\(x, z\) \+ \(city \? CITY\.hallRoof/.test(html));
+  check('the chief\'s hall is not a city\'s', /if \(stage >= CIVIC\.hallAt && stage < CITY\.at\) \{/.test(html));
   check('the caption knows the market', /market: 'trading at the market'/.test(html) && /market: 'off to the market'/.test(html));
+}
+
+/* -------------------------------------------------------------------------
+   Roads
+
+   Laid rather than worn: a city's streets and plaza, the way to each village
+   of its tribe, and the shortest roads that join all the cities — in the same
+   ground the paths are worn into, at a value no path reaches.
+   ------------------------------------------------------------------------- */
+group('roads');
+
+{
+  const pa = moduleSource('paths.js');
+  check('a path stops short of being a road', /const TRAIL_MAX = (\d+);/.test(pa) && Number(pa.match(/const TRAIL_MAX = (\d+);/)[1]) < 255
+    && /if \(before >= TRAIL_MAX\) return;/.test(pa) && /Math\.min\(TRAIL_MAX, before \+/.test(pa));
+  check('and a road never grows back', /if \(roads\.has\(k\)\) continue;/.test(pa));
+  check('nor goes across the water', /if \(sampleHeight\(wx, wz\) < SEA \+ 0\.3\) return;/.test(pa));
+  check('and has a colour of its own on the ground, which no trail can reach',
+    /float road = smoothstep\(0\.94, 0\.99, worn\);/.test(html) && /uRoadColor/.test(html)
+    && Number(pa.match(/const TRAIL_MAX = (\d+);/)[1]) / 255 < 0.94);
+  check('and on the map', /const road = worn >= 0\.99;/.test(html));
+  const st = moduleSource('settlement.js');
+  check('a city paves its plaza, its streets and the cross streets through them',
+    /paveDisc\(c\.x, c\.z, CITY\.plaza - 1\);/.test(st) && /const street = h\.v \+ h\.side \* 4\.0;/.test(st)
+    && /!== CITY\.block\) continue;\s*paveRoad/.test(st));
+  check('and a road to each village of its tribe', /v\.code === c\.code\) paveRoad\(\.\.\.edge\(c, v\), 3\.5\);/.test(st));
+  check('and the cities are all joined, by the shortest roads that do it',
+    /Between the cities, the shortest roads that join them all \(Prim's\)/.test(st) && /joined\.push\(best\[1\]\);/.test(st));
+  check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
+}
+
+group('stores by rung');
+{
+  const st = moduleSource('settlement.js'), vi = moduleSource('village.js');
+  check('a village keeps its food in a storehouse on staddle stones, a city in domed silos',
+    /storeKind = \(camp\) => \(\(camp\.stage \|\| 0\) >= CITY\.at \? 'silo' : \(camp\.stage \|\| 0\) >= 3 \? 'storehouse' : 'granary'\)/.test(st)
+    && /const STORE_KEYS = \['storehouse', 'silo'\];/.test(vi) && /function storehouse\(\)/.test(vi) && /function silo\(\)/.test(vi));
+  check('and the band\'s granary is parked where one stands instead',
+    /const up = storeKind\(camp\) === 'granary' && !camp\.gone \? camp\.storesUp \|\| 0 : 0;/.test(st) && /coreStores\(camp\);/.test(st));
+  check('in the core, the yards and the city plots alike',
+    (st.match(/storeAt\(camp, /g) || []).length === 3);
 }
 
 /* ---- report ---- */

@@ -15,7 +15,7 @@ import { codeColor, takeTribeCode } from './ui.js';
 import { FIELD, dressField, farmGeometries } from './farming.js';
 import { HOUSE_KEYS, TENT_KEYS, tentGeometries, tentMaterial, tentStyle } from './village.js';
 import { campReach, CITY, cityPlotsFor, CIVIC, claimCivic, dressCivic, dressOutskirts, extendOutskirts, makeHouses, OUTSKIRTS } from './settlement.js';
-export { CITY, CIVIC, OUTSKIRTS, campReach, claimCivic, cityPlotsFor, dressCivic, dressOutskirts, extendOutskirts } from './settlement.js';
+export { CITY, CIVIC, OUTSKIRTS, campReach, claimCivic, cityPlotsFor, dressCivic, dressOutskirts, extendOutskirts, storeKind } from './settlement.js';
 /* The outskirts and what a larger place builds were lifted out into settlement.js
    when this file passed the length of the page it came from; see there. */
 
@@ -859,7 +859,7 @@ export function dressCamp(camp, pack = true) {
      no tents round it is a fire nobody is sitting at, which reads as a camp
      twice the size of the band living in it — the thing lighting them all
      unconditionally would do. */
-  camp.hearths = here === 0 ? 0 : city ? 1 : hearthsFor(want);
+  camp.hearths = here === 0 || city ? 0 : hearthsFor(want);
   const perFireStones = P0.stones / HEARTHS, perFireLogs = P0.logs / HEARTHS;
   for (let f = 0; f < HEARTHS; f++) {
     const lit = f < camp.hearths;
@@ -889,7 +889,7 @@ export function dressCamp(camp, pack = true) {
   const knows = (camp.skill?.drying || 0) >= RACK_KNOWN;
   for (let i = 0; i < P0.poles; i++) {
     const slot = index * P0.poles + i;
-    if (knows && camp.rackAt?.[i]) campParts.poles.setMatrixAt(slot, camp.rackAt[i]);
+    if (knows && !city && camp.rackAt?.[i]) campParts.poles.setMatrixAt(slot, camp.rackAt[i]);
     else campParts.poles.setMatrixAt(slot, HIDDEN);
   }
   campParts.poles.instanceMatrix.needsUpdate = true;
@@ -906,10 +906,12 @@ export function dressCamp(camp, pack = true) {
    village taken by another tribe changes its flag the moment it changes hands. */
 function dressFlag(camp, index, here) {
   if (!campParts.flagPole) return;
+  const city = (camp.stage || 0) >= CITY.at;
   const at = camp.fireAt?.[0] || camp;
-  const x = at.x + 3.2, z = at.z - 2.4;
+  // On a city's hall, over the middle; by the first fire anywhere else.
+  const x = city ? camp.x : at.x + 3.2, z = city ? camp.z : at.z - 2.4;
   if (here > 0) {
-    _v.set(x, sampleHeight(x, z), z);
+    _v.set(x, sampleHeight(x, z) + (city ? CITY.hallRoof - 0.05 : 0), z);
     _e.set(0, index * 1.7, 0);
     _q.setFromEuler(_e);
     _s.setScalar(1);
@@ -952,16 +954,8 @@ export function storesFor(camp, days) {
     follow the band, and these follow what the band has to eat. */
 export function dressStores(camp) {
   if (!campParts?.stores || !camp) return;
-  const up = camp.storesUp || 0;
-  for (let k = 0; k < STORES; k++) {
-    const slot = camp.index * STORES + k;
-    const at = (k < up && camp.storeAt?.[k]) || HIDDEN;
-    campParts.stores.setMatrixAt(slot, at);
-    campParts.storeRoofs.setMatrixAt(slot, at);
-  }
-  campParts.stores.instanceMatrix.needsUpdate = true;
-  campParts.storeRoofs.instanceMatrix.needsUpdate = true;
-  dressOutskirts();          // the yards stand as many as the core does
+  // The core's slots, the yards' and a city's, in whatever this rung stores in (settlement.js).
+  dressOutskirts();
 }
 
 /* Where a granary may go, best first: the cluster on the one bearing no second
@@ -1379,7 +1373,8 @@ export function resetSmoke(i, life = 0) {
      to nobody, so they are parked out of the world rather than placed at a
      camp that does not exist. */
   const camp = camps[(i / SMOKE_PER_FIRE) | 0];
-  if (!camp) {
+  // Nor, now, for a city, which has no fire to smoke from.
+  if (!camp || (camp.stage || 0) >= CITY.at) {
     smoke.geometry.attributes.position.array[i * 3 + 1] = -9999;
     smoke.geometry.attributes.aLife.array[i] = 0;
     return;

@@ -144,6 +144,54 @@ function townhouse() {
   ]);
 }
 
+/* And where the food is kept. A band's granary is a drum of wattle on four
+   stilts under a thatch (people.js). A village builds a timber storehouse on
+   staddle stones — mushroom-shaped, so nothing climbs up into the grain — and a
+   city stores in brick: a cluster of domed silos on a stone floor, the grain
+   poured in at the top and drawn out at the hatch below. Sized in the
+   granary's own units: they stand where it stood, scaled as it was. */
+export const STORE_KEYS = ['storehouse', 'silo'];
+const PLANK = 0x8a6a45;
+
+function storehouse() {
+  const parts = [];
+  for (const x of [-0.75, 0.75]) {
+    for (const z of [-1.0, 0, 1.0]) {
+      parts.push(painted(new THREE.CylinderGeometry(0.1, 0.17, 0.5, 6).translate(x, 0.25, z), STONE));
+      parts.push(painted(new THREE.CylinderGeometry(0.27, 0.22, 0.1, 8).translate(x, 0.55, z), STONE));
+    }
+  }
+  const W = 1.8, L = 2.4, H = 1.25, y = 0.66;
+  parts.push(
+    painted(new THREE.BoxGeometry(W + 0.2, 0.1, L + 0.2).translate(0, y - 0.05, 0), TIMBER),        // the floor
+    painted(new THREE.BoxGeometry(W, H, L).translate(0, y + H / 2, 0), PLANK),
+    painted(new THREE.ConeGeometry(1.75, 1.25, 4).rotateY(Math.PI / 4).scale(1, 1, L / W).translate(0, y + H + 0.62, 0), THATCH),
+    painted(new THREE.BoxGeometry(0.6, 0.9, 0.06).translate(0, y + 0.45, L / 2 + 0.02), DOOR),
+    painted(new THREE.BoxGeometry(0.5, 0.1, 0.5).translate(0, 0.33, L / 2 + 0.45), TIMBER),        // the step up
+  );
+  for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    parts.push(painted(new THREE.BoxGeometry(0.12, H, 0.12).translate(x * (W / 2 - 0.02), y + H / 2, z * (L / 2 - 0.02)), TIMBER));
+  }
+  return merged(parts);
+}
+
+function silo() {
+  const parts = [painted(new THREE.CylinderGeometry(1.55, 1.65, 0.3, 14).translate(0, 0.15, 0), STONE)];
+  for (const [x, z, r, h] of [[0, -0.35, 0.72, 2.3], [-0.78, 0.55, 0.5, 1.7], [0.78, 0.55, 0.5, 1.7]]) {
+    parts.push(
+      painted(new THREE.CylinderGeometry(r, r * 1.08, h, 12).translate(x, 0.3 + h / 2, z), MUDBRICK),
+      painted(new THREE.SphereGeometry(r, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(x, 0.3 + h, z), ROOFSLAB),
+      painted(new THREE.BoxGeometry(r * 0.55, r * 0.6, 0.08).translate(x, 0.3 + r * 0.45, z + r * 1.05), DOOR),   // the hatch
+      painted(new THREE.CylinderGeometry(0.12, 0.12, 0.08, 8).translate(x, 0.3 + h + r - 0.02, z), DOOR),       // and the top
+    );
+  }
+  return merged(parts);
+}
+
+export function storeGeometry(key) {
+  return key === 'silo' ? silo() : storehouse();
+}
+
 export function houseGeometry(key) {
   return key === 'townhouse' ? townhouse() : house();
 }
@@ -198,6 +246,26 @@ function tower() {
   ]);
 }
 
+/* The city hall, where a city's fire used to be: a brick hall with a portico of
+   columns across its front and a tower over the middle, the flag on top. */
+function cityhall() {
+  const W = 9, D = 7, H = 4.6;
+  const parts = [
+    painted(new THREE.BoxGeometry(W + 1.2, 0.35, D + 2.8).translate(0, 0.175, 0.7), STONE),        // the steps
+    painted(new THREE.BoxGeometry(W, H, D).translate(0, 0.35 + H / 2, 0), MUDBRICK),
+    painted(new THREE.BoxGeometry(W + 0.5, 0.35, D + 2.6).translate(0, 0.35 + H + 0.17, 0.65), ROOFSLAB),
+    painted(new THREE.BoxGeometry(2.8, 3.1, 2.8).translate(0, 0.35 + H + 0.35 + 1.55, 0), MUDBRICK),  // the tower
+    painted(new THREE.BoxGeometry(3.2, 0.3, 3.2).translate(0, 0.35 + H + 0.35 + 3.25, 0), ROOFSLAB),
+    painted(new THREE.BoxGeometry(1.6, 2.4, 0.1).translate(0, 0.35 + 1.2, D / 2 + 0.03), DOOR),
+  ];
+  for (let k = 0; k < 4; k++) {
+    parts.push(painted(new THREE.CylinderGeometry(0.28, 0.32, H, 8).translate(-3.3 + k * 2.2, 0.35 + H / 2, D / 2 + 1.5), STONE));
+  }
+  return merged(parts);
+}
+/* Where the flag goes on it: the top of the tower. */
+export const CITYHALL_TOP = 0.35 + 4.6 + 0.35 + 3.4;
+
 export function civicGeometries() {
-  return { hall: hall(), stall: stall(), well: well(), wall: wallLength(), tower: tower() };
+  return { hall: hall(), stall: stall(), well: well(), wall: wallLength(), tower: tower(), cityhall: cityhall() };
 }

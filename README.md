@@ -1628,6 +1628,16 @@ water. The hall and the market take the next good spot out from the middle, in
 the same rings the outskirts grow in, so they never stand on a tent, the dead or
 the field.
 
+A city is laid out in streets rather than rings round fires, and has **no fire**
+at all: where its last one burned, in the middle of the plaza, stands the **city
+hall**, with the band's flag on its tower. Its plaza and streets are **paved**,
+and roads run from it to every village of its tribe and between the cities —
+the shortest set that joins them all — in a colour of their own on the ground
+and on the map. A road is laid, not worn: it never grows back.
+
+What the food is kept in climbs too: a band's granary on stilts, a village's
+timber storehouse on staddle stones, a city's cluster of domed brick silos.
+
 And a city lives differently: its people spend mornings at the market, which is
 how a city gets better at dealing, and its children play in the square.
 

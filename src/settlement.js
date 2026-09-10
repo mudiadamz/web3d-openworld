@@ -4,7 +4,8 @@ import { P, SEA } from './params.js';
 import { flatnessAt, mulberry32, sampleHeight } from './noise.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, treeSpots } from './world.js';
 import { FIELD } from './farming.js';
-import { civicGeometries, houseGeometry, tentMaterial, tentStyle } from './village.js';
+import { CITYHALL_TOP, civicGeometries, houseGeometry, storeGeometry, tentMaterial, tentStyle } from './village.js';
+import { pathEpoch, paveDisc, paveRoad } from './paths.js';
 import {
   CAMP_CLEARING, CAMP_PIECES, campCapacity, campParts, camps, GRAVE_SPACING, HEARTHS, PALE, people, STORE_FLAT, STORE_SCALE, STORE_SPOTS, STORE_STAND, STORE_THATCH, STORE_WALL, STORES, TENT_REACH, tribeGroup
 } from './people.js';
@@ -203,7 +204,8 @@ export function extendOutskirts(camp, seats) {
    them), among trees, or crowding the next place. Every twelfth good plot is a
    granary rather than a house.
    ------------------------------------------------------------------------- */
-export const CITY = { at: 4, along: 4.2, block: 6, pair: 11.4, back: 1.7, plaza: 10, reach: 150, storeEvery: 12 };
+export const CITY = { at: 4, along: 4.2, block: 6, pair: 11.4, back: 1.7, plaza: 10, reach: 150, storeEvery: 12,
+  hallRoof: CITYHALL_TOP };
 
 function cityCandidates(camp) {
   const th = camp.hearthTurn || 0;
@@ -219,7 +221,7 @@ function cityCandidates(camp) {
         const u = i * CITY.along;
         const d = Math.hypot(u, v);
         if (d < CITY.plaza || d > CITY.reach) continue;
-        out.push({ x: camp.x + ux * u + vx * v, z: camp.z + uz * u + vz * v, d, fx: side * vx, fz: side * vz });
+        out.push({ x: camp.x + ux * u + vx * v, z: camp.z + uz * u + vz * v, d, fx: side * vx, fz: side * vz, u, v, side });
       }
     }
   }
@@ -239,10 +241,8 @@ function cityGround(camp, q, trees) {
     if (Math.hypot(q.x - camp.field.x, q.z - camp.field.z) < most + 3) return false;
   }
   for (const s of camp.storeSpots || []) if (Math.hypot(q.x - s.x, q.z - s.z) < 4.2) return false;
-  for (const kind of ['hall', 'market']) {
-    const c = camp.outer?.civic?.[kind];
-    if (c && Math.hypot(q.x - c.x, q.z - c.z) < (kind === 'hall' ? 11 : 10)) return false;
-  }
+  const market = camp.outer?.civic?.market;
+  if (market && Math.hypot(q.x - market.x, q.z - market.z) < 10) return false;
   for (const c of camps) {
     if (c === camp || c.gone) continue;
     if (Math.hypot(q.x - c.x, q.z - c.z) < campReach(c) + 6) return false;
@@ -256,8 +256,8 @@ export function cityPlotsFor(camp, n) {
     camp.city = { x: camp.x, z: camp.z, cand: null, next: 0, homes: [], stores: [], trees: null };
   }
   const c = camp.city;
-  // The hall and the market first, so no house is ever put up where they go.
-  claimCivic(camp, 'hall');
+  // The market first, so no house is ever put up where it goes. (The chief's
+  // hall is not a city's: its city hall is in the middle, where the fire was.)
   claimCivic(camp, 'market');
   c.cand ||= cityCandidates(camp);
   c.trees ||= treeSpots.filter((t) => Math.hypot(t.x - camp.x, t.z - camp.z) < CITY.reach + 6);
@@ -279,7 +279,7 @@ export function cityPlotsFor(camp, n) {
     const hide = 0x6d5740 + ((jitter() * 0x101010) | 0);
     const door = { x: q.x + q.fx * 2.2, z: q.z + q.fz * 2.2 };
     const step = { x: q.x + q.fx * 3.2, y: sampleHeight(q.x + q.fx * 3.2, q.z + q.fz * 3.2), z: q.z + q.fz * 3.2 };
-    c.homes.push({ x: q.x, z: q.z, at, hide, door, step });
+    c.homes.push({ x: q.x, z: q.z, at, hide, door, step, u: q.u, v: q.v, side: q.side });
     spread(camp, q.x, q.z, 3);
   }
   return c.homes;
@@ -346,6 +346,32 @@ export function makeHouses(key) {
   return m;
 }
 
+/* Which store a settlement keeps its food in (village.js): a band's granary on
+   stilts until it is a village, a storehouse on staddle stones then, domed
+   brick silos in a city. Wherever a granary would stand — the core's, the
+   outskirts yards', a city's plots — the store of its rung stands instead. */
+export const storeKind = (camp) => ((camp.stage || 0) >= CITY.at ? 'silo' : (camp.stage || 0) >= 3 ? 'storehouse' : 'granary');
+const OUT_STORE = { storehouse: 'outStorehouse', silo: 'outSilo' };
+const storeMesh = (kind) => (room) => {
+  const m = new THREE.InstancedMesh(storeGeometry(kind), tentMaterial, room);
+  m.name = 'store-' + kind;
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+};
+
+/* The core's granary slots: shown as the store says, and parked for a
+   settlement that has built something better — which then stands in them. */
+function coreStores(camp) {
+  const up = storeKind(camp) === 'granary' && !camp.gone ? camp.storesUp || 0 : 0;
+  for (let k = 0; k < STORES; k++) {
+    const slot = camp.index * STORES + k;
+    const at = (k < up && camp.storeAt?.[k]) || HIDDEN;
+    campParts.stores.setMatrixAt(slot, at);
+    campParts.storeRoofs.setMatrixAt(slot, at);
+  }
+}
+
 const outskirtsMesh = (key) => (room) => {
   const core = campParts[OUT_CORE[key]] || makeHouses(OUT_CORE[key]);
   const m = new THREE.InstancedMesh(core.geometry, core.material, room);
@@ -358,8 +384,16 @@ const outskirtsMesh = (key) => (room) => {
 export function dressOutskirts() {
   if (!campParts?.huts) return;
   dressCivic();
-  const n = Object.fromEntries(Object.keys(OUT_CORE).map((k) => [k, 0]));
+  const n = Object.fromEntries([...Object.keys(OUT_CORE), ...Object.values(OUT_STORE)].map((k) => [k, 0]));
   const need = { ...n };
+  // Where each store stands, granary or better; how many of each is known once they are counted.
+  const stores = new Map();
+  const storeAt = (camp, at) => {
+    const kind = storeKind(camp);
+    if (!stores.has(camp)) stores.set(camp, []);
+    stores.get(camp).push(at);
+    need[OUT_STORE[kind] || 'outStores']++;
+  };
   const lit = (camp) => {
     let left = camp.outerShown || 0, fires = 0;
     for (const h of camp.outer.hearths) { if (left <= 0) break; fires++; left -= h.huts.length; }
@@ -370,9 +404,14 @@ export function dressOutskirts() {
   const cityStores = (camp) => Math.min(camp.city.stores.length,
     Math.round(Math.floor(camp.cityShown / (CITY.storeEvery - 1)) * Math.min(1, (camp.storesUp || 0) / STORES)));
   for (const camp of camps) {
+    coreStores(camp);
     if (camp.cityShown && camp.city) {
       need.outTownhouse += camp.cityShown;
-      need.outStores += cityStores(camp);
+      for (const st of camp.city.stores.slice(0, cityStores(camp))) storeAt(camp, st.at);
+    }
+    // A granary in the core is a slot of its own; anything better stands in the packed lists.
+    if (storeKind(camp) !== 'granary' && !camp.gone) {
+      for (let k = 0; k < (camp.storesUp || 0) && k < (camp.storeAt?.length || 0); k++) storeAt(camp, camp.storeAt[k]);
     }
     camp.outerLit = camp.outer && !camp.gone ? lit(camp) : 0;
     if (!camp.outerLit) continue;
@@ -380,10 +419,12 @@ export function dressOutskirts() {
     need.outFire += camp.outerLit;
     need.outStones += camp.outerLit * 9;
     need.outLogs += camp.outerLit * 4;
-    for (let y = 0; y < yardsOf(camp); y++) need.outStores += Math.min(camp.storesUp || 0, camp.outer.yards[y].spots.length);
+    for (let y = 0; y < yardsOf(camp); y++) {
+      for (const s of camp.outer.yards[y].spots.slice(0, camp.storesUp || 0)) storeAt(camp, s.at);
+    }
   }
   need.outStoreRoofs = need.outStores;
-  for (const key in need) packed(key, need[key], outskirtsMesh(key));
+  for (const key in need) packed(key, need[key], key === 'outStorehouse' ? storeMesh('storehouse') : key === 'outSilo' ? storeMesh('silo') : outskirtsMesh(key));
   for (const camp of camps) {
     camp.outerFires = [];
     camp.outerStores = [];
@@ -393,13 +434,21 @@ export function dressOutskirts() {
         campParts.outTownhouse.setMatrixAt(i, h.at);
         campParts.outTownhouse.setColorAt(i, _c.setHex(h.hide).lerp(PALE, 0.72));
       }
-      for (const st of camp.city.stores.slice(0, cityStores(camp))) {
-        const i = n.outStores++;
-        campParts.outStores.setMatrixAt(i, st.at);
-        campParts.outStoreRoofs.setMatrixAt(i, st.at);
-        campParts.outStores.setColorAt(i, _c.setHex(STORE_WALL));
-        campParts.outStoreRoofs.setColorAt(i, _c.setHex(STORE_THATCH));
+    }
+    for (const at of stores.get(camp) || []) {
+      const kind = OUT_STORE[storeKind(camp)];
+      if (kind) {
+        const i = n[kind]++;
+        campParts[kind].setMatrixAt(i, at);
+        const t = ((i * 2654435761) >>> 0) / 4294967296;
+        campParts[kind].setColorAt(i, _c.setRGB(0.9 + t * 0.1, 0.88 + t * 0.1, 0.86 + t * 0.1));
+        continue;
       }
+      const i = n.outStores++;
+      campParts.outStores.setMatrixAt(i, at);
+      campParts.outStoreRoofs.setMatrixAt(i, at);
+      campParts.outStores.setColorAt(i, _c.setHex(STORE_WALL));
+      campParts.outStoreRoofs.setColorAt(i, _c.setHex(STORE_THATCH));
     }
     if (!camp.outerLit) continue;
     const key = OUT_TENTS[tentStyle(camp)], mesh = campParts[key];
@@ -430,17 +479,12 @@ export function dressOutskirts() {
     }
     // As many granaries in each yard as stand in the core: the store decides both.
     for (let y = 0; y < yardsOf(camp); y++) {
-      for (const s of camp.outer.yards[y].spots.slice(0, camp.storesUp || 0)) {
-        const i = n.outStores++;
-        campParts.outStores.setMatrixAt(i, s.at);
-        campParts.outStoreRoofs.setMatrixAt(i, s.at);
-        campParts.outStores.setColorAt(i, _c.setHex(STORE_WALL));
-        campParts.outStoreRoofs.setColorAt(i, _c.setHex(STORE_THATCH));
-        camp.outerStores.push(s);
-      }
+      for (const s of camp.outer.yards[y].spots.slice(0, camp.storesUp || 0)) camp.outerStores.push(s);
     }
   }
   n.outStoreRoofs = n.outStores;
+  campParts.stores.instanceMatrix.needsUpdate = true;
+  campParts.storeRoofs.instanceMatrix.needsUpdate = true;
   for (const key in n) {
     const m = campParts[key];
     if (!m) continue;
@@ -464,7 +508,7 @@ export function dressOutskirts() {
    ------------------------------------------------------------------------- */
 export const CIVIC = { hallAt: 2, marketAt: 4, wallAt: 4, stalls: 6, stallOut: 4.2, wallOut: 5, wallGap: 4.2, gate: 3.5 };
 const STALL_COLOURS = [0xe8c07a, 0xc86a4a, 0x8fb0c8, 0xd9d2b8, 0x9cc27a, 0xd08ab0];
-const CIVIC_KEYS = { civHall: 'hall', civStall: 'stall', civWell: 'well', civWall: 'wall', civTower: 'tower' };
+const CIVIC_KEYS = { civHall: 'hall', civStall: 'stall', civWell: 'well', civWall: 'wall', civTower: 'tower', civCityHall: 'cityhall' };
 let civicShapes = null;
 const civicMesh = (key) => (room) => {
   civicShapes ||= civicGeometries();
@@ -510,13 +554,20 @@ function place(x, z, turn, lift = 0) {
 
 export function dressCivic() {
   if (!campParts?.huts) return;
-  const halls = [], stalls = [], wells = [], walls = [], towers = [];
+  const halls = [], stalls = [], wells = [], walls = [], towers = [], cityHalls = [];
   for (const camp of camps) {
     if (camp.gone || !people.some((q) => q.camp === camp)) continue;
     const stage = camp.stage || 0;
-    if (stage >= CIVIC.hallAt) {
+    // The chief's hall, until the place is a city and its hall is the city's.
+    if (stage >= CIVIC.hallAt && stage < CITY.at) {
       const h = claimCivic(camp, 'hall');
       if (h) halls.push({ at: place(h.x, h.z, h.face) });
+    }
+    /* A city has no fire: where it burned, in the middle of the plaza, the city
+       hall stands, square to the streets. */
+    if (stage >= CITY.at) {
+      const th = camp.hearthTurn || 0;
+      cityHalls.push({ at: place(camp.x, camp.z, Math.atan2(Math.cos(th), Math.sin(th))) });
     }
     if (stage >= CIVIC.marketAt) {
       const m = claimCivic(camp, 'market');
@@ -552,7 +603,8 @@ export function dressCivic() {
       }
     }
   }
-  for (const [key, list] of [['civHall', halls], ['civStall', stalls], ['civWell', wells], ['civWall', walls], ['civTower', towers]]) {
+  for (const [key, list] of [['civHall', halls], ['civStall', stalls], ['civWell', wells], ['civWall', walls], ['civTower', towers],
+    ['civCityHall', cityHalls]]) {
     const m = packed(key, list.length, civicMesh(key));
     if (!m) continue;
     list.forEach((it, i) => {
@@ -562,5 +614,66 @@ export function dressCivic() {
     m.count = list.length;
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  }
+  layRoads();
+}
+
+/* -------------------------------------------------------------------------
+   Roads
+
+   A city paves its plaza and a street in front of every house, and the cross
+   streets through them; and there is a road from every city to each village of
+   its tribe, and between the cities — the shortest set of roads that joins all
+   of them, so every city can be reached from every other. Laid into the ground
+   the footpaths are worn into (paths.js), but as road: it never grows back,
+   grass never comes up through it, and it has a colour of its own on the ground
+   and on the map. Straight, and not across the water.
+
+   Laid again only when something it depends on changes — a city grows, one is
+   made or lost, a village changes hands — or the ground is thrown away.
+   ------------------------------------------------------------------------- */
+let roadsFor = '';
+export function layRoads() {
+  const cities = camps.filter((c) => !c.gone && (c.stage || 0) >= CITY.at && c.city && people.some((q) => q.camp === c));
+  const key = pathEpoch + '#' + cities.map((c) => `${c.index}:${c.cityShown || 0}:`
+    + camps.filter((v) => !v.gone && v !== c && v.code === c.code).map((v) => v.index).join('.')).join('|');
+  if (key === roadsFor) return;
+  roadsFor = key;
+  const edge = (from, to) => {
+    // From the edge of one place to the edge of the other; inside, the streets.
+    const dx = to.x - from.x, dz = to.z - from.z, d = Math.hypot(dx, dz) || 1;
+    const a = Math.min(campReach(from), d / 2) / d, b = Math.min(campReach(to), d / 2) / d;
+    return [from.x + dx * a, from.z + dz * a, to.x - dx * b, to.z - dz * b];
+  };
+  for (const c of cities) {
+    paveDisc(c.x, c.z, CITY.plaza - 1);
+    const th = c.hearthTurn || 0, ux = Math.cos(th), uz = Math.sin(th), vx = -uz, vz = ux;
+    const at = (u, v) => [c.x + ux * u + vx * v, c.z + uz * u + vz * v];
+    let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
+    for (const h of c.city.homes.slice(0, c.cityShown)) {
+      const street = h.v + h.side * 4.0;           // the middle of the street the house faces
+      paveRoad(...at(h.u - CITY.along / 2, street), ...at(h.u + CITY.along / 2, street), 4.2);
+      umin = Math.min(umin, h.u); umax = Math.max(umax, h.u);
+      vmin = Math.min(vmin, street); vmax = Math.max(vmax, street);
+    }
+    for (let i = Math.floor(umin / CITY.along) - 1; umin <= umax && i <= Math.ceil(umax / CITY.along) + 1; i++) {
+      if ((((i % (CITY.block + 1)) + CITY.block + 1) % (CITY.block + 1)) !== CITY.block) continue;
+      paveRoad(...at(i * CITY.along, vmin), ...at(i * CITY.along, vmax), 4.2);
+    }
+    for (const v of camps) if (!v.gone && v !== c && v.code === c.code) paveRoad(...edge(c, v), 3.5);
+  }
+  // Between the cities, the shortest roads that join them all (Prim's).
+  const joined = cities.slice(0, 1), left = cities.slice(1);
+  while (left.length) {
+    let best = null, near = Infinity;
+    for (const a of joined) {
+      for (const b of left) {
+        const d = Math.hypot(a.x - b.x, a.z - b.z);
+        if (d < near) { near = d; best = [a, b]; }
+      }
+    }
+    paveRoad(...edge(best[0], best[1]), 3.5);
+    joined.push(best[1]);
+    left.splice(left.indexOf(best[1]), 1);
   }
 }

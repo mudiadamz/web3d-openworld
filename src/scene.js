@@ -306,6 +306,7 @@ terrainMaterial.onBeforeCompile = (shader) => {
       uniform sampler2D uPaths;
       uniform vec3 uPathColor;
       uniform float uPathDeep;
+      uniform vec3 uRoadColor;
       uniform float uWorldSize;
       varying float vGreen;
       varying float vWorldY;
@@ -328,6 +329,10 @@ terrainMaterial.onBeforeCompile = (shader) => {
          have worn rather than one somebody laid. */
       float tread = smoothstep(0.45, 0.88, worn) * uPathDeep * vGreen;
       diffuseColor.rgb = mix(diffuseColor.rgb, uPathColor, tread);
+      /* A road is laid, not worn (paths.js): the one value above any trail, and
+         a colour of its own, whatever grew there before. */
+      float road = smoothstep(0.94, 0.99, worn);
+      diffuseColor.rgb = mix(diffuseColor.rgb, uRoadColor, road * 0.9);
       diffuseColor.rgb *= mix(vec3(1.0), uSeasonTint, vGreen * (1.0 - tread));
       float seasonSnow = smoothstep(uSnowLine, uSnowLine + 30.0, vWorldY);
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.90, 0.93, 0.96), seasonSnow * 0.92);`);

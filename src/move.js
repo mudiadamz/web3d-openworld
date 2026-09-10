@@ -21,7 +21,7 @@ import {
 } from './wildlife.js';
 import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
 import {
-  CAMP_CLEARING, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
+  CAMP_CLEARING, CITY, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
 import { buildPaths, tread } from './paths.js';
 import {
@@ -1764,7 +1764,7 @@ export function updateCamps(dt, t, day) {
     // Two incommensurate sines: a flame that never repeats on a countable beat.
     const flick = 0.78 + 0.22 * Math.sin(t * 11 + camp.flicker) + 0.12 * Math.sin(t * 27.3 + camp.flicker * 2);
     // Barely there in daylight, the only light in the world after dark.
-    camp.light.intensity = (4 + night * 62) * flick;
+    camp.light.intensity = (camp.stage || 0) >= CITY.at ? 0 : (4 + night * 62) * flick;   // a city has no fire
     /* Every hearth the band has lit, and each on its own beat — one flicker
        shared by five fires is five flames doing the same thing at the same
        moment, which reads as a mechanism rather than as fire. The unlit ones

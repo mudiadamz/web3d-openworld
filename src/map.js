@@ -289,8 +289,10 @@ export function buildPathLayer(now) {
     /* Darker and more opaque the more it is walked, so the way between two
        camps reads as a road and the ground around a fire reads as scuffed. */
     const t = Math.min(1, (worn - PATH.onMap) / (1 - PATH.onMap));
-    ctx.fillStyle = `rgba(94, 74, 48, ${(0.25 + 0.40 * t).toFixed(2)})`;
-    const w = Math.max(1, cell * k);
+    // A laid road in pale stone, over and above any trail (paths.js).
+    const road = worn >= 0.99;
+    ctx.fillStyle = road ? 'rgba(236, 220, 176, 0.95)' : `rgba(94, 74, 48, ${(0.25 + 0.40 * t).toFixed(2)})`;
+    const w = Math.max(road ? 1.6 : 1, cell * k * (road ? 1.3 : 1));
     ctx.fillRect((x + WORLD / 2) * k - w / 2, (z + WORLD / 2) * k - w / 2, w, w);
   });
 }

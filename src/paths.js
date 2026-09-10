@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
-import { TILE, WORLD } from './params.js';
+import { SEA, TILE, WORLD } from './params.js';
+import { sampleHeight } from './noise.js';
 
 /* -------------------------------------------------------------------------
    Footpaths
@@ -73,7 +74,25 @@ export const pathUniforms = {
      is not what a trodden line through grass looks like. Half is enough to read
      as worn and little enough to still be ground. */
   uPathDeep: { value: 0.50 },
+  /* A road's own colour: packed pale earth and stone, where a path is only the
+     grass worn off it. */
+  uRoadColor: { value: new THREE.Color(0xbfae8c) },
 };
+
+/* -------------------------------------------------------------------------
+   Roads
+
+   Laid rather than worn: a settlement paves its streets and the way to the
+   next one (settlement.js). They go into the same field as the paths, at a
+   value no path can reach — a trail stops at TRAIL_MAX, bare but a trail — so
+   the ground and the map can tell the two apart, and a road never grows back.
+   ------------------------------------------------------------------------- */
+export const ROAD = 255;
+export const TRAIL_MAX = 230;
+const roads = new Set();
+/* Bumped whenever the field is thrown away, so whatever lays roads knows the
+   ones it laid are gone. */
+export let pathEpoch = 0;
 
 /* One byte per cell, 0-255 for 0-1. A Float32Array would be four times the
    memory for precision nothing here can see. */
@@ -103,6 +122,8 @@ pathUniforms.uPaths.value = EMPTY;
 export function clearPaths() {
   wear = null;
   live = new Set();
+  roads.clear();
+  pathEpoch++;
   worn.clear();
   texture?.dispose();
   texture = null;
@@ -139,8 +160,8 @@ function bump(i, j, amount) {
   if (i < 0 || j < 0 || i >= cols || j >= cols) return;
   const k = j * cols + i;
   const before = wear[k];
-  if (before === 255) return;
-  const after = Math.min(255, before + Math.round(amount * 255));
+  if (before >= TRAIL_MAX) return;              // as worn as a path gets; beyond is a road
+  const after = Math.min(TRAIL_MAX, before + Math.round(amount * 255));
   if (after === before) return;
   wear[k] = after;
   live.add(k);
@@ -197,6 +218,7 @@ export function fadePaths(days) {
   if (!wear || !live.size || days <= 0) return;
   const keep = Math.exp(-days / PATH.fadeDays);
   for (const k of live) {
+    if (roads.has(k)) continue;               // a road does not grow back
     const was = wear[k] / 255;
     const now = was * keep;
     wear[k] = now < PATH.gone ? 0 : Math.round(now * 255);
@@ -206,6 +228,55 @@ export function fadePaths(days) {
       const i = k % cols, j = (k / cols) | 0;
       const wx = -WORLD / 2 + (i + 0.5) * cell, wz = -WORLD / 2 + (j + 0.5) * cell;
       worn.add(tileKey(Math.floor(wx / TILE), Math.floor(wz / TILE)));
+    }
+  }
+  dirty = true;
+  pathVersion++;
+}
+
+function pave(i, j) {
+  if (i < 0 || j < 0 || i >= cols || j >= cols) return;
+  const k = j * cols + i;
+  if (wear[k] === ROAD) return;
+  const wx = -WORLD / 2 + (i + 0.5) * cell, wz = -WORLD / 2 + (j + 0.5) * cell;
+  if (sampleHeight(wx, wz) < SEA + 0.3) return;   // no road across the water
+  const was = wear[k];
+  wear[k] = ROAD;
+  roads.add(k);
+  live.add(k);
+  if (was / 255 < PATH.bare) worn.add(tileKey(Math.floor(wx / TILE), Math.floor(wz / TILE)));
+}
+
+/** A road from one point to another, this wide. Walked along rather than
+    swept over its bounding box, which for a road across the island is most of
+    the island. */
+export function paveRoad(x0, z0, x1, z1, width) {
+  if (!wear) return;
+  const dx = x1 - x0, dz = z1 - z0;
+  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / (cell * 0.5)));
+  const half = width / 2, r = Math.ceil(half / cell);
+  for (let s = 0; s <= steps; s++) {
+    const x = x0 + (dx * s) / steps, z = z0 + (dz * s) / steps;
+    const ci = cellX(x), cj = cellZ(z);
+    for (let j = cj - r; j <= cj + r; j++) {
+      for (let i = ci - r; i <= ci + r; i++) {
+        const wx = -WORLD / 2 + (i + 0.5) * cell, wz = -WORLD / 2 + (j + 0.5) * cell;
+        if (Math.hypot(wx - x, wz - z) <= half) pave(i, j);
+      }
+    }
+  }
+  dirty = true;
+  pathVersion++;
+}
+
+/** Paving round a point: a plaza. */
+export function paveDisc(x, z, radius) {
+  if (!wear) return;
+  const ci = cellX(x), cj = cellZ(z), r = Math.ceil(radius / cell);
+  for (let j = cj - r; j <= cj + r; j++) {
+    for (let i = ci - r; i <= ci + r; i++) {
+      const wx = -WORLD / 2 + (i + 0.5) * cell, wz = -WORLD / 2 + (j + 0.5) * cell;
+      if (Math.hypot(wx - x, wz - z) <= radius) pave(i, j);
     }
   }
   dirty = true;
@@ -249,11 +320,11 @@ export function forEachWorn(fn) {
 
 /** For the panel and the boot check: how much of the island is trodden. */
 export function pathStats() {
-  if (!wear) return { cells: 0, bare: 0 };
+  if (!wear) return { cells: 0, bare: 0, roads: 0 };
   let bare = 0;
   const cut = PATH.bare * 255;
   for (const k of live) if (wear[k] >= cut) bare++;
-  return { cells: live.size, bare };
+  return { cells: live.size, bare, roads: roads.size };
 }
 
 /* Wear is not saved. A world is rebuilt from its seed, and a path is not in the
