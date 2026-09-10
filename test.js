@@ -915,13 +915,17 @@ group('sex');
 check('the builds are a sex each, not A and B',
   /^\s*m:\s*\{/m.test(html) && /^\s*f:\s*\{/m.test(html) && !/adultA:/.test(html));
 check('a person is born one or the other', /const kind = rng\(\) < 0.5 \? 'm' : 'f';/.test(html));
-const hairOf = (k) => Number(html.match(new RegExp(`^\\s*${k}:.*hair: ([\\d.]+)`, 'm'))[1]);
-check('hair length is what tells them apart', hairOf('f') > hairOf('m') * 3,
-  `f ${hairOf('f')} vs m ${hairOf('m')}`);
-check('and a child grows into whichever they will be',
-  hairOf('child') > hairOf('m') && hairOf('child') < hairOf('f'),
-  `child ${hairOf('child')}`);
-check('and it grows with the child', /p\.hairLen = lerp\(BUILDS\.child\.hair, p\.adultHair, g\)/.test(html));
+/* Hair is a style now, the library's, and still what tells them apart from a
+   ridge away: a woman's is long three times in four, a man's never is. */
+const looksSrc = moduleSource('looks.js');
+check('a woman\'s hair is mostly long',
+  /p\.sex === 'f'\s*\? \(r < 0\.75 \? 'long'/.test(looksSrc));
+check('and a man\'s is one of the short ones',
+  /: \['cropped', 'swept', 'bob', 'curls', 'bald'\]\[\(r \* 5\) \| 0\]/.test(looksSrc));
+check('and nobody is bald as a child',
+  /look\.hair === 'bald' && p\.child \? 'cropped'/.test(looksSrc));
+check('it is theirs, drawn from their id, so a save brings it back unchanged',
+  /if \(p\.look\) return p\.look;/.test(looksSrc) && /let seed = typeof p\.id === 'number'/.test(looksSrc));
 check('it takes one of each to have a child',
   /if \(mothers < 1 \|\| fathers < 1\) continue;/.test(html));
 check('and the mothers set the rate, not the head count',
@@ -990,9 +994,15 @@ check('and unwatched years advance in fixed steps',
    ------------------------------------------------------------------------- */
 group('the chief, and the dead');
 
-check('whoever leads is wearing it', /const leads = p\.camp && p\.camp\.chief === p\.id;/.test(html)
-  && /personParts\.torso\.setColorAt\(i, leads/.test(html)
-  && /personParts\.hair\.setColorAt\(i, leads \? _c\.setHex\(CHIEF_BAND\)/.test(html));
+check('whoever leads is wearing it: an ochre hide and a band round the brow',
+  /const leads = \(p\) => Boolean\(p\.camp && p\.camp\.chief === p\.id\);/.test(looksSrc)
+  && /return leads\(p\) \? _col\.setHex\(CHIEF_CLOTH\)/.test(looksSrc)
+  && /if \(group === 'band'\) return leads\(p\) \? 'band' : null;/.test(looksSrc)
+  && /if \(group === 'band'\) return _col\.setHex\(CHIEF_BAND\);/.test(looksSrc));
+/* Colours go on as things are put on, so a new chief is only in ochre once they
+   are dressed again — which is why everybody is undressed on every change. */
+check('and a new chief is dressed as one',
+  /dressCamps\(\);\n  undressAll\(people\);/.test(html));
 /* camp.chief is only re-resolved when something asks, and the only thing that
    asked was the band card — so a chief who died stayed in ochre until somebody
    opened a panel. */
@@ -1756,8 +1766,10 @@ check('animals are counted alive, not allocated',
 check('a kill recounts them', /a\.dead = true;\n  recountAnimals\(\);/.test(html));
 check('a tiger kill recounts them too',
   /a\.dead = true;[\s\S]{0,200}?recountAnimals\(\);/.test(html));
+/* Once per update rather than once per birth — a warren can put back a dozen
+   in one call now — but never an update that brought any back and did not. */
 check('and one growing back recounts them',
-  /born\.fed = [^;]+;\n    recountAnimals\(\);/.test(html));
+  /born\.fed = [^;]+;\n      changed = true;[\s\S]{0,40}?if \(changed\) recountAnimals\(\);/.test(html));
 /* The point is that the readout is refreshed on its own timer rather than only
    when something happens to somebody. It was pinned as two adjacent lines,
    which made it a check about where a line sits — one statement between them
@@ -1864,8 +1876,8 @@ check('a person carries their own colouring',
 check('and it is written from the person, not drawn fresh per slot',
   /function paintPerson\(i, p\)/.test(html)
   && /_c\.setHex\(p\.skin\)/.test(html)
-  && /_c\.setHex\(p\.garment\)/.test(html)
-  && /_c\.setHex\(p\.hairColor\)/.test(html));
+  && /_col\.setHex\(p\.garment\)/.test(looksSrc)
+  && /_col\.setHex\(p\.hairColor \?\? 0x2b1d14\)/.test(looksSrc));
 
 /* Every part of a person has to be painted, or one of them renders white while
    the rest look right — which is harder to spot and just as wrong. */
@@ -2934,6 +2946,20 @@ check('and it lies there, still, until it is picked up — and does not come bac
   /if \(d\.carcass && drawCarcass\(d, i, spec, model, parts, slice\)\) continue;/.test(html)
   && /_eAnim\.set\(0, d\.yaw, f \* Math\.PI \/ 2, 'YXZ'\);/.test(bodyOf('drawCarcass') || '')
   && /\(a\) => a\.dead && !a\.carcass/.test(bodyOf('repopulate') || ''));
+/* Births come at the herd's own rate however long a step is — it was one per
+   call, and a call is an eighth of a day or a whole skipped night. And a
+   species hunted to nothing gets a breeding pair back, or the last one taken
+   is the last one there ever is. */
+check('a hunted species comes back at its own rate, not one birth per update',
+  /const expected = q\.regrow \* alive \* \(1 - alive \/ target\) \* days;/.test(bodyOf('repopulate') || '')
+  && /for \(; due > 0; due--\)/.test(bodyOf('repopulate') || ''));
+check('and one hunted to nothing is not gone for good',
+  /if \(alive === 0\) \{\s*due = luck\(\) < STRAYS\.perYear \* days \/ P\.yearLength \? STRAYS\.pair : 0;/
+    .test(bodyOf('repopulate') || '')
+  && !/alive\.length === 0\) continue/.test(html));
+check('the strays are a pair, so they can breed', /STRAYS = \{ perYear: [\d.]+, pair: 2 \}/.test(html));
+check('and a newborn grazes where it was born, not where its slot last died',
+  /born\.targetX = born\.x;\s*born\.targetZ = born\.z;/.test(bodyOf('repopulate') || ''));
 check('E picks it up, onto the shoulder, as meat',
   /kind: 'carcass'/.test(bodyOf('actionTargets') || '') && /const FIRST = \['fight', 'carcass',/.test(html)
   && /bagAdd\(p, 'game', 1, key\);/.test(bodyOf('takeCarcass') || '')
@@ -3286,7 +3312,7 @@ check('the page guards that case', /if \(len <= 0\.001\) return roundBox\(w, h, 
 
 check('nothing alive is a box any more at full quality',
   !/new THREE\.BoxGeometry\(\.\.\.spec\.body\)/.test(html)
-  && /const torsoGeo = body\('torsoMale'\);/.test(html) && /roundBox\(\.\.\.spec\.body\)/.test(html));
+  && /torsoRings\(sex === 'f' \? 'torsoFemale' : 'torsoMale'\)/.test(looksSrc) && /roundBox\(\.\.\.spec\.body\)/.test(html));
 
 /* The body is the humans-threejs model, read here the way the page reads it:
    plain arrays, no three.js. What the torso used to be tested for as a lathe
@@ -3322,17 +3348,18 @@ check('the model is plain data: nothing imported, nothing fetched',
   !/^import /m.test(moduleSource('human-parts.js')) && !/fetch\(|await /.test(moduleSource('human-parts.js')));
 check('the page takes every piece of a body from the model',
   /const body = \(key\) => \{[\s\S]{0,200}?HUMAN_PARTS\[key\]\.positions\.slice\(\)/.test(html)
-  && ['torsoMale', 'torsoFemale', 'neck', 'head', 'upperArm', 'forearm', 'hand', 'thigh', 'calf', 'foot']
+  && ['neck', 'head', 'upperArm', 'forearm', 'hand', 'thigh', 'calf', 'foot']
     .every((k) => html.includes(`body('${k}')`)));
 
 /* A grown woman has the woman's torso, and the joints follow the torso: arms
    from its shoulders, legs from its hips. The other torso is parked in the
    same frame, every frame, because the slot may have been somebody else's. */
-check('a grown woman has the woman\'s torso',
-  /const woman = p\.sex === 'f' && !p\.child;\n  personParts\[woman \? 'torsoF' : 'torso'\]\.setMatrixAt\(i, _mChain\);\n  personParts\[woman \? 'torso' : 'torsoF'\]\.setMatrixAt\(i, HIDDEN\);/.test(moduleSource('move.js')));
+check('a grown woman wears the woman\'s hide, cut from the woman\'s torso',
+  /const woman = p\.sex === 'f' && !p\.child;[\s\S]{0,60}?const tunic = wear\(p, 'tunic', tunicKey\(p, woman\)\);/.test(moduleSource('move.js'))
+  && /tunicKey = \(p, woman\) => `tunic:\$\{woman \? 'f' : 'm'\}:\$\{lookOf\(p\)\.build\}`/.test(looksSrc));
 check('and her arms and legs hang from its joints',
-  /const armX = \(woman \? S\.armXF : S\.armX\) \* p\.shoulder;/.test(moduleSource('move.js'))
-  && /const hipX = \(woman \? S\.hipXF : S\.hipX\) \* p\.hip;/.test(moduleSource('move.js'))
+  /const armX = \(woman \? S\.armXF : S\.armX\) \* p\.shoulder \* fit\.armX;/.test(moduleSource('move.js'))
+  && /const hipX = \(woman \? S\.hipXF : S\.hipX\) \* p\.hip \* fit\.hipX;/.test(moduleSource('move.js'))
   && /setPosition\(dir \* armX, S\.shoulderY, 0\)/.test(moduleSource('move.js'))
   && /setPosition\(dir \* hipX, 0, 0\)/.test(moduleSource('move.js')));
 check('which are the model\'s, not numbers of our own',
@@ -3438,7 +3465,7 @@ check('a deep crouch leaves the shin near upright', Math.abs(deep.shin) < 0.6,
   `shin ${deep.shin.toFixed(2)} rad with the thigh at ${deep.leg.toFixed(2)}`);
 /* Not a person's head any more: that is the model's, and is checked with the
    rest of the body above. */
-for (const part of ['p.hair', 'spec.head', 'spec.hump.size']) {
+for (const part of ['spec.head', 'spec.hump.size']) {
   check(`${part} is rounded`, html.includes(`roundBox(...${part})`));
 }
 for (const [what, call] of [['a spear', 'roundLimb(...p.spear)'],
@@ -6764,7 +6791,7 @@ check('the basket is a part of a person, painted wicker',
 check('and heaped to how full it is',
   /const full = clamp\(p\.haul \/ BASKET_FULL, [\d.]+, [\d.]+\);/.test(moduleSource('move.js')));
 check('and put away with the load',
-  /personParts\.basket\.setMatrixAt\(i, HIDDEN\);\s*personParts\.load\.setMatrixAt\(i, HIDDEN\);\s*p\.loadKind = null;/.test(moduleSource('move.js')));
+  /personParts\.basket\.setMatrixAt\(i, HIDDEN\);\s*personParts\.load\.setMatrixAt\(i, HIDDEN\);\s*wear\(p, 'cargo', null\);\s*p\.loadKind = null;/.test(moduleSource('move.js')));
 /* The colour of a load is a fact about the errand, not about the frame. */
 check('the colour is written when it changes hands, not every frame',
   /if \(p\.loadKind !== key\) \{/.test(moduleSource('move.js'))
@@ -6803,15 +6830,15 @@ check('and a village draws the same face as a band of nine',
 /* It hangs off the matrix writePerson has already worked out, so a face cannot
    drift from the head it is on — that matrix carries the build, the crouch, the
    bob of the walk and which way they are looking. */
-check('the face hangs off the head it belongs to',
-  /mesh\.matrix\.multiplyMatrices\(_mHead, _mLocal\);/.test(moduleSource('move.js')));
-check('and is placed in the head\'s own space, not the world\'s',
-  /put\(nearParts\.eyeL, -H\[0\] \* 0\.22/.test(moduleSource('move.js')));
+check('the face is on everybody now, and hangs off the head it belongs to',
+  /for \(const group of HEAD_GROUPS\) \{\s*const key = wear\(p, group, headKey\(p, group\)\);\s*if \(key\) looks\[key\]\.setMatrixAt\(p\.wornAt\[group\], _mHead\);/.test(moduleSource('move.js')));
+check('and sits on the head that is drawn, not the one the library assumed',
+  /function headOut\(/.test(looksSrc) && /headFront\(x, y\) \+ depth \* 0\.25/.test(looksSrc));
 
 /* Only on the person being followed, and only in the view where you can see
    them. */
 check('it is worn by whoever you are behind',
-  /if \(nearParts && i === followIdx && P\.view === 'follow'\)/.test(moduleSource('move.js')));
+  /if \(nearParts && i === followIdx && P\.view === 'follow' && !closed\)/.test(moduleSource('move.js')));
 /* And the failure that matters: a face left on somebody you stopped following. */
 check('and put away the moment that is nobody',
   /if \(!nearShown\) hideNearParts\(\);\s*nearShown = false;/.test(moduleSource('move.js'))
@@ -6857,6 +6884,47 @@ check('and the whole set is walked, however deep it nests',
   /function eachNearPart\(fn\)/.test(nearSrc)
   && /else if \(Array\.isArray\(v\)\) v\.forEach\(walk\);/.test(nearSrc)
   && /hideNearParts\(\) \{\s*eachNearPart/.test(nearSrc));
+
+/* -------------------------------------------------------------------------
+   The wardrobe
+
+   Everything humans-threejs dresses a body in: builds, hides, hair, faces,
+   loads and tools. Each is a mesh holding only the people wearing it, packed
+   from the front, because a mesh with a slot for everybody draws a tunic for
+   every person in each of the seven tunics they are not wearing.
+   ------------------------------------------------------------------------- */
+group('the wardrobe');
+
+check('a mesh holds only who is wearing it',
+  /who\.push\(p\);\s*m\.count = who\.length;/.test(looksSrc));
+check('taking something off moves the last one into the gap, not everyone along',
+  /m\.instanceMatrix\.array\.copyWithin\(at \* 16, last \* 16, last \* 16 \+ 16\);/.test(looksSrc)
+  && /q\.wornAt\[group\] = at;/.test(looksSrc));
+check('somebody out of sight is wearing nothing, so nothing of theirs is drawn',
+  /setMatrixAt\(i \* per \+ k, HIDDEN\);\s*\}\s*\/\/[^\n]*\n\s*undress\(p\);/.test(moduleSource('move.js')));
+check('and it grows with the band, like the body does',
+  /growLooks\(room\);\n  setPeopleCapacity\(room\);/.test(html));
+check('the tool is placed before the hand closes, so a pick is not squashed into a fist',
+  html.indexOf("const tool = wear(p, 'tool'") > 0
+  && html.indexOf("const tool = wear(p, 'tool'") < html.indexOf('if (closed) _mChain.scale(FIST);'));
+check('food comes home as the library\'s cargo, and a rabbit in the arms',
+  /if \(kind === 'fruit' \|\| kind === 'berries' \|\| kind === 'fish'\) return 'cargo:' \+ kind;/.test(looksSrc)
+  && /bag\?\.animal === 'rabbit' \|\| bag\?\.animal === 'boar' \? 'cargo:animal' : 'cargo:meat'/.test(looksSrc));
+
+/* The builds, run: the library's formula lifted out of looks.js. */
+const buildAt = new Function(
+  looksSrc.slice(looksSrc.indexOf('const smooth = '), looksSrc.indexOf("/* The library's build"))
+  + looksSrc.slice(looksSrc.indexOf('function buildAt('), looksSrc.indexOf('/* The library stretches'))
+  + 'return buildAt;')();
+const [slimW] = buildAt('slim', 1.0), [broadShoulder] = buildAt('broad', 1.34), [broadWaist] = buildAt('broad', 1.10);
+const [fullW, fullD] = buildAt('full', 1.10), [avgW, avgD] = buildAt('average', 1.10);
+check('a slim body is narrower', slimW < 0.9, `${slimW}`);
+check('a broad one is broadest at the shoulders', broadShoulder > broadWaist && broadShoulder > 1.25,
+  `${broadShoulder} at the shoulders, ${broadWaist} at the waist`);
+check('a full one is fullest at the waist, and deeper than it is wide there',
+  fullW > 1.4 && fullD > fullW && avgW === 1 && avgD === 1, `${fullW} by ${fullD}`);
+check('and a head is a head, whatever the build',
+  ['slim', 'broad', 'full'].every((b) => buildAt(b, 1.62).every((v) => v === 1)));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);

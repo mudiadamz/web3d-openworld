@@ -1232,29 +1232,54 @@ export function fallIll(p) {
   p.energy = Math.min(p.energy, 0.5);
 }
 
+/* A species hunted off the island is not gone for good: a breeding pair walks
+   back in from the far hills about this often. Without it the last deer a
+   tiger or a spear takes is the last deer there will ever be, because
+   regrowth needs somebody left to do the regrowing. */
+export const STRAYS = { perYear: 2, pair: 2 };
+
 export function repopulate(days) {
+  let changed = false;
   for (const pack of packs) {
     const q = QUARRY[pack.spec.key];
     if (!q) continue;
-    const alive = pack.list.filter((a) => !a.dead);
+    let alive = 0;
+    for (const a of pack.list) if (!a.dead) alive++;
     const target = pack.list.length;
-    if (alive.length >= target || alive.length === 0) continue;
-    const rate = q.regrow * alive.length * (1 - alive.length / target);
-    if (luck() > rate * days) continue;
-    const born = pack.list.find((a) => a.dead && !a.carcass);
-    if (!born) continue;
-    const h = pack.herds[(luck() * pack.herds.length) | 0];
-    born.dead = false;
-    born.hidden = false;   // back in its slot, and drawn again
-    born.x = h.x + (luck() - 0.5) * 20;
-    born.z = h.z + (luck() - 0.5) * 20;
-    born.state = 'graze';
-    born.timer = 2;
-    born.speed = 0;
-    born.energy = 0.7 + luck() * 0.3;
-    born.fed = 0.5 + luck() * 0.5;
-    recountAnimals();
+    if (alive >= target) continue;
+    /* However many the time owes. It was one birth a call at most, and a call
+       is an eighth of a day at best and a whole skipped night at worst — a
+       warren at half strength earns seventeen rabbits a day and got eight, so
+       a hunted species came back at the rate the books were kept rather than
+       its own. */
+    let due;
+    if (alive === 0) {
+      due = luck() < STRAYS.perYear * days / P.yearLength ? STRAYS.pair : 0;
+    } else {
+      const expected = q.regrow * alive * (1 - alive / target) * days;
+      due = Math.floor(expected) + (luck() < expected % 1 ? 1 : 0);
+    }
+    for (; due > 0; due--) {
+      const born = pack.list.find((a) => a.dead && !a.carcass);
+      if (!born) break;
+      const h = pack.herds[(luck() * pack.herds.length) | 0];
+      born.dead = false;
+      born.hidden = false;   // back in its slot, and drawn again
+      born.x = h.x + (luck() - 0.5) * 20;
+      born.z = h.z + (luck() - 0.5) * 20;
+      // Or it walks off to wherever the last animal in this slot died.
+      born.targetX = born.x;
+      born.targetZ = born.z;
+      born.herd = h;
+      born.state = 'graze';
+      born.timer = 2;
+      born.speed = 0;
+      born.energy = 0.7 + luck() * 0.3;
+      born.fed = 0.5 + luck() * 0.5;
+      changed = true;
+    }
   }
+  if (changed) recountAnimals();
 }
 
 /** How far this band's hunters can pick something out. */
@@ -1562,9 +1587,8 @@ export function applyAge(p) {
   p.headScale = lerp(1.18, p.adultHead, g);
   p.shoulder = lerp(0.95, p.adultShoulder, g);
   p.hip = lerp(0.98, p.adultHip, g);
-  /* The one thing you can actually read at fifty metres. A child's hair is a
-     child's whatever they will grow into; it lengthens as they do. */
-  p.hairLen = lerp(BUILDS.child.hair, p.adultHair, g);
+  // Kept for what draws them: hair lightens with age (looks.js).
+  p.years = age;
   return age;
 }
 
@@ -1756,7 +1780,6 @@ export function newPerson(camp, rng, ageYears) {
     name: uniqueName(rng, 2, camp.voice || NAME_ONSET),
     born: simDay - ageYears * P.yearLength,
     adultScale, adultShoulder: b.shoulder, adultHip: b.hip, adultHead: b.head,
-    adultHair: b.hair,
     x: camp.x + Math.cos(a) * r, z: camp.z + Math.sin(a) * r,
     yaw: rng() * Math.PI * 2, speed: 0, phase: rng() * Math.PI * 2,
     scale: adultScale, shoulder: b.shoulder, hip: b.hip, headScale: b.head,
