@@ -11,7 +11,7 @@ import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from '.
 import {
   FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood, wealthOf, energyOutOfTen, isMilestone, milestonesOnly, personAge, simDay, skillTier, runId, tollOf, traitWord, who
 } from './life.js';
-import { SKILL_HOW } from './skills.js';
+import { DIFFICULTY_WORDS, SKILL_DIFFICULTY, SKILL_HOW, SKILL_NEEDS } from './skills.js';
 import { fruitNear } from './orchard.js';
 import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
 import { ORES, depositRadius, deposits } from './quarries.js';
@@ -250,11 +250,15 @@ export function renderTribeCard() {
      rather than a bar — 62/100 says exactly what a bar could only suggest, and
      the whole reason skills are interesting is watching one climb while the
      others do not. */
-  const skills = Object.keys(SKILLS).map((k) => {
+  /* Easiest first: the ones any band picks up at its fire, then the ones that
+     wait on something, then the chains. Within a step, in the order they came. */
+  const skills = Object.keys(SKILLS).sort((a, b) => (SKILL_DIFFICULTY[a] || 9) - (SKILL_DIFFICULTY[b] || 9)).map((k) => {
     const v = camp.skill[k] || 0;
     const pct = Math.round(v * 100);
     return `<tr><td class="n">${SKILLS[k].of}</td><td>${pct}<span>/100</span></td>`
-      + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td><td class="n how">${SKILL_HOW[k] || ''}</td></tr>`;
+      + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td>`
+      + `<td class="n d${SKILL_DIFFICULTY[k] || 0}">${DIFFICULTY_WORDS[SKILL_DIFFICULTY[k]] || ''}</td>`
+      + `<td class="n how">${SKILL_NEEDS[k] || '—'}</td><td class="n how">${SKILL_HOW[k] || ''}</td></tr>`;
   }).join('');
 
   /* A tribe of more than one village, and what a taken village used to be. */
@@ -300,7 +304,7 @@ export function renderTribeCard() {
   if (lineageShown && tribeTab !== lineageTab) lineageShown = 0;
   if (lineageShown) { $('tribeList').innerHTML = lineageView(lineageShown); return; }
   if (tribeTab === 'skills') {
-    $('tribeList').innerHTML = `<table class="skills"><thead><tr><th>skill</th><th>acquired</th><th>level</th><th>how it is learned</th></tr></thead>`
+    $('tribeList').innerHTML = `<table class="skills"><thead><tr><th>skill</th><th>acquired</th><th>level</th><th>difficulty</th><th>needs</th><th>how it is learned</th></tr></thead>`
       + `<tbody>${skills}</tbody></table>`;
     return;
   }

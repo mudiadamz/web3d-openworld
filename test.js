@@ -4625,13 +4625,35 @@ check('and it still counts the people on it',
    interesting is watching one climb while the others do not.
    ------------------------------------------------------------------------- */
 check('the card lists the skills one to a row, in a table like the rest of it',
-  /<table class="skills"><thead><tr><th>skill<\/th><th>acquired<\/th><th>level<\/th><th>how it is learned<\/th><\/tr><\/thead>/.test(html)
+  /<table class="skills"><thead><tr><th>skill<\/th><th>acquired<\/th><th>level<\/th><th>difficulty<\/th><th>needs<\/th><th>how it is learned<\/th><\/tr><\/thead>/.test(html)
   && /<tr><td class="n">\$\{SKILLS\[k\]\.of\}<\/td>/.test(html)
   && /#tribeList table, #tribeHead table \{/.test(html));
 check('with the number on it, out of a hundred',
   /<td>\$\{pct\}<span>\/100<\/span><\/td>/.test(html));
 check('and the rung it is on, in words',
-  /<td class="n">\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/td><td class="n how">\$\{SKILL_HOW\[k\] \|\| ''\}<\/td><\/tr>/.test(html));
+  /<td class="n">\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/td>`/.test(html)
+  && /<td class="n how">\$\{SKILL_NEEDS\[k\] \|\| '—'\}<\/td><td class="n how">\$\{SKILL_HOW\[k\] \|\| ''\}<\/td><\/tr>/.test(html));
+/* How hard each is, and what it waits on — easiest first. */
+{
+  const table = (name) => (html.match(new RegExp(`${name} = \\{([\\s\\S]*?)\\n\\};`)) || [, ''])[1];
+  const skillKeys = [...table('SKILLS').matchAll(/^\s{2}(\w+): \{ label:/gm)].map((m) => m[1]);
+  const diff = Object.fromEntries([...table('SKILL_DIFFICULTY').matchAll(/(\w+): (\d)/g)].map((m) => [m[1], Number(m[2])]));
+  const missing = skillKeys.filter((k) => !(diff[k] >= 1 && diff[k] <= 4));
+  check('every skill says how hard it is, easy to very hard', missing.length === 0,
+    missing.length ? `none for ${missing.join(', ')}` : `${skillKeys.length} skills`);
+  check('and the list goes easiest first',
+    /Object\.keys\(SKILLS\)\.sort\(\(a, b\) => \(SKILL_DIFFICULTY\[a\] \|\| 9\) - \(SKILL_DIFFICULTY\[b\] \|\| 9\)\)/.test(html));
+  const needs = Object.fromEntries([...table('SKILL_NEEDS').matchAll(/^\s{2}(\w+): '((?:[^'\\]|\\.)*)',/gm)].map((m) => [m[1], m[2]]));
+  const num = (re) => Number((html.match(re) || [])[1]);
+  const at = (v) => `${Math.round(v * 100)}/100`;
+  check('what a skill waits on is what the code waits on',
+    needs.farming === `watering at ${at(num(/irrigateFirst: ([\d.]+)/))}`
+    && needs.conquest?.startsWith(`fighting at ${at(num(/warFirst: ([\d.]+)/))}`)
+    && /raft/.test(needs.fishing || '') && /stone/.test(needs.tools || '') && /stone/.test(needs.stonework || ''),
+    JSON.stringify({ farming: needs.farming, conquest: needs.conquest, fishing: needs.fishing }));
+  check('and nothing needs a skill that is itself easier to say nothing about',
+    skillKeys.every((k) => diff[k] > 1 || !needs[k]), 'an easy skill should need nothing');
+}
 /* And how each is learned, because a number going up says that it is and not
    what would make it go up faster. */
 {

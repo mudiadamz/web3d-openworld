@@ -402,6 +402,41 @@ export const SKILL_HOW = {
   clothing: 'at the fire, most in the autumn',
 };
 
+/* How hard each is to come by, easy to very hard, for the band card — decided
+   by what it waits on more than by how much a session teaches, because the
+   sessions are all close (0.02 to 0.06) and the waiting is not:
+
+     easy       any afternoon at the fire, nothing needed
+     moderate   waits on something happening, a trip, or a neighbour
+     hard       waits on something else first: stone, a burial, water on a
+                field, a raft, a band hungry enough to raid
+     very hard  a chain: a graveyard and stone, or war and then winning */
+export const DIFFICULTY_WORDS = ['', 'easy', 'moderate', 'hard', 'very hard'];
+export const SKILL_DIFFICULTY = {
+  spears: 1, baskets: 1, tracking: 1, drying: 1, fire: 1, wares: 1, building: 1, clothing: 1,
+  herbs: 2, rites: 2, irrigation: 2, woodcraft: 2, mining: 2, trade: 2,
+  tools: 3, art: 3, farming: 3, fishing: 3, war: 3,
+  stonework: 4, conquest: 4,
+};
+/* And what each one waits on: the skills it needs first, and the things. Read
+   off the gates in the code — craftChoice, the job list in move.js, farmWeight,
+   woodWant — and the two levels in it are checked against FARM and CONQUEST by
+   test.js. Nothing here for the ones that need nothing. */
+export const SKILL_NEEDS = {
+  herbs: 'somebody in the band ill',
+  tools: 'quarrying: stone in the pile',
+  rites: 'a death in the band',
+  art: 'somebody buried in the graveyard',
+  trade: 'another band within a walk',
+  mining: 'an outcrop within reach',
+  woodcraft: 'trees within a walk',
+  fishing: 'woodcutting: the band\'s raft, and a shore',
+  farming: 'watering at 50/100',
+  war: 'a band hungry enough to raid, and a neighbour worth it',
+  stonework: 'somebody buried, and quarrying: stone in the pile',
+  conquest: 'fighting at 50/100, and winning',
+};
+
 /* Which rung a mastery is standing on, given the rung it was last said to be
    on. Pulled out of announceSkill because the restore needs the same answer
    without saying anything: `told` is derived from `skill` and is not saved, so
