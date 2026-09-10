@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { P, SEA, WORLD } from './params.js';
 import { clamp, flatnessAt, sampleHeight, smoothstep } from './noise.js';
 import { camera, controls, groundColorAt } from './scene.js';
-import { updateTiles } from './world.js';
+import { orchard, updateTiles } from './world.js';
 import { packs } from './wildlife.js';
 import { camps, people } from './people.js';
 import { PATH, forEachWorn, pathVersion } from './paths.js';
@@ -12,6 +12,12 @@ import { _fwd, openTribe, setViewMode, syncLookFromCamera } from './chronicle.js
 import { $, persistState } from './save.js';
 import { toast } from './ui.js';
 import { armAudio, audio } from './audio.js';
+import { daysOfFood } from './life.js';
+import { ICON_PATHS } from './icons.js';
+import { ORES, deposits } from './quarries.js';
+import { ripeWord, thickets } from './thickets.js';
+import { dockOf } from './larder.js';
+import { raftBusy } from './rafts.js';
 
 /* -------------------------------------------------------------------------
    Map
@@ -50,6 +56,7 @@ export const MAP_SIZES = [
    now. A button labelled "smaller" that turns the map off is the kind of thing
    a reordered array does quietly. */
 export const SMALL_MAP = MAP_SIZES.findIndex((m) => m.name === 'small');
+export const FULL_MAP = MAP_SIZES.findIndex((m) => m.fills);
 
 /* How far in the full map is looking. 1 is the whole island; past that it
    centres on where you are, because the only reason to magnify a map is to see
@@ -100,7 +107,7 @@ export function setMapSize(i) {
   /* Zoom belongs to the full map. Carrying it out to a 92-pixel corner would
      leave you with a corner map of somewhere you cannot tell from anywhere
      else, and no control on it to undo that. */
-  if (!at.fills) mapZoom = 1;
+  if (!at.fills) { mapZoom = 1; closeMapLayers(); }
   if (!at.fills && at.px === 0) {
     if (box) box.hidden = true;
     return at.name;
@@ -134,6 +141,11 @@ export function onMapResize() {
 }
 
 export let mapBase = null;
+/* The corner map's own ground: land and water and the creeks, flat, with no
+   relief and no ground colours. At 92 pixels the relief is mush, and what the
+   corner map is for is where you are and where the bands are. */
+export let mapPlain = null;
+const PLAIN_LAND = [104, 124, 78], PLAIN_WATER = [40, 84, 112];
 
 export const MAP_WATER = new THREE.Color(0x2b5a78);
 export const MAP_DEEP = new THREE.Color(0x122b44);
@@ -185,6 +197,11 @@ export function renderMapBase() {
   const ctx = mapBase.getContext('2d');
   const img = ctx.createImageData(MAP_N, MAP_N);
   const d = img.data;
+  mapPlain = document.createElement('canvas');
+  mapPlain.width = MAP_N;
+  mapPlain.height = MAP_N;
+  const plainCtx = mapPlain.getContext('2d');
+  const plain = plainCtx.createImageData(MAP_N, MAP_N);
   const col = new THREE.Color();
   const step = WORLD / MAP_N;
 
@@ -193,6 +210,8 @@ export function renderMapBase() {
     for (let i = 0; i < MAP_N; i++) {
       const x = -WORLD / 2 + (i + 0.5) * step;
       const h = sampleHeight(x, z);
+      const flat = h < SEA ? PLAIN_WATER : PLAIN_LAND, q = (j * MAP_N + i) * 4;
+      plain.data[q] = flat[0]; plain.data[q + 1] = flat[1]; plain.data[q + 2] = flat[2]; plain.data[q + 3] = 255;
       if (h < SEA) {
         col.copy(MAP_WATER).lerp(MAP_DEEP, smoothstep(0, -45, h));
       } else {
@@ -213,20 +232,25 @@ export function renderMapBase() {
     }
   }
   ctx.putImageData(img, 0, 0);
+  plainCtx.putImageData(plain, 0, 0);
 
   // The creeks are thinner than a map pixel in places, so they are drawn as
   // lines rather than left to the terrain shading to imply.
   ctx.strokeStyle = 'rgba(104, 166, 196, 0.95)';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  plainCtx.strokeStyle = 'rgba(40, 84, 112, 1)';
+  plainCtx.lineCap = 'round';
   for (const path of streams) {
-    ctx.beginPath();
-    for (let i = 0; i < path.length; i++) {
-      const [px, py] = worldToMap(path[i].x, path[i].z);
-      if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    for (const c of [ctx, plainCtx]) {
+      c.beginPath();
+      for (let i = 0; i < path.length; i++) {
+        const [px, py] = worldToMap(path[i].x, path[i].z);
+        if (i) c.lineTo(px, py); else c.moveTo(px, py);
+      }
+      c.lineWidth = 1.5 * MK;
+      c.stroke();
     }
-    ctx.lineWidth = 1.5 * MK;
-    ctx.stroke();
   }
   nextMapDraw = 0;
 }
@@ -294,6 +318,256 @@ export function updateScaleBar() {
     ? `${(metres / 1000).toFixed(metres % 1000 ? 1 : 0)} km` : `${metres} m`;
 }
 
+/* -------------------------------------------------------------------------
+   What the map shows
+
+   Everything the map draws is a layer you can put away: the bands, the people,
+   the animals, the paths, the burial grounds, and the four kinds of place food
+   comes from. Nothing is added by turning one off. It is the same map with less
+   on it, which is what you want when the thing you are looking for is under a
+   crowd of people.
+
+   Remembered in this browser, the way a collapsed panel would be: it is how
+   you like to read the map, not a fact about the world, so it is not in the
+   save and it does not travel with a seed.
+   ------------------------------------------------------------------------- */
+export const MAP_LAYERS = ['camps', 'people', 'animals', 'paths', 'barrows', 'fruit', 'forage', 'fish', 'rafts', 'stores',
+  'stone', 'iron', 'bronze', 'silver', 'gold'];
+export const MAP_LAYERS_STORE = 'openworld.mapLayers';
+export const mapShows = Object.fromEntries(MAP_LAYERS.map((k) => [k, true]));
+try {
+  const kept = JSON.parse(localStorage.getItem(MAP_LAYERS_STORE) || 'null');
+  for (const k of MAP_LAYERS) if (typeof kept?.[k] === 'boolean') mapShows[k] = kept[k];
+} catch { /* nowhere to keep it: everything shows, which is the default anyway */ }
+
+export function setMapLayer(k, on) {
+  if (!MAP_LAYERS.includes(k)) return false;
+  mapShows[k] = Boolean(on);
+  try { localStorage.setItem(MAP_LAYERS_STORE, JSON.stringify(mapShows)); } catch { /* not kept */ }
+  nextMapDraw = 0;
+  paintLayerButtons();
+  return true;
+}
+
+/** Every layer at once. One write and one redraw rather than fourteen of each,
+    which is the whole reason it is not a loop over setMapLayer. */
+export function setAllMapLayers(on) {
+  for (const k of MAP_LAYERS) mapShows[k] = Boolean(on);
+  try { localStorage.setItem(MAP_LAYERS_STORE, JSON.stringify(mapShows)); } catch { /* not kept */ }
+  nextMapDraw = 0;
+  paintLayerButtons();
+}
+
+/** Marks each line of the list on or off, and fills the funnel while anything
+    is hidden — the way the chronicle's does, so a map with half its layers off
+    says so before you wonder where everybody went. */
+export function paintLayerButtons() {
+  for (const b of $('mapLayers')?.querySelectorAll?.('button[data-layer]') || []) {
+    b.setAttribute('aria-pressed', String(Boolean(mapShows[b.dataset.layer])));
+  }
+  /* "All" is on when everything is, off when nothing is, and mixed in between —
+     which is a real state for a toggle button, and the one it spends most of
+     its time in once anybody has used the list. */
+  const on = MAP_LAYERS.filter((k) => mapShows[k]).length;
+  $('mapLayers')?.querySelector?.('button[data-all]')?.setAttribute?.('aria-pressed',
+    on === MAP_LAYERS.length ? 'true' : on === 0 ? 'false' : 'mixed');
+  $('mapFilter')?.classList?.toggle('filtering', MAP_LAYERS.some((k) => !mapShows[k]));
+}
+
+export function closeMapLayers() {
+  const box = $('mapLayers');
+  if (box) box.hidden = true;
+  $('mapFilter')?.setAttribute?.('aria-expanded', 'false');
+}
+
+/* -------------------------------------------------------------------------
+   Where the food is
+
+   The full map said where everybody was and nothing about what they were all
+   walking to. So it marks the four places food comes from: fruit on the trees,
+   the ground each band has found worth foraging, the water each band fishes,
+   and the granaries it ends up in. Each is a badge you can click to go and
+   look, drawn with the same pictures as the bubbles over the people doing the
+   work.
+
+   Only on the full map. At 92 pixels a badge is bigger than a camp and there
+   would be forty of them.
+   ------------------------------------------------------------------------- */
+export const MARK_KINDS = {
+  fruit: { icon: 'fruit', color: '#f08497' },
+  forage: { icon: 'gather', color: '#a3d672' },
+  fish: { icon: 'fish', color: '#76c8f0' },
+  rafts: { icon: 'raft', color: '#c9a36b' },
+  stores: { icon: 'granary', color: '#ecc870' },
+  // Coloured per mark, by what the quarry is: see ORES in quarries.js.
+  quarry: { icon: 'quarry', color: '#bdb6aa' },
+};
+export const MARK_HIT = 9;           // screen pixels, like CAMP_HIT
+export const FRUIT_MIN = 6;          // fruit in a clump before it is worth a mark
+/* And no more than this many in view, richest first. The first world this was
+   drawn on had 117 clumps worth a mark across the whole island, which is not a
+   map of where the fruit is but a rash; the best two dozen are where you would
+   actually go, and zooming in shows the next ones down. */
+export const FRUIT_MARKS = 24;
+/* And thickets, the same way: the richest in view. */
+export const FORAGE_MARKS = 30;
+export const PATCHES_MARKED = 3;     // a band's best few, not all it remembers
+/* What the last full-map draw put down, for the pointer to find. */
+export const mapMarks = [];
+
+let fruitClumps = [], fruitAt = -Infinity, fruitSpan = 0;
+
+/* Fruit, gathered into clumps. There are thousands on an island and a mark
+   each would be a rash — and the trees stand in groves anyway, so a clump is
+   what you would walk to. How big a clump is follows the zoom: the whole island
+   wants big ones, a valley small ones. Counted again every two seconds rather
+   than every draw, because it walks every fruit there is. */
+function clumpFruit(now) {
+  if (now - fruitAt < 2 && fruitSpan === mapView.span) return fruitClumps;
+  fruitAt = now;
+  fruitSpan = mapView.span;
+  fruitClumps = [];
+  if (!orchard?.buckets) return fruitClumps;
+  const cell = Math.max(40, mapView.span / 18);
+  const clumps = new Map();
+  for (const here of orchard.buckets.values()) {
+    for (const i of here) {
+      if (!orchard.on[i]) continue;
+      const x = orchard.home[i * 16 + 12], z = orchard.home[i * 16 + 14];
+      const key = `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
+      const c = clumps.get(key);
+      if (c) { c.n++; c.x += x; c.z += z; } else clumps.set(key, { n: 1, x, z });
+    }
+  }
+  for (const c of clumps.values()) {
+    if (c.n >= FRUIT_MIN) fruitClumps.push({ x: c.x / c.n, z: c.z / c.n, n: c.n });
+  }
+  fruitClumps.sort((a, b) => b.n - a.n);     // richest first, for the cap in gatherMarks
+  return fruitClumps;
+}
+
+/* Everything worth a mark, off live state, for the layers that are showing. */
+function gatherMarks(now) {
+  mapMarks.length = 0;
+  if (!mapIsFull()) return;
+  const put = (kind, x, z, label, color, size) => {
+    const [mx, my] = worldToMap(x, z);
+    // Off the edge of a zoomed-in view: nothing to draw and nothing to click.
+    if (mx < -6 || my < -6 || mx > MAP_N + 6 || my > MAP_N + 6) return false;
+    mapMarks.push({ kind, x, z, mx, my, label, color, size });
+    return true;
+  };
+  if (mapShows.fruit) {
+    let shown = 0;
+    for (const f of clumpFruit(now)) {
+      if (shown >= FRUIT_MARKS) break;
+      if (put('fruit', f.x, f.z, `${f.n} fruit ripe on the trees here`)) shown++;
+    }
+  }
+  /* Foraging: the berry thickets — where the food is on the ground, and what
+     E forages at. The richest first, which is the order they are laid out in,
+     and no more than a handful in view, like the fruit. */
+  if (mapShows.forage) {
+    let shown = 0;
+    for (const t of thickets) {
+      if (shown >= FORAGE_MARKS) break;
+      if (put('forage', t.x, t.z, 'Berries: ' + ripeWord(t))) shown++;
+    }
+  }
+  for (const c of camps) {
+    if (c.gone) continue;
+    // The fish are out in deep water, off the dock, and only for a band with a raft.
+    const dock = mapShows.fish && c.raft ? dockOf(c) : null;
+    if (dock) {
+      put('fish', dock.mx + Math.sin(dock.a) * 70, dock.mz + Math.cos(dock.a) * 70, `${c.name} fish out here, from their raft`);
+    }
+    /* And the raft itself, wherever it is: tied up at the dock, or out on the
+       water with whoever took it. */
+    if (mapShows.rafts && c.raft) {
+      const at = dockOf(c);
+      const out = at && raftBusy(c) ? c.raftOut : null;
+      if (out) put('rafts', out.x, out.z, `${c.name}'s raft — out on the water`);
+      else if (at) put('rafts', at.mx, at.mz, `${c.name}'s raft, tied up at its dock`);
+    }
+    if (mapShows.stores && c.storesUp > 0 && c.storeSpots?.[0]) {
+      const s = c.storeSpots[0];
+      put('stores', s.x, s.z,
+        `${c.name}'s granaries: ${Math.floor(daysOfFood(c))} days of food put by`);
+    }
+  }
+  /* The quarries: one mark each, the colour of what is in it and the size of
+     how much — the same cube root the heap on the hillside is drawn by, so a
+     gold seam is a small mark and a fresh stone quarry a big one. A seam that
+     is worked out is off the map. */
+  for (const d of deposits) {
+    if (d.left <= 0 || !mapShows[d.kind]) continue;
+    const ore = ORES[d.kind];
+    put('quarry', d.x, d.z, `${ore.label[0].toUpperCase()}${ore.label.slice(1)}: ${d.left} of ${d.full} left`,
+      ore.mark, clamp(3.6 * (0.75 + 0.5 * Math.cbrt(d.left / 100)), 3.2, 7.6));
+  }
+}
+
+/* A dark round with a ring in the kind's colour and its picture inside. Path2D
+   turns the pictures into strokes and a browser is the only place it exists;
+   the boot check draws the rounds without them, which is the right answer to
+   "does the map still draw". */
+function drawMarks() {
+  const scale = mapCanvas.width / MAP_N;
+  const paths = typeof Path2D === 'function';
+  for (const m of mapMarks) {
+    const kind = MARK_KINDS[m.kind];
+    // Its own size and colour where it has them — a quarry's say how much.
+    const r = (m.size || 4.4) * MK;
+    const s = (r * 1.41) / 16;
+    const color = m.color || kind.color;
+    mapCtx.beginPath();
+    mapCtx.arc(m.mx, m.my, r, 0, Math.PI * 2);
+    mapCtx.fillStyle = 'rgba(18, 14, 10, 0.86)';
+    mapCtx.fill();
+    mapCtx.lineWidth = 0.9 * MK;
+    mapCtx.strokeStyle = color;
+    mapCtx.stroke();
+    if (!paths) continue;
+    mapCtx.setTransform(scale * s, 0, 0, scale * s, scale * (m.mx - 8 * s), scale * (m.my - 8 * s));
+    mapCtx.lineWidth = 1.6;
+    mapCtx.lineCap = 'round';
+    mapCtx.lineJoin = 'round';
+    mapCtx.strokeStyle = color;
+    mapCtx.fillStyle = color;
+    const icon = ICON_PATHS[kind.icon];
+    for (const d of icon.stroke || []) mapCtx.stroke(new Path2D(d));
+    for (const d of icon.fill || []) mapCtx.fill(new Path2D(d));
+    mapCtx.setTransform(scale, 0, 0, scale, 0, 0);
+  }
+}
+
+/* Screen pixels between the pointer and a point in map units. The same
+   conversion campUnder makes, in one place for both of them. */
+function screenDist(mx, my, clientX, clientY, r) {
+  return Math.hypot(r.left + mx / MAP_N * r.width - clientX, r.top + my / MAP_N * r.height - clientY);
+}
+
+/** The mark under this point on the canvas, if any, and how far off its
+    middle the pointer is. */
+export function markUnder(clientX, clientY) {
+  if (!mapIsFull() || !mapMarks.length) return null;
+  const r = mapCanvas.getBoundingClientRect();
+  if (!r.width) return null;
+  let best = null, near = MARK_HIT;
+  for (const m of mapMarks) {
+    const d = screenDist(m.mx, m.my, clientX, clientY, r);
+    if (d < near) { near = d; best = m; }
+  }
+  return best ? { mark: best, d: near } : null;
+}
+
+/** How far the pointer is from a band's fire, in screen pixels. */
+export function campDist(camp, clientX, clientY) {
+  const r = mapCanvas.getBoundingClientRect();
+  const [mx, my] = worldToMap(camp.x, camp.z);
+  return screenDist(mx, my, clientX, clientY, r);
+}
+
 export function drawMap(now) {
   if (!mapBase || $('map').hidden) return;
   if (now < nextMapDraw) return;
@@ -307,6 +581,8 @@ export function drawMap(now) {
 
   updateMapView();
   buildPathLayer(now);
+  // The corner map is its own, plainer picture.
+  if (!mapIsFull()) { drawCornerMap(); return; }
   /* The relief is one image of the whole island, so zooming is a crop of it
      rather than a redraw — the height field is not sampled again for a keypress.
      It goes soft as you go in, which is what a paper map does when you put your
@@ -316,16 +592,21 @@ export function drawMap(now) {
   const sx = ((mapView.x - mapView.span / 2 + WORLD / 2) / WORLD) * MAP_N;
   const sz = ((mapView.z - mapView.span / 2 + WORLD / 2) / WORLD) * MAP_N;
   mapCtx.drawImage(mapBase, sx, sz, src, src, 0, 0, MAP_N, MAP_N);
-  drawPathLayer();
+  if (mapShows.paths) drawPathLayer();
 
   // Animals first and faintest: they are context, not the point.
   mapCtx.fillStyle = 'rgba(226, 240, 205, 0.55)';
-  for (const pack of packs) {
+  for (const pack of mapShows.animals ? packs : []) {
     for (const a of pack.list) {
       const [px, py] = worldToMap(a.x, a.z);
       mapCtx.fillRect(px - 0.5 * MK, py - 0.5 * MK, 1.1 * MK, 1.1 * MK);
     }
   }
+
+  /* Where the food is. Under the bands, so a fire is never hidden by its own
+     granaries on a map zoomed out far enough to put them on top of each other. */
+  gatherMarks(now);
+  drawMarks();
 
   /* Camps: one small dot each, in the band's own colour.
 
@@ -346,7 +627,7 @@ export function drawMap(now) {
      ground-green or people-amber — so the dark edge stops being a hedge against
      one bad case and becomes the thing that makes a dot a dot. It is drawn
      wider for it. */
-  for (const c of camps) {
+  for (const c of mapShows.camps ? camps : []) {
     const [px, py] = worldToMap(c.x, c.z);
     mapCtx.beginPath();
     mapCtx.arc(px, py, 1.7 * MK, 0, Math.PI * 2);
@@ -367,7 +648,7 @@ export function drawMap(now) {
      band that has raised something gets a ring round the mark rather than a
      bigger one, because how much is standing there is the thing worth seeing
      from above and the position is not. */
-  for (const c of camps) {
+  for (const c of mapShows.barrows ? camps : []) {
     if (!c.barrow) continue;
     const [px, py] = worldToMap(c.barrow.x, c.barrow.z);
     mapCtx.beginPath();
@@ -393,7 +674,7 @@ export function drawMap(now) {
      on a 92-pixel corner map is the pile of labels the dots were introduced to
      get rid of. Drawn after every dot so no fire is written over by the next
      camp's marker. */
-  if (mapIsFull()) {
+  if (mapIsFull() && mapShows.camps) {
     mapCtx.font = `700 ${(6.5 * MK).toFixed(1)}px ui-sans-serif, system-ui, sans-serif`;
     mapCtx.textBaseline = 'middle';
     mapCtx.lineJoin = 'round';
@@ -413,7 +694,7 @@ export function drawMap(now) {
 
   // The band. Asleep is drawn smaller and dimmer rather than hidden, so an
   // empty-looking camp at night is still legibly a camp full of people.
-  for (const p of people) {
+  for (const p of mapShows.people ? people : []) {
     const [px, py] = worldToMap(p.x, p.z);
     mapCtx.beginPath();
     mapCtx.arc(px, py, (p.asleep ? 0.7 : 1.05) * MK, 0, Math.PI * 2);
@@ -429,19 +710,48 @@ export function drawMap(now) {
     }
   }
 
-  // You, and where you are looking.
+  drawYou(true);
+  updateScaleBar();
+}
+
+/* The corner map: land and water, the worn paths, a dot for each band, and
+   you. Everything else — the relief, the food, the herds, the graves, every
+   person — is the full map's, one click away. */
+function drawCornerMap() {
+  const src = MAP_N * (mapView.span / WORLD);
+  const sx = ((mapView.x - mapView.span / 2 + WORLD / 2) / WORLD) * MAP_N;
+  const sz = ((mapView.z - mapView.span / 2 + WORLD / 2) / WORLD) * MAP_N;
+  mapCtx.drawImage(mapPlain || mapBase, sx, sz, src, src, 0, 0, MAP_N, MAP_N);
+  drawPathLayer();
+  for (const c of camps) {
+    const [px, py] = worldToMap(c.x, c.z);
+    mapCtx.beginPath();
+    mapCtx.arc(px, py, 1.9 * MK, 0, Math.PI * 2);
+    mapCtx.fillStyle = c.color;
+    mapCtx.fill();
+    mapCtx.lineWidth = 0.9 * MK;
+    mapCtx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    mapCtx.stroke();
+  }
+  drawYou(false);
+}
+
+/* You: an arrow the way you are looking — and on the full map the wedge of
+   what the camera sees. */
+function drawYou(cone) {
   const [cx, cy] = worldToMap(camera.position.x, camera.position.z);
   camera.getWorldDirection(_fwd);
   const nx = _fwd.x, ny = _fwd.z;
-  const heading = Math.atan2(ny, nx);
-  const hFov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
-
-  mapCtx.beginPath();
-  mapCtx.moveTo(cx, cy);
-  mapCtx.arc(cx, cy, 22 * MK, heading - hFov / 2, heading + hFov / 2);
-  mapCtx.closePath();
-  mapCtx.fillStyle = 'rgba(255, 255, 255, 0.16)';
-  mapCtx.fill();
+  if (cone) {
+    const heading = Math.atan2(ny, nx);
+    const hFov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
+    mapCtx.beginPath();
+    mapCtx.moveTo(cx, cy);
+    mapCtx.arc(cx, cy, 22 * MK, heading - hFov / 2, heading + hFov / 2);
+    mapCtx.closePath();
+    mapCtx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    mapCtx.fill();
+  }
 
   const len = Math.hypot(nx, ny) || 1;
   const fx = nx / len, fy = ny / len;
@@ -455,8 +765,6 @@ export function drawMap(now) {
   mapCtx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
   mapCtx.lineWidth = MK;
   mapCtx.stroke();
-
-  updateScaleBar();
 }
 
 /* Click to travel. Fly keeps whatever height you were at, walk lands on the
@@ -549,8 +857,14 @@ mapCanvas.addEventListener('pointermove', (ev) => {
      map you can drag, a pointer on a band you can go and look at, and nothing
      in particular on open ground you can travel to. A target you cannot see is
      a target nobody presses. */
-  mapCanvas.style.cursor = drag.on ? (mapCanPan() ? 'grabbing' : '')
-    : campUnder(ev.clientX, ev.clientY) ? 'pointer'
+  /* And a mark says what it is before you click it: the canvas's own tooltip,
+     rewritten only when what is under the pointer changes. */
+  const hit = drag.on || !mapIsFull() ? null : markUnder(ev.clientX, ev.clientY);
+  // The corner map is only for looking at: a click opens the full one.
+  const tip = !mapIsFull() ? 'open the map' : hit ? hit.mark.label : 'click to travel';
+  if (mapCanvas.title !== tip) mapCanvas.title = tip;
+  mapCanvas.style.cursor = !mapIsFull() ? 'pointer' : drag.on ? (mapCanPan() ? 'grabbing' : '')
+    : hit || campUnder(ev.clientX, ev.clientY) ? 'pointer'
       : mapCanPan() ? 'grab' : '';
   if (!drag.on) return;
   const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
@@ -570,6 +884,10 @@ const endDragMap = (ev) => {
   drag.on = false;
   mapCanvas.releasePointerCapture?.(ev.pointerId);
   mapCanvas.style.cursor = mapCanPan() ? 'grab' : '';
+  /* The corner map takes no clicks of its own — not a band, not a mark, not a
+     place to travel to. It is for glancing at, and a click on it opens the
+     full map, where all of that is. */
+  if (!mapIsFull()) { setMapSize(FULL_MAP); return; }
   // Moved: that was a drag, and it has already happened. Still: go there.
   if (drag.moved > DRAG_SLOP) return;
 
@@ -578,7 +896,17 @@ const endDragMap = (ev) => {
      metre of ground the pointer happened to be over, and the band's card opens
      beside it. Half of "which of these is Ndahouth" is answered by the dot's
      colour; this answers the rest of it. */
+  /* A mark goes and looks at what it marks, and says what that is — the
+     same as a band does, one kind of place further in. A granary stands a few
+     pixels from its own fire on a whole-island map, so both can be under the
+     pointer at once, and the one nearer it is the one being pointed at. */
   const camp = campUnder(ev.clientX, ev.clientY);
+  const hit = markUnder(ev.clientX, ev.clientY);
+  if (hit && (!camp || hit.d < campDist(camp, ev.clientX, ev.clientY))) {
+    travelTo(hit.mark.x, hit.mark.z);
+    toast(hit.mark.label);
+    return;
+  }
   if (camp) {
     travelTo(camp.x, camp.z);
     openTribe(camps.indexOf(camp));
@@ -602,6 +930,27 @@ $('mapOut')?.addEventListener('click', () => stepMapZoom(-1));
 /* Back to the corner rather than off. "Minimise" on a window that fills the
    screen means make it small, and there is a key for making it go away. */
 $('mapMin')?.addEventListener('click', () => setMapSize(SMALL_MAP));
+
+/* What the map shows: the funnel opens the list, and each line in it puts one
+   layer away or brings it back. One listener on the list rather than one on
+   every line. */
+$('mapFilter')?.addEventListener('click', () => {
+  const box = $('mapLayers');
+  if (!box) return;
+  box.hidden = !box.hidden;
+  $('mapFilter').setAttribute('aria-expanded', String(!box.hidden));
+});
+$('mapLayers')?.addEventListener('click', (ev) => {
+  /* All of them: back on if anything is hidden, away if nothing is. Bringing
+     everything back is the more useful half, so a mixed list goes that way. */
+  if (ev.target?.closest?.('button[data-all]')) {
+    setAllMapLayers(!MAP_LAYERS.every((k) => mapShows[k]));
+    return;
+  }
+  const b = ev.target?.closest?.('button[data-layer]');
+  if (b) setMapLayer(b.dataset.layer, !mapShows[b.dataset.layer]);
+});
+paintLayerButtons();
 
 /* The wheel over the map zooms it, which is what a wheel over a map does. Only
    at full size: over the corner map it would fight the page. */

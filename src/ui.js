@@ -9,8 +9,9 @@ import {
 } from './life.js';
 import { buildWorld, placeCamera } from './move.js';
 import {
-  chronPage, closeChronicle, closeTribe, openChronicle, openTribe, orderJob, renderChronPage,
-  renderTribeCard, setChronFind, setChronPage, setTribeTab, showKeys, toggleKeys, tribeShown
+  chronPage, closeChronicle, closeTribe, dropHere, eatHere, handBack, openChronicle, openTribe, orderJob,
+  restHere, renderChronPage, renderTribeCard, sendHome, setChronFind, setChronPage, setTribeTab, showKeys,
+  storeHere, toggleKeys, tribeShown
 } from './chronicle.js';
 import { camps } from './people.js';
 import { travelTo } from './map.js';
@@ -450,10 +451,19 @@ for (const id of ['chronKind', 'chronKind2']) {
    starting state is in the markup instead, and this runs when something
    actually changes it. */
 
-/* One listener on the row rather than six on the buttons. */
+/* One listener on the row rather than six on the buttons. The two on the end
+   are not errands. One takes the instructions off them and one brings them in,
+   so they carry `data-act` and are read separately. */
 $('orders')?.addEventListener('click', (ev) => {
   const b = ev.target?.closest?.('button[data-order]');
-  if (b) orderJob(b.dataset.order);
+  if (b) { orderJob(b.dataset.order); return; }
+  const a = ev.target?.closest?.('button[data-act]');
+  if (a?.dataset.act === 'free') handBack();
+  if (a?.dataset.act === 'home') sendHome();
+  if (a?.dataset.act === 'store' && !storeHere()) toast('not at the granaries');
+  if (a?.dataset.act === 'drop') dropHere();
+  if (a?.dataset.act === 'rest' && !restHere()) toast('busy');
+  if (a?.dataset.act === 'eat' && !eatHere()) toast('busy');
 });
 
 $('chronOpen').addEventListener('click', openChronicle);

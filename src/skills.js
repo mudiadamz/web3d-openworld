@@ -122,6 +122,10 @@ export const SKILLS = {
      in February. It is the only skill that opens ground rather than improving
      what a band already does with it. */
   fishing: { label: 'fishing', of: 'fishing' },
+  /* And the fifteenth: cutting wood. Learned at a tree and nowhere else, and
+     what it moves is how many logs a trip brings home (WOOD.perTrip, in
+     wood.js) — which is how soon a band on a coast has its raft. */
+  woodcraft: { label: 'woodcraft', of: 'woodcutting' },
 };
 
 /* Every skill at nothing. Built from SKILLS rather than written out, because it
@@ -259,14 +263,8 @@ export function practise(camp, key, amount) {
      moves every afternoon somebody spends at the ground and a stone goes up
      about once a year, and redrawing four hundred graves for a number nobody
      can see is four hundred graves a frame. */
-  /* And a raft, once a band has fished enough to be sure. It is the only thing
-     a skill builds besides the stones — and like them it is a fact in the world
-     rather than a number on a card, so the world has to be told. */
-  if (key === 'fishing' && !camp.raft && camp.skill.fishing >= FISH.raftAt && camp.shore) {
-    camp.raft = true;
-    logEvent('learned', `[${camp.code}] ${camp.name} built a raft`, camp.shore.x, camp.shore.z);
-    dressCamp(camp);
-  }
+  /* The raft is built out of the wood a band has cut and stacked, not out of
+     a skill: see storeWood, in wood.js. */
   if (key === 'art') {
     const up = Math.round(MONUMENT_MAX * camp.skill.art);
     if (up !== camp.stonesUp) { camp.stonesUp = up; drawGraves(); }
@@ -308,6 +306,8 @@ export const FORGET_WORDS = {
   fighting: 'stand anybody off',
   /* The raft rots and nobody remembers why it was worth the wood. */
   fishing: 'take anything out of the water',
+  /* The axe is still there. Nobody remembers which trees split clean. */
+  woodcutting: 'cut a log worth carrying',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be

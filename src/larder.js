@@ -130,17 +130,17 @@ export const FISH = {
      per trip and steadier, because a coast does not have a winter in the way
      the ground does — which is the point of it and why a band by the sea eats
      in February. */
-  yield: 0.52,
-  /* Two thirds of it is out of reach from the bank. A raft is what makes the
-     rest of the water worth anything, and it is the only thing in the world
-     that opens ground rather than improving it. */
-  fromBank: 0.34,
+  yield: 0.9,
+  /* And all of it is out in deep water: from the bank there is nothing worth
+     the wait. A raft is what a band fishes from, and the only thing in the
+     world that opens ground rather than improving it. */
+  shallow: 3,          // metres of water under the raft before a fish is worth waiting for
+  deep: 18,            // and how much more makes it the best there is
   /* Winter takes something off it, but nothing like what it takes off the
-     ground: 0.35 of high summer on land against this. */
+     ground: 0.35 of high summer on land against this. (The raft itself is a
+     stack of logs: a band on a coast cuts them, stacks them, and builds one
+     once it has enough — storeWood, in wood.js.) */
   winter: 0.75,
-  /* A raft is a few logs and a season's knowing how. A band builds one when it
-     has fished enough to be sure it is worth the wood. */
-  raftAt: 0.30,
   chance: 0.30,        // weight against the other errands, on a coast
 };
 
@@ -177,23 +177,43 @@ export function nearestShore(x, z, within = FISH.reach) {
    search starts from a place that is already known to be a shore instead of
    hunting the island for one every trip. */
 export function pickFishing(camp, luck) {
-  const home = camp.shore;
-  if (!home) return null;
-  let bx = home.x, bz = home.z, best = -Infinity;
-  for (let t = 0; t < 8; t++) {
-    /* Along the coast from the known landing rather than out from the camp: a
-       coast is a line, and the way to find more of it is to follow it. */
-    const a = luck() * Math.PI * 2;
-    const r = t === 0 ? 0 : 20 + luck() * 90;
-    const x = home.x + Math.cos(a) * r, z = home.z + Math.sin(a) * r;
-    if (sampleHeight(x, z) < SEA + 0.9) continue;
+  const dock = camp.raft ? dockOf(camp) : null;
+  if (!dock) return null;
+  let best = null, top = -Infinity;
+  for (let t = 0; t < 6; t++) {
+    // Out from the dock, the way it points, to wherever the deep water is.
+    const a = dock.a + (luck() - 0.5) * 1.6;
+    const away = 35 + luck() * 95;
+    const x = dock.mx + Math.sin(a) * away, z = dock.mz + Math.cos(a) * away;
     const worth = fishRichness(x, z, camp);
     if (worth <= 0) continue;
-    const away = Math.hypot(x - camp.x, z - camp.z);
     const value = (worth - away / 700) * (0.78 + luck() * 0.44);
-    if (value > best) { best = value; bx = x; bz = z; }
+    if (value > top) { top = value; best = { x, z }; }
   }
-  return { x: bx, z: bz };
+  return best;
+}
+
+/* Where a band's raft is tied up: planks out from its landing along the
+   bearing with the most water in front of it, and the raft riding just past
+   the end of them. Worked out from the ground, once per landing. */
+export const DOCK = { len: 7, moor: 1.8 };
+export function dockOf(camp) {
+  if (camp.dock !== undefined && (camp.dock === null ? !camp.shore : camp.dock.of === camp.shore)) return camp.dock;
+  const s = camp.shore;
+  if (!s) return (camp.dock = null);
+  let bestA = 0, most = -Infinity;
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 24) * Math.PI * 2;
+    let water = 0;
+    for (const r of [4, 8, 12]) water += SEA - sampleHeight(s.x + Math.sin(a) * r, s.z + Math.cos(a) * r);
+    if (water > most) { most = water; bestA = a; }
+  }
+  const fx = Math.sin(bestA), fz = Math.cos(bestA);
+  return (camp.dock = {
+    of: s, a: bestA, x: s.x, z: s.z,
+    ex: s.x + fx * DOCK.len, ez: s.z + fz * DOCK.len,
+    mx: s.x + fx * (DOCK.len + DOCK.moor), mz: s.z + fz * (DOCK.len + DOCK.moor),
+  });
 }
 
 /* What the water off this shore is worth. Deeper is better — that is where the
@@ -202,16 +222,12 @@ export function pickFishing(camp, luck) {
    uses, because a stretch of coast fished out this week is fished out for
    everybody. */
 export function fishRichness(x, z, camp) {
-  let deep = 0;
-  for (let r = 6; r <= 40; r += 8) {
-    for (const a of [0, 1.05, 2.1, 3.14, 4.19, 5.24]) {
-      const h = sampleHeight(x + Math.cos(a) * r, z + Math.sin(a) * r);
-      if (h < SEA) deep = Math.max(deep, Math.min(1, -h / 22));
-    }
-  }
-  const reach = camp?.raft ? 1 : FISH.fromBank;
+  // No raft, no fish: they are out in deep water, and nobody swims for them.
+  if (!camp?.raft) return 0;
+  const h = sampleHeight(x, z);
+  const deep = Math.max(0, Math.min(1, (SEA - h - FISH.shallow) / FISH.deep));
   const season = seasonName === 'winter' ? FISH.winter : 1;
-  return FISH.yield * (0.35 + 0.65 * deep) * reach * season * (1 - pickedAt(x, z));
+  return FISH.yield * deep * season * (1 - pickedAt(x, z));
 }
 
 /** For the boot check: how far the foraging has spread over the island. */

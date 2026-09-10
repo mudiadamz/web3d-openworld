@@ -18,13 +18,20 @@ import {
 } from './life.js';
 import { buildWorld, placeCamera, recountBlades, updateCamps, updatePeople } from './move.js';
 import {
-  moveCamera, setViewMode, updateFollowCaption, updateShadowFocus, wireInput
+  moveCamera, restoreFocus, setViewMode, updateFollowCaption, updateShadowFocus, wireInput
 } from './chronicle.js';
 import {
   $, SAVE_EVERY, applySavedLife, applySavedWorld, nextSave, persistState, readSavedState,
   setNextSave, ui
 } from './save.js';
 import { updateAudio } from './audio.js';
+import { updateBubbles } from './bubbles.js';
+import { updateThickets } from './thickets.js';
+import { updateDanger } from './danger.js';
+import { updateDrops } from './drops.js';
+import { updateHunt } from './hunt.js';
+import { updateRafts } from './rafts.js';
+import { updateWoodpiles } from './wood.js';
 import { onMapResize, drawMap } from './map.js';
 import {
   codeChip, ensureCurrentWorld, hhmm, setRate, syncLabels, toast, tribeChips, updateToast
@@ -68,8 +75,8 @@ export let lastCaption = 0;
    Running the world on without drawing it
 
    The clock already goes to sixteen times, and sixteen times is nothing: a year
-   is twenty-four days of an hour each, so watching a decade at 16× is fifteen
-   hours of sitting there. What is wanted is to skip the watching entirely —
+   is twenty-four days of twenty-four minutes each, so watching a decade at 16×
+   is six hours of sitting there. What is wanted is to skip the watching entirely —
    name a number of years, let the simulation run flat out with nothing rendered,
    and be shown the world it arrives at.
 
@@ -426,6 +433,20 @@ export function tick() {
     repopulate(owed);
   }
   updatePeople(paced, daylight);
+  // After the people have moved, so a bubble is over where somebody is now.
+  updateBubbles();
+  // The berries on the thickets follow the ground they grow on.
+  updateThickets(elapsed);
+  // A tiger in sight of whoever you are behind.
+  updateDanger();
+  // Piles on the ground: food left lying spoils.
+  updateDrops();
+  // The throw range round the person you are playing, and a spear in the air.
+  updateHunt();
+  // Each band's dock, and its raft at it or out on the water.
+  updateRafts();
+  // And the wood each band has cut, stacked by its granaries.
+  updateWoodpiles();
   updateCamps(dt, elapsed, daylight);
   updateTimeOfDay();
   updateAudio();
@@ -491,6 +512,8 @@ readSavedState().then((saved) => {
     startRun().then(ensureCurrentWorld).then(loadChronicle);
     setViewMode(P.view);
     placeCamera();
+    // Back behind whoever you were watching before the refresh, if you were.
+    restoreFocus();
     // The world is standing there already; the models arrive and improve it.
     loadModels();
     updateTimeOfDay();

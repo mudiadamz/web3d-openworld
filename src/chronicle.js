@@ -6,16 +6,25 @@ import { seasonName, camera, canvas, controls, renderer, scene, sky, sunDir, sun
 import { fauna, grassGroup, rockGroup, world } from './world.js';
 import { lineage, pick } from './wildlife.js';
 import { PERSON, rateIndex, worldClock } from './clock.js';
-import { camps, people, tribeGroup } from './people.js';
+import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from './people.js';
 import {
   FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood,
   wealthOf,
   energyOutOfTen, isMilestone, milestonesOnly, personAge, skillTier,
-  runId, tollOf, traitWord, who
+  runId, tollOf, traitWord, who, fruitNear
 } from './life.js';
-import { VIEW_MODES, applyShadowSettings } from './move.js';
+import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
+import { ORES, depositRadius, deposits } from './quarries.js';
+import { preyNear } from './spear.js';
+import { updateActionRings, whatHere } from './reach.js';
+import { takeCover } from './danger.js';
+import { atHome, canEat, condition } from './vitals.js';
+import { moorRaft } from './rafts.js';
+/* Read by the boot check through this module, which is the one it holds. */
+export { RING_ON, actionRings, ringHexes, thicketNear, whatHere } from './reach.js';
+import { VIEW_MODES, applyShadowSettings, carryFactor, tooHeavy } from './move.js';
 import { $ } from './save.js';
-import { stepMapSize } from './map.js';
+import { PATCHES_MARKED, stepMapSize } from './map.js';
 import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, togglePanel, tribeChips } from './ui.js';
 import { stopAhead } from './main.js';
 
@@ -242,7 +251,7 @@ export function renderTribeCard() {
        than food is most of it: food spoils, so a band cannot hoard it, and the
        pile is the only thing here that keeps. */
     + `<div><span>worth taking</span> ${wealthOf(camp).toFixed(0)}`
-    + ` <em>(${(camp.stone || 0).toFixed(0)} stone)</em></div>`
+    + ` <em>(${heldWords(camp)})</em></div>`
     + `<div class="skills">${skills}</div>`
     + `<div><span>founded day ${Math.floor(camp.founded)} · ${camp.born} born · `
     + `most they were was ${camp.peak}${toll.length
@@ -501,6 +510,43 @@ export function followPersonById(id) {
 }
 
 /* -------------------------------------------------------------------------
+   Who you were watching, across a reload
+
+   A refresh put you behind somebody else: Follow picks a person at random on
+   the way in, so whoever you had spent ten minutes with was gone the moment
+   the page came back. So who you are behind is kept in this browser as it
+   changes — by id, because every death renumbers the array, and with the seed,
+   because the same id on another island is somebody else — and the boot puts
+   you back behind them once the world is standing.
+
+   Written the moment it changes rather than with the ten-second save, because
+   a refresh straight after switching to somebody new is exactly the case that
+   matters. Kept per browser, like the map's layers: it is where you were
+   looking, not a fact about the world.
+   ------------------------------------------------------------------------- */
+export const FOCUS_STORE = 'openworld.focus';
+let keptSeed = null, keptView = null, keptId;
+
+/** Called every frame; writes only when who or how you are watching changes. */
+export function keepFocus() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  const id = p ? p.id : null;
+  if (keptSeed === P.seed && keptView === P.view && keptId === id) return;
+  keptSeed = P.seed;
+  keptView = P.view;
+  keptId = id;
+  try { localStorage.setItem(FOCUS_STORE, JSON.stringify({ seed: P.seed, view: P.view, id })); } catch { /* nowhere to keep it */ }
+}
+
+/** On boot: back behind whoever you were behind, if they are in this world. */
+export function restoreFocus() {
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(FOCUS_STORE) || 'null'); } catch { return false; }
+  if (!kept || kept.seed !== P.seed || kept.view !== 'follow' || kept.id == null) return false;
+  return followPersonById(kept.id);
+}
+
+/* -------------------------------------------------------------------------
    Somewhere else on the island
 
    `F` answers "show me somebody". In Orbit the question is "show me somewhere",
@@ -634,15 +680,47 @@ export function leadTo(x, z) {
   return true;
 }
 
-/** Hands them back to themselves, wherever they happen to be standing. */
-export function releaseLead(announce = true) {
+/* Let go of, they do what somebody in their shoes would: a full load, or an
+   animal over the shoulder, goes home to the granaries; a basket with room in
+   it gets filled, at whatever filled it so far; empty-handed, they choose. */
+export function carryOn(p) {
+  if (!hasLoad(p)) return 'free';
+  const load = loadOf(p), cap = carryCap(p, SKILL.basketHaul, p.camp.skill?.baskets || 0);
+  const kind = bagKind(p.bag);
+  if (load >= cap * 0.85 || kind === 'game') { p.goingHome = true; return 'home'; }
+  p.orders = kind === 'fish' ? 'fish' : kind === 'wood' ? 'wood' : (p.bag?.ore > 0 ? 'quarry' : 'gather');
+  return p.orders;
+}
+
+/** What they will do now, said. */
+export function carryOnWords(p) {
+  if (p.goingHome) return p.name + ' takes it home';
+  const on = { gather: 'goes on foraging', fish: 'goes on fishing', quarry: 'goes on digging', wood: 'goes on cutting wood' }[p.orders];
+  return p.name + ' ' + (on || 'goes back to it');
+}
+
+/** Hands them back to themselves, wherever they happen to be standing. With
+    `natural` they carry on as they would (carryOn); an order or a walk home
+    passes false, because what they were told is what they do next. */
+export function releaseLead(announce = true, natural = true) {
   const p = followedPerson();
   if (!p || !p.led) return false;
   p.led = false;
   p.state = 'idle';
   p.timer = 0;                     // pick something to do on the next step
   p.speed = 0;
-  if (announce) toast(`${p.name} goes back to it`);
+  // And anything you had them in the middle of doing is theirs to drop.
+  p.acting = false;
+  p.act = null;
+  // Out of the tree and up from cover: nobody is holding them there any more.
+  p.climbed = null;
+  p.lift = 0;
+  p.hiding = false;
+  p.resting = false;
+  // Off the raft and ashore at its dock: nobody else can paddle it for them.
+  if (p.onRaft) moorRaft(p);
+  if (natural) carryOn(p);
+  if (announce) toast(carryOnWords(p));
   updateFollowCaption();
   return true;
 }
@@ -666,20 +744,144 @@ export function releaseLead(announce = true) {
 /* What you can tell somebody to do. The last two are errands a grown band has
    and a new one does not: there is nowhere to quarry until somebody has found
    the rocks, and nowhere to stand until somebody has been buried. */
-export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit', 'quarry', 'mourn', 'raid', 'fish'];
+export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit', 'quarry', 'mourn', 'raid', 'fish', 'wood'];
+
+/* Too heavy to walk is too heavy to be sent anywhere: an order, the walk home
+   or being let go to carry on would all have them walking off with it — the
+   band's own logic only ever takes a fifth off a walk for a load. So none of
+   those is taken until something is put down, or put away. */
+function tooHeavyToSend(p) {
+  if (!p || !tooHeavy(p)) return false;
+  toast('too heavy to walk — put some down (G), or put it away (E)');
+  return true;
+}
 
 export function orderJob(job) {
   const p = followedPerson();
   if (!p || !ORDERS.includes(job)) return false;
+  if (tooHeavyToSend(p)) return false;
   /* An order is not a leash, and holding both would be two things steering one
      person. Being told to go hunting ends being walked about by hand. */
-  if (p.led) releaseLead(false);
+  if (p.led) releaseLead(false, false);
   p.orders = job;
   p.state = 'idle';
   p.timer = 0;                     // taken up on their next turn
   toast(`${p.name}: ${JOB_WORDS[job] || job}`);
   updateFollowCaption();
   return true;
+}
+
+/* -------------------------------------------------------------------------
+   Giving them back
+
+   Two ways of holding somebody and one way of letting go. Q already
+   drops the hand on the shoulder, but an order set a moment ago is the other
+   half of it, and nothing undid that except waiting for them to finish it. So
+   this clears both: no point to walk to, no errand pending, and they choose
+   for themselves on their next turn.
+
+   It does not leave Follow. Handing somebody back and stopping watching them
+   are different things, and the second one is Esc.
+   ------------------------------------------------------------------------- */
+export function handBack() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p) return false;
+  const wasLed = p.led;
+  const hadOrder = !!p.orders;
+  /* Nothing is holding them, so there is nothing to undo and nothing to say.
+     The button is disabled in this state; this is the guard behind it. */
+  if (!wasLed && !hadOrder) return false;
+  if (tooHeavyToSend(p)) return false;
+  p.orders = null;
+  if (wasLed) releaseLead(false);
+  /* Cancelling an order they had not taken up yet. Idle with no time left is
+     "choose something now", which is what releasing the lead does too. */
+  else { p.state = 'idle'; p.timer = 0; }
+  toast(carryOnWords(p));
+  updateFollowCaption();
+  return true;
+}
+
+/* -------------------------------------------------------------------------
+   Back to the fire
+
+   The one instruction that is not an errand. Everything in ORDERS sends
+   somebody out; this brings them in, and it is the walk that ends every errand
+   started early. What they are carrying goes into the store when they arrive,
+   and then they are idle and their own again.
+
+   Left on the person, like an order, and for the same reason: the walk wants a
+   timeout worked out from the distance it is about to cover, and arriving is
+   what banks the haul. Both of those are the step's business, and a click
+   happens on a frame. The next turn spends it.
+   ------------------------------------------------------------------------- */
+export function sendHome() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p) return false;
+  if (tooHeavyToSend(p)) return false;
+  /* Being sent home ends being walked about by hand, the same way an order
+     does: two things steering one person is one too many. */
+  if (p.led) releaseLead(false, false);
+  p.orders = null;
+  p.goingHome = true;
+  toast(`${p.name} heads home`);
+  updateFollowCaption();
+  return true;
+}
+
+/* -------------------------------------------------------------------------
+   The basket, on screen
+
+   At the left of the action bar: what they are carrying, all of it, how full
+   the basket is, and the band's store it is for — so walking in with a full one
+   and pressing E is something you can watch go into the number. An animal or
+   ore is carried over the shoulder, not in the basket, and says so.
+
+   Rewritten only when what it says changes: it is asked every frame.
+   ------------------------------------------------------------------------- */
+let bagShown = '';
+
+/* The life bar, beside what they carry: out of a hundred, spent walking,
+   running, working, carrying and in the cold, won back resting (X) and eating
+   (N) — and a hint at which, or at what is wearing them down. */
+function vitalsHtml(p) {
+  const c = condition(p);
+  return '<span class="vit' + (p.sick ? ' ill' : '') + '" title="' + c.detail + '"><u>life</u><i><b'
+    + (c.low ? ' class="low"' : c.mid ? ' class="mid"' : '') + ' style="width:' + c.life + '%"></b></i>'
+    + '<strong>' + c.life + '</strong>' + (c.hint ? '<em>' + c.hint + '</em>' : '') + '</span>';
+}
+export function updateBagHud(p) {
+  const el = $('bagHud');
+  if (!el || !p) return;
+  const kind = bagKind(p.bag);
+  const shoulder = kind === 'game' || kind === 'wood' || p.bag?.ore > 0;
+  const what = bagWords(p.bag, true) || (p.haul > 0 ? 'food' : 'an empty basket');
+  // How full: what it weighs against what they can carry.
+  const full = clamp(loadOf(p) / carryCap(p, SKILL.basketHaul, p.camp.skill?.baskets || 0), 0, 1);
+  /* The slowness is the one in the step (carryFactor, in updatePeople), said
+     only while it applies — and when it is all of their pace, that they are
+     stuck and what to do about it. */
+  const loaded = p.carry || hasLoad(p);
+  const pace = loaded ? carryFactor(p) : 1;
+  const slow = !loaded ? ''
+    : pace <= 0 ? '<i class="heavy">too heavy to walk</i> · '
+      : Math.round((1 - pace) * 100) + '% slower · ';
+  /* Where the store is, while there is something to take there: how far to
+     the edge of the storage area, or that they are in it and E will do. */
+  let where = '';
+  if (hasLoad(p)) {
+    const a = storeAreaOf(p);
+    const off = Math.hypot(p.x - a.x, p.z - a.z) - a.r;
+    where = off < 0 ? '<em class="here">at the granaries · E puts it away</em>'
+      : '<em>granaries ' + Math.ceil(off) + ' m</em>';
+  }
+  const html = '<b>' + (shoulder ? 'on the shoulder: ' : '') + what + '</b>'
+    + where
+    + '<span class="bar' + (full >= 1 ? ' full' : '') + '"><i style="width:' + Math.round(full * 100) + '%"></i></span>'
+    + '<small>' + slow + 'store '
+    + daysOfFood(p.camp).toFixed(1) + ' days</small>'
+    + vitalsHtml(p);
+  if (html !== bagShown) { el.innerHTML = html; bagShown = html; }
 }
 
 /** Shows the row while you are behind somebody, and marks what they are at. */
@@ -689,16 +891,231 @@ export function updateOrders() {
   const p = P.view === 'follow' ? followedPerson() : null;
   if (box.hidden !== !p) box.hidden = !p;
   if (!p) return;
+  updateBagHud(p);
+  const heavy = tooHeavy(p);
   for (const b of box.children) {
     const mine = b.dataset && b.dataset.order === (p.orders || p.job);
     if (b.classList.contains('on') !== !!mine) b.classList.toggle('on', !!mine);
+    // Too heavy to walk: no errand can be set off on (tooHeavyToSend).
+    if (b.dataset?.order && b.disabled !== heavy) b.disabled = heavy;
+  }
+  /* Greyed while nothing is holding them. A button whose whole job is to undo
+     something has to say when there is nothing to undo: pressing it and having
+     nothing happen reads as the button being broken. */
+  const free = box.querySelector?.('button[data-act="free"]');
+  if (free) {
+    const held = !!(p.led || p.orders);
+    const can = held && !heavy;
+    if (free.disabled !== !can) free.disabled = !can;
+  }
+  const home = box.querySelector?.('button[data-act="home"]');
+  if (home && home.disabled !== heavy) home.disabled = heavy;
+  /* Put away: only in the storage area with something to put, and lit green
+     when it is — the same green as the ring. Drop: whenever there is a load. */
+  const loadNow = hasLoad(p);
+  const store = box.querySelector?.('button[data-act="store"]');
+  if (store) {
+    const can = loadNow && inStoreArea(p);
+    if (store.disabled !== !can) store.disabled = !can;
+    store.classList?.toggle?.('ready', can);
+  }
+  const drop = box.querySelector?.('button[data-act="drop"]');
+  if (drop && drop.disabled !== !loadNow) drop.disabled = !loadNow;
+  // Rest lit while they are resting; eat only with something to eat.
+  const rest = box.querySelector?.('button[data-act="rest"]');
+  if (rest) rest.classList?.toggle?.('ready', Boolean(p.resting));
+  const food = box.querySelector?.('button[data-act="eat"]');
+  if (food) {
+    const can = canEat(p);
+    if (food.disabled !== !can) food.disabled = !can;
   }
 }
 
 /** True while the run key is down. Walking there is automatic; this is the
     extra — and the energy clamp downstream charges for it, so a band you run
     everywhere arrives tired and hunts worse. */
-export function leadRunning() { return keys.has('KeyW'); }
+export function leadRunning() { return keys.has('ShiftLeft') || keys.has('ShiftRight'); }
+
+/* -------------------------------------------------------------------------
+   Walking them yourself
+
+   Clicking says where; WASD says which way, the way you would walk anybody in
+   a game. W is the way the camera looks, S back toward it, A and D to either
+   side, and they turn to face the way they are going. Shift runs — the same run
+   a click-walk gets, charged for the same way.
+
+   It is the same walking, not a second kind. Holding a key keeps the lead point
+   a few metres ahead of them that way, and letting go puts it where they stand,
+   so everything that already applies to being led applies to this and nothing
+   in the step is new. Set from a frame, like a click: a point on the ground is
+   not a draw from the world's stream.
+   ------------------------------------------------------------------------- */
+export const STEER_AHEAD = 4;          // metres ahead of them the point is kept
+let steering = false;
+
+export function steerFollowed() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p || p.acting) { steering = false; return; }
+  const sx = Math.sin(cam.yaw), sz = Math.cos(cam.yaw);
+  let fx = 0, fz = 0;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) { fx += sx; fz += sz; }
+  if (keys.has('KeyS') || keys.has('ArrowDown')) { fx -= sx; fz -= sz; }
+  if (keys.has('KeyD') || keys.has('ArrowRight')) { fx -= sz; fz += sx; }
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) { fx += sz; fz -= sx; }
+  const len = Math.hypot(fx, fz);
+  if (len > 1e-6) {
+    // Up a tree they stay up it until Z. Down low they crawl — until they run.
+    if (p.climbed) return;
+    if (leadRunning()) p.hiding = false;
+    p.resting = false;
+    const was = p.led;
+    p.led = true;
+    p.orders = null;
+    p.leadX = p.x + (fx / len) * STEER_AHEAD;
+    p.leadZ = p.z + (fz / len) * STEER_AHEAD;
+    steering = true;
+    if (!was) updateFollowCaption();
+  } else if (steering) {
+    // Off the keys: they stop where they are, still yours.
+    if (p.led) { p.leadX = p.x; p.leadZ = p.z; }
+    steering = false;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Doing it yourself
+
+   What E would do, and the rings on the ground that say so, are worked out in
+   reach.js. This is the keys, the buttons and the prompt.
+   ------------------------------------------------------------------------- */
+let promptAt = 0;
+
+/** G: puts one handful down in front of them — shift+G, all of it — as a
+    pile that stays there. The step does it, like any act. */
+export function dropHere(all = false) {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p || p.acting || p.act || !hasLoad(p)) return false;
+  p.led = true;
+  p.orders = null;
+  p.leadX = p.x;
+  p.leadZ = p.z;
+  p.act = { kind: 'drop', all: Boolean(all) };
+  return true;
+}
+
+/** X: sit down to rest, or get up again. N: eat — out of the store at home,
+    out of the basket anywhere. Both left on the person for the step, like E. */
+function selfCare(kind) {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p || p.acting || p.act || p.climbed) return false;
+  p.led = true;
+  p.orders = null;
+  p.leadX = p.x;
+  p.leadZ = p.z;
+  p.act = { kind };
+  return true;
+}
+export function restHere() { return selfCare('rest'); }
+export function eatHere() { return selfCare('eat'); }
+
+/** The put-away button: E, but only ever for putting away, and only where. */
+export function storeHere() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p || p.acting || p.act || !hasLoad(p) || !inStoreArea(p)) return false;
+  p.led = true;
+  p.orders = null;
+  p.leadX = p.x;
+  p.leadZ = p.z;
+  p.act = { kind: 'store' };
+  return true;
+}
+
+/* -------------------------------------------------------------------------
+   The storage area, on the ground
+
+   A ring round the band's granaries while the person you are behind is
+   carrying something: straw-coloured while they are outside it, green once
+   they are in. Where to take a full basket is then something you can see,
+   rather than a spot you find by pressing E until it works. Built the first
+   time it is needed and not before, for the reason the lead ring gives.
+   ------------------------------------------------------------------------- */
+export let storeRing = null;
+export const STORE_RING_OUT = 0xe8c872, STORE_RING_IN = 0x8fd18a;
+
+export function updateStoreRing() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p || !hasLoad(p)) { if (storeRing) storeRing.visible = false; return; }
+  if (!storeRing) {
+    const geo = new THREE.RingGeometry(0.94, 1, 64);
+    geo.rotateX(-Math.PI / 2);
+    storeRing = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: STORE_RING_OUT, transparent: true, opacity: 0.75, depthWrite: false,
+    }));
+    storeRing.frustumCulled = false;
+    storeRing.renderOrder = 3;
+    scene.add(storeRing);
+  }
+  const a = storeAreaOf(p);
+  storeRing.visible = true;
+  storeRing.scale.set(a.r, 1, a.r);
+  storeRing.position.set(a.x, sampleHeight(a.x, a.z) + 0.25, a.z);
+  storeRing.material.color.setHex(inStoreArea(p) ? STORE_RING_IN : STORE_RING_OUT);
+}
+
+/** E: leaves the act on the person for the next turn to spend. */
+export function actHere() {
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p || p.acting || p.act) return false;
+  const t = whatHere(p);
+  if (!t) return false;
+  // Doing it yourself is holding their hand, and it is done where they stand.
+  p.led = true;
+  p.orders = null;
+  p.leadX = p.x;
+  p.leadZ = p.z;
+  p.act = t;
+  updateFollowCaption();
+  return true;
+}
+
+/** The prompt at the bottom of the screen, and what came of a throw. */
+export function updateActPrompt() {
+  const el = $('actPrompt');
+  const p = P.view === 'follow' ? followedPerson() : null;
+  if (!p) { if (el && !el.hidden) el.hidden = true; return; }
+  // A throw is decided in the step; it is said the frame after.
+  if (p.actResult) { toast(p.actResult); p.actResult = null; }
+  const now = typeof performance !== 'undefined' ? performance.now() : 0;
+  if (now < promptAt) return;
+  promptAt = now + 120;
+  if (!el) return;
+  // Above the order row, however tall the basket beside it has grown.
+  const row = $('orders');
+  const lift = row && !row.hidden && row.offsetHeight ? row.offsetHeight + 20 : 58;
+  if (el.style && el.style.bottom !== lift + 'px') el.style.bottom = lift + 'px';
+  if (p.acting || p.act) {
+    el.innerHTML = (JOB_WORDS[p.job] || 'busy') + '…';
+    el.hidden = false;
+    return;
+  }
+  const t = whatHere(p);
+  /* Too heavy to walk: what is in reach can still be done, and G is how to
+     get moving again — a handful at a time, where it can be picked up. */
+  const heavy = tooHeavy(p);
+  el.classList?.toggle?.('heavy', heavy);
+  if (!t && p.resting) {
+    el.innerHTML = '<kbd>X</kbd> get up · resting' + (atHome(p) ? ' at home' : '');
+    el.hidden = false;
+    return;
+  }
+  if (!t && heavy) {
+    el.innerHTML = '<kbd>G</kbd> put one down — too heavy to walk';
+    el.hidden = false;
+    return;
+  }
+  el.hidden = !t;
+  if (t) el.innerHTML = '<kbd>E</kbd> ' + t.words + (heavy ? ' · too heavy to walk' : '');
+}
 
 /* -------------------------------------------------------------------------
    Where you sent them
@@ -739,7 +1156,8 @@ export function updateLeadMark() {
      nobody had used yet was still spending draws — which in the boot harness,
      where Math.random is pinned so a seed replays, quietly built a different
      island. A ring for a click that never happened is not worth a world. */
-  if (!p || !p.led) { if (leadMark) leadMark.visible = false; return; }
+  // Not while walking them with the keys: the point is only ever a step ahead.
+  if (!p || !p.led || steering) { if (leadMark) leadMark.visible = false; return; }
   const mark = leadMarker();
   mark.visible = true;
   /* Just clear of the ground. Sitting exactly on it z-fights with the terrain,
@@ -768,6 +1186,7 @@ export const JOB_WORDS = {
   quarry: 'working the rock',
   raid: 'taking it',
   fish: 'fishing',
+  wood: 'cutting wood',
   visit: 'walking to the next band',
   led: 'going where you point',
 };
@@ -783,6 +1202,7 @@ export const CAME_WORDS = {
   gather: ', back from the foraging',
   hunt: ', back from a hunt',
   quarry: ', back from the rocks',
+  wood: ', back with wood',
   mourn: ', back from the stones',
   visit: ', back from the next band',
 };
@@ -799,6 +1219,7 @@ export const GOING_WORDS = {
   quarry: 'walking out to the rocks',
   raid: 'going to take it',
   fish: 'walking down to the water',
+  wood: 'walking out for wood',
   craft: 'off to sit and knap',
   tend: 'walking to the fire',
   nurse: 'going to sit with the ill',
@@ -890,6 +1311,16 @@ export function fireWords(p) {
   return 'at the fire';
 }
 
+/* What a band has dug and kept: the stone pile, and whatever metal it has
+   carried home, commonest first. */
+export function heldWords(camp) {
+  const held = [`${(camp.stone || 0).toFixed(0)} stone`];
+  for (const k of ['iron', 'bronze', 'silver', 'gold']) {
+    if (camp.ores?.[k] > 0) held.push(`${camp.ores[k]} ${k}`);
+  }
+  return held.join(' · ');
+}
+
 export function doingWords(p) {
   if (p.asleep) return 'asleep in a hut';
   if (p.hidden) return INDOOR_WORDS[p.job] || 'resting';
@@ -908,7 +1339,10 @@ export function doingWords(p) {
   if (p.job === 'visit') return visitWords(p, p.speed > WALKING_AT);
   if (p.job === 'tend' && p.speed <= WALKING_AT) return fireWords(p);
   if (p.speed > WALKING_AT) {
-    if (p.state === 'return') return p.carry ? 'carrying it home' : 'walking home';
+    /* What they are bringing, said the way you would say it: "bringing home a
+       deer", "bringing home 5 fish". Food when nothing was counted — a session
+       saved before baskets were. */
+    if (p.state === 'return') return p.carry ? `bringing home ${bagWords(p.bag) || 'food'}` : 'walking home';
     const going = GOING_WORDS[p.job] || 'walking';
     // ...and where from, when they are coming in off an errand worth naming.
     return HOMEWARD.has(p.job) ? going + (CAME_WORDS[p.came] || '') : going;
@@ -924,10 +1358,16 @@ export function updateFollowCaption() {
   el.hidden = false;
   const age = Math.floor(personAge(p));
   const doing = doingWords(p);
-  /* A tenth of a unit of berries is still something in their arms; rounded to
-     nothing it read "carrying 0", which says the opposite of what is true. */
-  const carrying = p.haul > 0
-    ? ` · carrying ${p.haul < 10 ? p.haul.toFixed(1) : p.haul.toFixed(0)}` : '';
+  /* What is in their arms, when the words for what they are doing have not
+     already said it. It was "carrying 10", a number of food units nobody counts
+     in; it is the things now, and said once. */
+  /* And not at all while the basket at the bottom of the screen is showing:
+     what is in it, and how much they have left, are said there already, and
+     saying them twice is what crowded this line. The basket is hidden on a
+     narrow screen, and there the caption still says both. */
+  const hud = !(typeof innerWidth === 'number' && innerWidth <= 720);
+  const carrying = !hud && p.haul > 0 && !doing.startsWith('bringing home')
+    ? ` · with ${bagWords(p.bag) || 'food'}` : '';
   /* Sex, then how they are. Energy only shows once it is low enough to be
      changing what they can do — a readout that is always there is a readout
      nobody reads. */
@@ -993,7 +1433,7 @@ export function updateFollowCaption() {
   p.lastSeen = [p.x, p.z, worldClock];
 
   el.innerHTML = sexMarks(tribeChips(el.textContent))
-    + ` <span class="meter${ten <= 2 ? ' low' : ''}" title="energy">${meter} ${ten}/10</span>`
+    + (hud ? '' : ` <span class="meter${ten <= 2 ? ' low' : ''}" title="energy">${meter} ${ten}/10</span>`)
     + `<span class="where">`
     + `x ${p.x.toFixed(1)}  z ${p.z.toFixed(1)}  alt ${alt.toFixed(1)}m`
     + `  ·  want ${p.speed.toFixed(2)}  going ${going} m/s`
@@ -1122,10 +1562,37 @@ export function wireInput() {
     /* The same shape as F, for the other question. F is "show me somebody";
        this is "show me somewhere", and like F it puts you in the mode it needs
        rather than making you cycle to it first. */
-    /* Shift and W together, before `keys` sees the W — otherwise letting go
-       of somebody also tells them to walk on the way out. */
-    if (ev.code === 'KeyW' && ev.shiftKey && P.view === 'follow') {
+    /* In Follow, Q lets go and E does whatever is in front of them. Both are
+       read before `keys` sees them: in Orbit the same two keys are down and up,
+       and letting go of somebody must not also lower the camera. Shift and W
+       used to let go, which is now "run forward". */
+    if (P.view === 'follow' && ev.code === 'KeyQ') {
+      if (tooHeavyToSend(followedPerson())) return;
       if (!releaseLead()) toast('nobody is being led');
+      return;
+    }
+    if (P.view === 'follow' && ev.code === 'KeyE') {
+      const done = actHere();
+      if (!done) toast('nothing to do here');
+      return;
+    }
+    // G puts a handful down; shift+G all of it.
+    if (P.view === 'follow' && ev.code === 'KeyG') {
+      if (!dropHere(ev.shiftKey)) toast('nothing to drop');
+      return;
+    }
+    // Z takes cover: up the tree they are at, or down where they stand.
+    if (P.view === 'follow' && ev.code === 'KeyZ') {
+      if (!takeCover()) toast('busy');
+      return;
+    }
+    // X sits them down to rest, or up again; N has them eat.
+    if (P.view === 'follow' && ev.code === 'KeyX') {
+      if (!restHere()) toast('busy');
+      return;
+    }
+    if (P.view === 'follow' && ev.code === 'KeyN') {
+      if (!eatHere()) toast('busy');
       return;
     }
     if (ev.code === 'KeyR') {
@@ -1296,6 +1763,11 @@ export function setViewMode(mode) {
 export function moveCamera(dt) {
   updateLeadMark();
   updateOrders();
+  steerFollowed();
+  updateActPrompt();
+  updateStoreRing();
+  keepFocus();
+  updateActionRings(P.view === 'follow' ? followedPerson() : null);
   return P.view === 'follow' ? moveFollow(dt) : moveOrbit(dt);
 }
 
@@ -1326,14 +1798,18 @@ export function moveFollow(dt) {
   /* Keep station. Toward their heading by the shortest way round, or a person
      turning from just west of north to just east of it sends the camera the
      long way round the compass — the one place a bearing has a seam in it. */
-  if (cam.astern) {
+  /* Not while you are walking them with the keys: W is "the way the camera
+     looks", and a camera that swings round behind them as they turn makes S a
+     walk toward the camera that turns them round, which turns the camera, which
+     turns them round again. Drag to turn instead. */
+  if (cam.astern && !steering) {
     let off = p.yaw - cam.yaw;
     off = Math.atan2(Math.sin(off), Math.cos(off));
     cam.yaw += off * Math.min(1, dt * ASTERN_EASE);
   }
 
   const ground = sampleHeight(p.x, p.z);
-  const eye = ground + PERSON.legLen * p.scale * (1 - 0.44 * p.crouch) + 1.15 * p.scale;
+  const eye = ground + PERSON.legLen * p.scale * (1 - 0.44 * p.crouch) + 1.15 * p.scale + (p.lift || 0);
   _follow.set(p.x, eye, p.z);
 
   const d = P.followDist;

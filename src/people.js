@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { CAMP_CEILING, MAP_SCALE, P, PEOPLE_CEILING, QUALITY, SEA, SNOW } from './params.js';
+import { CAMP_CEILING, MAP_SCALE, P, PEOPLE_ROOM, QUALITY, SEA, SNOW } from './params.js';
 import { clamp, flatnessAt, mulberry32, sampleHeight } from './noise.js';
 import { faunaMaterial, rockMaterial } from './scene.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, stats, world } from './world.js';
@@ -423,6 +423,62 @@ export function buryPerson(p) {
    ------------------------------------------------------------------------- */
 export const HEARTHS = 5;
 export const HUTS_PER_HEARTH = 10;
+/* -------------------------------------------------------------------------
+   Where the food is kept
+
+   The store was a number on a panel. A band with a month put by and a band on
+   its last day looked the same from anywhere you could stand, which is the
+   thing "a camp you can read" below exists to stop, and food is the one
+   quantity the whole simulation turns on.
+
+   So it is kept somewhere. Granaries go up as the store fills and come down as
+   it empties: none in a band with nothing, one for a band getting by, four for
+   a band that has put a month by. A drum of wattle on stilts under a thatch
+   that overhangs it, which makes it the one shape in a camp that is not a cone
+   and lets you pick it out of a ring of tents from the ridge.
+   ------------------------------------------------------------------------- */
+export const STORES = 4;
+/* Days of food above which each one stands: something at all, a comfortable
+   week, a fortnight, a month. Spaced wider as they go, because a store that
+   runs to weeks is a different kind of band rather than more of the same. */
+export const STORE_DAYS = [0, 6, 15, 30];
+/* A day's slack on the way up, so a band hovering on a line does not raise a
+   granary in the morning and take it down by night. The same margin the
+   chronicle leaves before it says a band has food again. */
+export const STORE_SLACK = 1;
+/* Where they stand: out past the tents of the first fire, on the bearing no
+   other fire is lit on. The hearths go round a village at fifths of a turn
+   from `hearthTurn`, starting at the first fifth, so `hearthTurn` itself is
+   the one direction a second fire never takes. */
+export const STORE_OUT = 13;
+/* Out, then along. The first stands in the middle, the next two flank it, and
+   the fourth goes behind, between them. */
+export const STORE_SPOTS = [[0, 0], [0, -2.7], [0, 2.7], [2.4, 1.35]];
+export const STORE_SCALE = 0.95;
+/* Where somebody bringing food in stands to put it away: this far short of the
+   granary, on the camp side of it. */
+export const STORE_STAND = 1.7;
+/* How far past the outermost granary the storage area reaches: the ground in
+   front of each, and a step more, so walking up to the store is arriving at it
+   rather than hunting for the one metre where E works. */
+/* The granary's thatch is 1.14 m across its half-width and the spot somebody
+   stands at to fill it is 1.7 m out; this takes in that and half a metre more.
+   It was 3.5, which drew a ring well clear of anything on the ground. */
+export const STORE_AREA_EDGE = 2.2;
+/* The ground a granary needs. A camp is sited for dry flat ground at its
+   middle, and nothing more: thirteen metres out on a coast can be sea, and a
+   granary there is one nobody can walk up to — they stand at the water's edge
+   until their errand times out, and what they were carrying never goes in. */
+export const STORE_FLAT = 0.8;       // stilts take a slope a tent would not, but not a hillside
+/* The far edge of the biggest tent at the back of its ring: huts stand 6.5 to
+   9.1 m from their fire and the largest is 1.95 m across the base at 1.25
+   scale. Every fire a village could light has one, lit or not. */
+export const TENT_REACH = 6.5 + 2.6 + 1.95 * 1.25;
+export const STORE_ROOF = 1.2;       // the thatch's radius, as built in buildCamps
+/* Where the fallbacks go: out past every ring of tents, between two fires. */
+export const STORE_FAR = 22;
+const STORE_WALL = 0x8f7350, STORE_THATCH = 0xb59d62;
+
 export const CAMP_PIECES = {
   huts: HEARTHS * HUTS_PER_HEARTH,
   // Nine stones and four logs *per hearth*: a fire nobody can sit at is a
@@ -430,6 +486,10 @@ export const CAMP_PIECES = {
   stones: 9 * HEARTHS,
   logs: 4 * HEARTHS,
   poles: 3,
+  /* The granaries, in two meshes because they are two colours: stilts, floor
+     and walls in one, the thatch in the other. One matrix places both. */
+  stores: STORES,
+  storeRoofs: STORES,
   /* No `fires` here, and the crash that put this comment in is the reason:
      `buildCamps` walks this object and parks every slot of the mesh named by
      each key, so a key with no `campParts` mesh behind it is a TypeError on the
@@ -551,6 +611,45 @@ export function homeFire(p) {
   return p.hearth || p.camp;
 }
 
+/** Where this person's band keeps its food: the ring round its granaries, or
+    the ground round their own fire for a band with nowhere to raise one. */
+export function storeAreaOf(p) {
+  if (p.camp?.storeArea) return p.camp.storeArea;
+  const f = homeFire(p);
+  return { x: f.x, z: f.z, r: STORE_AREA_EDGE + 1.5 };
+}
+
+/** Whether they are standing in it. */
+export function inStoreArea(p) {
+  const a = storeAreaOf(p);
+  return Math.hypot(p.x - a.x, p.z - a.z) < a.r;
+}
+
+/* Where somebody walking home actually goes. With food in their arms, that is
+   the granaries: the store is somewhere now, so it gets put somewhere, and the
+   walk in from a good day ends at the thing it fills. Empty-handed, their own
+   fire, as it always was.
+
+   The nearest granary standing, or where the first one will stand if none is
+   yet — a band with an empty store is exactly the band this food is for, and
+   it is what puts the first one up. And how widely people spread round the
+   spot: a fire is sat round, a granary is walked up to. */
+export function homeward(p, spread) {
+  const c = p.camp;
+  if (p.haul > 0 && c.storeSpots?.length) {
+    const standing = Math.max(1, c.storesUp || 0);
+    let best = c.storeSpots[0], near = Infinity;
+    for (let k = 0; k < standing && k < c.storeSpots.length; k++) {
+      const s = c.storeSpots[k];
+      const d = (s.x - p.x) ** 2 + (s.z - p.z) ** 2;
+      if (d < near) { near = d; best = s; }
+    }
+    return { x: best.fx, z: best.fz, spread: Math.min(spread, 1.2) };
+  }
+  const f = homeFire(p);
+  return { x: f.x, z: f.z, spread };
+}
+
 /* And the one they would run to, which is whichever is nearest — a person with
    a tiger behind them takes the fire in front of them, not the one they happen
    to sleep at. */
@@ -626,6 +725,70 @@ export function dressCamp(camp) {
 
 export function dressCamps() { for (const c of camps) dressCamp(c); }
 
+/* How many granaries a band with this much put by has standing. Counted from
+   however many stand now rather than from nothing, so the slack only ever
+   works one way: a store goes up a day past its line and comes down on it. */
+export function storesFor(camp, days) {
+  if (camp.gone || !(camp.pop > 0)) return 0;
+  let n = camp.storesUp || 0;
+  // No more than there was dry ground for.
+  const room = camp.storeAt?.length ?? STORES;
+  while (n < room && days > STORE_DAYS[n] + STORE_SLACK) n++;
+  while (n > 0 && days <= STORE_DAYS[n - 1]) n--;
+  return n;
+}
+
+/** Puts up as many granaries as `camp.storesUp` says and takes the rest down.
+    Separate from dressCamp because it changes on a different clock: tents
+    follow the band, and these follow what the band has to eat. */
+export function dressStores(camp) {
+  if (!campParts?.stores || !camp) return;
+  const up = camp.storesUp || 0;
+  for (let k = 0; k < STORES; k++) {
+    const slot = camp.index * STORES + k;
+    const at = (k < up && camp.storeAt?.[k]) || HIDDEN;
+    campParts.stores.setMatrixAt(slot, at);
+    campParts.storeRoofs.setMatrixAt(slot, at);
+  }
+  campParts.stores.instanceMatrix.needsUpdate = true;
+  campParts.storeRoofs.instanceMatrix.needsUpdate = true;
+}
+
+/* Where a granary may go, best first: the cluster on the one bearing no second
+   fire takes, then single spots out past every ring of tents, between two
+   fires, the far side first. Arithmetic only, like the rest of the store
+   layout — see layoutCamp for why nothing here may roll. */
+export function storeCandidates(camp) {
+  const sa = camp.hearthTurn;
+  const ox = Math.cos(sa), oz = Math.sin(sa), ax = -Math.sin(sa), az = Math.cos(sa);
+  const out = STORE_SPOTS.map(([o, a]) =>
+    [camp.x + ox * (STORE_OUT + o) + ax * a, camp.z + oz * (STORE_OUT + o) + az * a, sa]);
+  for (const tenth of [5, 3, 7, 1, 9]) {
+    const b = sa + (tenth / 10) * Math.PI * 2;
+    out.push([camp.x + Math.cos(b) * STORE_FAR, camp.z + Math.sin(b) * STORE_FAR, b]);
+  }
+  return out;
+}
+
+/* Somewhere a granary can stand and somebody can walk up to it: dry under it
+   and dry where they stand to put food in, not on a hillside, clear of every
+   ring of tents the village could ever put up, and clear of the granaries
+   already placed. A spot that fails is skipped, not moved — a band whose free
+   side runs into the sea keeps its food in fewer of them. */
+export function storeGround(camp, x, z, fx, fz) {
+  if (sampleHeight(x, z) < SEA + 1.5 || sampleHeight(fx, fz) < SEA + 1.5) return false;
+  if (flatnessAt(x, z) < STORE_FLAT) return false;
+  const roof = STORE_ROOF * STORE_SCALE;
+  for (let f = 0; f < HEARTHS; f++) {
+    const h = hearthAt(camp, f);
+    if (Math.hypot(x - h.x, z - h.z) < TENT_REACH + roof) return false;
+  }
+  for (const s of camp.storeSpots) {
+    if (Math.hypot(x - s.x, z - s.z) < 2 * roof + 0.2) return false;
+  }
+  return true;
+}
+
 export function layoutCamp(camp, index) {
   const rng = camp.rng;
   const P0 = CAMP_PIECES;
@@ -659,6 +822,9 @@ export function layoutCamp(camp, index) {
      that makes two camps on one island live differently. */
   camp.shore = nearestShore(camp.x, camp.z);
   camp.raft = false;
+  camp.wood = 0;
+  camp.raftOut = null;
+  camp.dock = undefined;
 
   camp.barrow = null;
   for (let t = 0; t < 60 && !camp.barrow; t++) {
@@ -776,6 +942,47 @@ export function layoutCamp(camp, index) {
   camp.rackAt[pole - index * P0.poles] = _m4.clone();
   campParts.poles.setColorAt(pole, _c.setHex(0x7d6446));
 
+  /* The granaries, placed once like everything else and shown by
+     dressStores. Nothing here draws from the camp's rng: that stream lays out
+     the rest of the camp and moves on with every call, so a new thing taking
+     from it would move every tent and stone laid out after it. The bearing is
+     one the camp has already drawn, and the rest is arithmetic. */
+  camp.storeAt = [];
+  camp.storeSpots = [];
+  camp.storesUp = 0;
+  for (const [x, z, bearing] of storeCandidates(camp)) {
+    if (camp.storeAt.length >= STORES) break;
+    const fx = x - Math.cos(bearing) * STORE_STAND, fz = z - Math.sin(bearing) * STORE_STAND;
+    if (!storeGround(camp, x, z, fx, fz)) continue;
+    const k = camp.storeAt.length;
+    _e.set(0, -bearing + k * 0.7, 0); _q.setFromEuler(_e);
+    _v.set(x, sampleHeight(x, z) - 0.05, z);
+    _s.setScalar(STORE_SCALE);
+    // Compose, then keep: the scratch matrix is shared, as the huts found out.
+    camp.storeAt.push(_m4.compose(_v, _q, _s).clone());
+    camp.storeSpots.push({ x, z, fx, fz });
+  }
+  /* The storage area: a circle round the granary cluster — the ones within a
+     few metres of the first, not a fallback spot out between two fires — wide
+     enough to take in the ground in front of each. Where somebody carrying food
+     is "at the store", and what the ring on the ground is drawn round. */
+  camp.storeArea = null;
+  if (camp.storeSpots.length) {
+    const first = camp.storeSpots[0];
+    const near = camp.storeSpots.filter((s) => Math.hypot(s.x - first.x, s.z - first.z) < 8);
+    const cx = near.reduce((n, s) => n + s.x, 0) / near.length;
+    const cz = near.reduce((n, s) => n + s.z, 0) / near.length;
+    const r = STORE_AREA_EDGE + Math.max(...near.map((s) => Math.hypot(s.x - cx, s.z - cz)));
+    camp.storeArea = { x: cx, z: cz, r };
+  }
+  for (let k = 0; k < STORES; k++) {
+    const slot = index * STORES + k;
+    campParts.stores.setMatrixAt(slot, HIDDEN);
+    campParts.storeRoofs.setMatrixAt(slot, HIDDEN);
+    campParts.stores.setColorAt(slot, _c.setHex(STORE_WALL));
+    campParts.storeRoofs.setColorAt(slot, _c.setHex(STORE_THATCH));
+  }
+
   camp.fireAt = [];
   for (let f = 0; f < HEARTHS; f++) {
     const at = hearthAt(camp, f);
@@ -798,10 +1005,30 @@ export function layoutCamp(camp, index) {
   camp.light = light;
   camp.flicker = rng() * 10;
 
-  for (const key of ['huts', 'stones', 'logs', 'poles', 'fire']) {
+  for (const key of ['huts', 'stones', 'logs', 'poles', 'fire', 'stores', 'storeRoofs']) {
     campParts[key].instanceMatrix.needsUpdate = true;
     if (campParts[key].instanceColor) campParts[key].instanceColor.needsUpdate = true;
   }
+}
+
+/** Several shapes as one geometry, so a granary is one draw however many legs
+    it stands on. Position and normal only: a camp fitting is flat colour, and
+    nothing on its material reads a uv. */
+export function joinGeometries(parts) {
+  const flat = parts.map((g) => (g.index ? g.toNonIndexed() : g));
+  const count = flat.reduce((n, g) => n + g.attributes.position.count, 0);
+  const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3);
+  let at = 0;
+  for (const g of flat) {
+    pos.set(g.attributes.position.array, at * 3);
+    nor.set(g.attributes.normal.array, at * 3);
+    at += g.attributes.position.count;
+  }
+  for (const g of new Set([...parts, ...flat])) g.dispose();
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  return out;
 }
 
 export function buildCamps() {
@@ -817,6 +1044,18 @@ export function buildCamps() {
   poleGeo.translate(0, 1.0, 0);
   const fireGeo = new THREE.ConeGeometry(0.42, 0.95, 6);
   fireGeo.translate(0, 0.48, 0);
+  /* A granary. Up off the ground because that is the point of one, out of the
+     wet and out of reach of whatever noses round a camp at night: four stilts,
+     a floor, a drum of walls, and a thatch wider than the drum it sits on. */
+  const leg = new THREE.CylinderGeometry(0.06, 0.08, 1.0, 5);
+  const storeGeo = joinGeometries([
+    ...[[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([a, b]) => leg.clone().translate(a * 0.55, 0.5, b * 0.55)),
+    new THREE.CylinderGeometry(0.98, 0.98, 0.12, 8).translate(0, 1.06, 0),     // the floor
+    new THREE.CylinderGeometry(0.72, 0.82, 0.95, 8).translate(0, 1.595, 0),    // the walls
+  ]);
+  leg.dispose();
+  const roofGeo = new THREE.ConeGeometry(1.2, 1.05, 8);
+  roofGeo.translate(0, 2.595, 0);
 
   /* Room for the bands that do not exist yet. A camp that outgrows its fire
      splits, and the half that leaves needs somewhere to put its huts. */
@@ -837,6 +1076,8 @@ export function buildCamps() {
   campParts.stones = instancedFrom(stoneGeo, campCapacity * CAMP_PIECES.stones, tribeGroup);
   campParts.logs = instancedFrom(logGeo, campCapacity * CAMP_PIECES.logs, tribeGroup);
   campParts.poles = instancedFrom(poleGeo, campCapacity * CAMP_PIECES.poles, tribeGroup);
+  campParts.stores = instancedFrom(storeGeo, campCapacity * CAMP_PIECES.stores, tribeGroup);
+  campParts.storeRoofs = instancedFrom(roofGeo, campCapacity * CAMP_PIECES.storeRoofs, tribeGroup);
   campParts.fire = new THREE.InstancedMesh(fireGeo, fireMaterial, campCapacity * HEARTHS);
   campParts.fire.frustumCulled = false;
   tribeGroup.add(campParts.fire);
@@ -956,6 +1197,48 @@ export function paintPerson(i, p) {
   personParts.hair.setColorAt(i, leads ? _c.setHex(CHIEF_BAND) : _c.setHex(p.hairColor));
   personParts.spear.setColorAt(i, _c.setHex(0x6b5334));
   personParts.load.setColorAt(i, _c.setHex(0x7b6a45));
+  personParts.basket.setColorAt(i, _c.setHex(0x9a7446));   // wicker
+}
+
+/* -------------------------------------------------------------------------
+   Room past the island
+
+   The meshes were allocated once, for everybody the island could feed, and a
+   birth past that was refused — a limit with nothing in the world behind it,
+   which is the one kind this simulation is not supposed to have. So the room is
+   where it starts now, not where it ends. An InstancedMesh cannot grow, but it
+   can be replaced: when the bands fill it, every piece of a person is built
+   again at twice the size, everything already drawn and painted is copied
+   across, the new slots are parked out of sight, and the band goes on.
+
+   Doubling rather than adding one, so a band growing by a few a day rebuilds
+   its meshes a handful of times in a long run rather than on every birth.
+   ------------------------------------------------------------------------- */
+export function growPeople(need) {
+  if (!personParts || need <= peopleCapacity) return;
+  let room = Math.max(peopleCapacity, 1);
+  while (room < need) room *= 2;
+  for (const key in personParts) {
+    const old = personParts[key], per = partsPer(key);
+    const m = new THREE.InstancedMesh(old.geometry, old.material, room * per);
+    m.name = old.name;
+    m.castShadow = old.castShadow;
+    m.receiveShadow = old.receiveShadow;
+    m.frustumCulled = false;
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.instanceMatrix.array.set(old.instanceMatrix.array);
+    if (old.instanceColor) {
+      m.setColorAt(0, _c.setHex(0xffffff));       // makes the attribute...
+      m.instanceColor.array.set(old.instanceColor.array);   // ...and fills it
+    }
+    for (let i = old.instanceMatrix.count; i < room * per; i++) m.setMatrixAt(i, HIDDEN);
+    m.count = old.count;
+    tribeGroup.remove(old);
+    old.dispose();                    // its own buffers; the geometry is shared
+    tribeGroup.add(m);
+    personParts[key] = m;
+  }
+  setPeopleCapacity(room);
 }
 
 /** The whole band, after anything that could have moved somebody's slot. */
@@ -974,6 +1257,29 @@ export function paintPeople() {
   for (const key in personParts) {
     if (personParts[key].instanceColor) personParts[key].instanceColor.needsUpdate = true;
   }
+}
+
+/* A heap of seven, piled: six round the edge and one on top, with its base at
+   nought so it sits on the rim of whatever it is put in. Round things, because
+   the same heap has to read as berries, fruit or a catch depending only on its
+   colour and the stretch it is given. */
+export function heapGeo(w, h, d) {
+  const r = h * 0.5;
+  const parts = [];
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    parts.push(new THREE.IcosahedronGeometry(r, 0)
+      .translate(Math.cos(a) * (w / 2 - r), r * 0.9, Math.sin(a) * (d / 2 - r)));
+  }
+  parts.push(new THREE.IcosahedronGeometry(r * 1.1, 0).translate(0, r * 1.7, 0));
+  return joinGeometries(parts);
+}
+
+/* A basket: a tapered tub with a handle arched over it. */
+export function basketGeoFrom(top, bottom, height) {
+  const tub = new THREE.CylinderGeometry(top, bottom, height, 12);
+  const handle = new THREE.TorusGeometry(top * 0.92, 0.012, 4, 12, Math.PI).translate(0, height / 2, 0);
+  return joinGeometries([tub, handle]);
 }
 
 export function buildPeople(count) {
@@ -1004,7 +1310,9 @@ export function buildPeople(count) {
   const footGeo = roundBox(...p.foot);
   footGeo.translate(0, -p.foot[1] / 2, p.footZ);
   const spearGeo = roundLimb(...p.spear);
-  const loadGeo = roundBox(...p.load);
+  /* What is carried, as a heap rather than a box, and the basket it goes in. */
+  const loadGeo = heapGeo(...p.load);
+  const basketGeo = basketGeoFrom(...p.basket);
 
   /* A new band is a new line. Without this the record kept growing across every
      world ever loaded — nobody was wrongly linked to anybody, because ids are
@@ -1036,13 +1344,15 @@ export function buildPeople(count) {
 
      `count` still floors it, because somebody may start more people than the
      ground would carry and they have to be drawable on the first frame. */
-  setPeopleCapacity(Math.max(count, PEOPLE_CEILING));
+  /* Where the room starts, not where it ends: growPeople makes more when the
+     bands fill it. */
+  setPeopleCapacity(Math.max(count, PEOPLE_ROOM));
   const n = peopleCapacity;
   const GEOMETRY = {
     torso: torsoGeo, neck: neckGeo, head: headGeo, hair: hairGeo,
     upperArm: upperArmGeo, foreArm: foreArmGeo, hand: handGeo,
     thigh: thighGeo, shin: shinGeo, foot: footGeo,
-    spear: spearGeo, load: loadGeo,
+    spear: spearGeo, load: loadGeo, basket: basketGeo,
   };
   for (const key in PERSON_PARTS) {
     const geo = GEOMETRY[key], per = partsPer(key);

@@ -13,24 +13,28 @@
 
 export const P = {
   time: 7.5,          // hours, 0..24 — state, not a setting; the clock always runs
-  /* Real seconds for a full 24h, and so the pace of everything: every speed in
-     the world is tuned against an hour-long day and then scaled by how
-     compressed this is — `pace()` is PACE_DAY / dayLength, and it multiplies
-     every walk, flight and camera move in the world.
+  /* Real seconds for a full 24h. Every walk, flight and camera move is
+     multiplied by `pace()`, which is paceDay / dayLength — so what the day
+     length does to how things move depends on paceDay, below.
 
-     So a short day is a fast world, not a hungrier one. The economy does not
-     notice: a day is always PACE_DAY seconds of *activity* however many real
-     seconds it takes, so a forager gets the same trips in either way. What
-     changes is what you are watching. An hour is where the multiplier is 1 and
-     a walk is the 1.35 m/s it is written as; at 2400 that reads as 2.03, at
-     1200 as 4.05, which is a sprint.
+     Left unset, paceDay is the day itself and the multiplier is 1: people move
+     at the speeds they are written at — a walk is 1.35 m/s — whatever the day
+     length, and a shorter day is simply a day with less in it. Twenty-four
+     minutes by default, which is a day you can watch in one sitting: about
+     twelve minutes of it, since the night is run through once everybody is
+     asleep. The floor is 300. */
+  dayLength: 1440,    // real seconds for a full 24h
+  /* The day the speeds are written against, when that is not the day itself.
+     Set with PACE_DAY; unset, it follows dayLength.
 
-     Set to the length walking was tuned against, because "people move like
-     people" is worth more than the minutes it saves — and the night is run
-     through once everybody is asleep, so an hour-long day is about half an hour
-     of watching. The floor is 300, where the multiplier clamps at 12x and the
-     world stops keeping up. */
-  dayLength: 3600,    // real seconds for a full 24h
+     Setting it is how a short day becomes a fast one rather than an emptier
+     one. It is how many seconds of *activity* a day holds — every errand, hunt
+     and night's sleep is timed in those seconds — and the food a band needs a
+     day was balanced against 3600 of them. So PACE_DAY=3600 with a 24-minute
+     day is everything at 2.5x and a full day's errands; leaving it unset is
+     walking pace and 40% of them, with the same mouths to feed. The multiplier
+     clamps at 0.5x-12x, past which the world stops keeping up. */
+  paceDay: null,      // unset: the same as dayLength, and the pace is 1
   yearLength: 24,     // simulated days in a year
   map: 1600,          // metres across; the island's extent, set with MAP
   fertility: 1,       // multiplier on the birth rate
@@ -177,12 +181,16 @@ export const REFERENCE_MAP = 1600;              // the island these were tuned o
 export const MAP_SCALE = WORLD / REFERENCE_MAP;
 
 export const PEOPLE_PER_KM2 = 195;
-export const PEOPLE_CEILING =
+/* The room people start with: everybody the island can feed, up to four
+   thousand. Not a ceiling — when the bands outgrow it the meshes are built
+   again twice the size (growPeople) and they go on. It was a ceiling once,
+   and a birth past it was refused, which is a limit nobody chose. */
+export const PEOPLE_ROOM =
   Math.round(Math.min(4000, (WORLD / 1000) ** 2 * PEOPLE_PER_KM2));
 
 /* And the most camps. A camp is a handful of tents and a fire; a map that holds
    three thousand people needs somewhere for all of them to live. */
-export const CAMP_CEILING = Math.round(clampTo(PEOPLE_CEILING / 14, 4, 240));
+export const CAMP_CEILING = Math.round(clampTo(PEOPLE_ROOM / 14, 4, 240));
 
 function clampTo(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 export const TILE = 24;           // grass tile size

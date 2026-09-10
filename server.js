@@ -57,7 +57,10 @@ const payload = { values, explicit, chronicle: Boolean(db) };
 
    Everything else stays tight: these are small, fixed-shape messages, and a cap
    that fits them is a cap that catches a client gone wrong. */
-export const STATE_LIMIT = 12_000_000;
+/* Room for a world with no ceiling on its people: a saved person is under a
+   kilobyte, so this holds a band of twenty thousand with room to spare — past
+   anything that still draws — and the check in test.js says so. */
+export const STATE_LIMIT = 64_000_000;
 export const BODY_LIMIT = 1_000_000;
 
 /** Read a JSON body, with a cap so a stuck client cannot fill memory. */

@@ -1,11 +1,14 @@
 import { P } from './params.js';
+import { deposits, dressDeposit } from './quarries.js';
+import { keptDrops, restoreDrops } from './drops.js';
+import { landing } from './rafts.js';
 import { setSeasonIndex } from './scene.js';
 import { stats } from './world.js';
 import {
   lineage, nextPersonId, packs, recountAnimals, setLineage, setNextPersonId, takePersonId, usedNames
 } from './wildlife.js';
 import {
-  BUILDS, GARMENT, GRAVE_MAX, HAIR, SKIN, camps, drawGraves, graves, paintPeople, people,
+  BUILDS, GARMENT, GRAVE_MAX, HAIR, SKIN, camps, drawGraves, graves, growPeople, paintPeople, people,
   setGraves
 } from './people.js';
 import {
@@ -46,14 +49,22 @@ export function snapshot() {
     died: diedCount,
     camps: camps.map((c) => ({ name: c.name, food: r2(c.food), history: c.history,
       skill: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, r2(c.skill[k] || 0)])),
-      toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0 })),
+      toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0,
+      stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0) })),
+    /* What is left in each quarry, by its place in the list — the seed lays the
+       same deposits out in the same order, so the position is the name. */
+    quarries: deposits.map((d) => d.left),
+    // And whatever has been put down and not yet picked up again.
+    drops: keptDrops(),
     /* Short keys: this is written every ten seconds and eighty people with
        long field names is a surprising amount of JSON for what it says. */
     people: people.map((p) => ({
       n: p.name, c: camps.indexOf(p.camp), b: r2(p.born),
-      x: r2(p.x), z: r2(p.z), y: r2(p.yaw), k: p.kind,
+      // Ashore, never out on the water: a raft is not saved with anybody on it.
+      x: r2(landing(p).x), z: r2(landing(p).z), y: r2(p.yaw), k: p.kind,
       as: r2(p.adultScale), ash: r2(p.adultShoulder), ahp: r2(p.adultHip), ahd: r2(p.adultHead),
       h: p.camp.huts.indexOf(p.hut), j: p.job, s: p.state, hl: r2(p.haul), ki: p.kills,
+      bg: p.haul > 0 && p.bag ? [p.bag.fruit, p.bag.berries, p.bag.fish, p.bag.game, p.bag.animal] : undefined,
       id: p.id, mo: p.mother || 0, fa: p.father || 0, mn: p.motherName || '', fn: p.fatherName || '',
       ln: p.line || '', gn: p.gen || 1,
       /* Keyed rather than ordered. It was a three-element array, which is
@@ -63,6 +74,7 @@ export function snapshot() {
       tt: p.taught ? 1 : 0, mv: p.moved ? 1 : 0,
       // Who they are, which no seed can reproduce once they have been born.
       tr: [r2(p.traits?.bold ?? 1), r2(p.traits?.sociable ?? 1), r2(p.traits?.quick ?? 1)],
+      lf: p.life != null ? r2(p.life) : undefined,
       e: r2(p.energy), nr: r2(p.nourish ?? 1), sk: r2(p.sick || 0), im: r2(p.immuneUntil || 0), sx: p.sex,
       sc: p.skin, sh: r2(p.skinShade), gc: p.garment, gh: r2(p.garmentShade), hc: p.hairColor,
     })),
@@ -154,6 +166,7 @@ export function personFromRecord(r) {
     energy: Number.isFinite(r.e) ? r.e : 1,
     sick: Number.isFinite(r.sk) ? r.sk : 0,
     nourish: Number.isFinite(r.nr) ? r.nr : 1,
+    life: Number.isFinite(r.lf) ? r.lf : undefined,
     id: r.id || takePersonId(),
     mother: r.mo || 0, father: r.fa || 0,
     motherName: r.mn || '', fatherName: r.fn || '',
@@ -182,6 +195,9 @@ export function personFromRecord(r) {
     crouch: 0, bend: 0, carry: r.hl > 0 ? 1 : 0, hasSpear: r.j === 'hunt', asleep: false, led: false, orders: null,
     hidden: false,
     haul: r.hl || 0, prey: null, attempt: 0, kills: r.ki | 0,
+    bag: Array.isArray(r.bg)
+      ? { fruit: r.bg[0] | 0, berries: r.bg[1] | 0, fish: r.bg[2] | 0, game: r.bg[3] | 0, animal: r.bg[4] || null }
+      : null,
     hut: camp.huts[r.h] || camp.huts[0],
     work: Math.random() * Math.PI * 2,
   };
@@ -237,10 +253,8 @@ export function applySavedLife(st) {
     // The dead are in here too, and their ids must not be handed out again.
     ...(Array.isArray(st.lineage) ? st.lineage.map((r) => (r.i | 0) + 1) : []),
     1));
-  for (const r of st.people) {
-    if (people.length >= peopleCapacity) break;
-    people.push(personFromRecord(r));
-  }
+  growPeople(st.people.length);
+  for (const r of st.people) people.push(personFromRecord(r));
   hidePeopleFrom(people.length);
   paintPeople();
   stats.people = people.length;
@@ -258,6 +272,23 @@ export function applySavedLife(st) {
      it. Same reason as the call in buildWorld: nothing may read hunger before
      the books have been opened once.  */
   updateEconomy(0);
+  // The pile and the metal; stone was never saved before, and came back empty.
+  st.camps.forEach((c, i) => {
+    if (!camps[i]) return;
+    camps[i].stone = Number(c.stone) || 0;
+    camps[i].raft = Boolean(c.raft) && Boolean(camps[i].shore);
+    camps[i].wood = Number(c.wd) || 0;
+    camps[i].ores = c.ores && typeof c.ores === 'object' ? { ...c.ores } : {};
+  });
+  /* What is left in the ground. Only when the island is the one it was dug on:
+     a list of a different length is somebody else's island. */
+  if (Array.isArray(st.quarries) && st.quarries.length === deposits.length) {
+    st.quarries.forEach((left, k) => {
+      deposits[k].left = Math.max(0, Math.min(deposits[k].full, Number(left) || 0));
+      dressDeposit(deposits[k]);
+    });
+  }
+  restoreDrops(st.drops);
   updateHud();
   renderTribes();
   logEvent('resume', `back at [${camps[0].code}] ${camps[0].name}, day ${Math.floor(simDay)}`, 0, 0);

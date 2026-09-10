@@ -30,6 +30,11 @@ export const SCHEMA = {
   // time and sky
   TIME: { path: 'time', type: 'float', min: 0, max: 24 },
   DAY_LENGTH: { path: 'dayLength', type: 'float', min: 60, max: 7200, slider: 'dayLen' },
+  /* The day the speeds are written against, and so how much a day holds.
+     Unset, it is DAY_LENGTH itself and everything moves at written speed. A
+     balance setting as much as a speed one: see `paceDay` in params.js. The
+     floor is DAY_LENGTH's working floor, where pace clamps at 12x. */
+  PACE_DAY: { path: 'paceDay', type: 'float', min: 300, max: 7200 },
   YEAR_LENGTH: { path: 'yearLength', type: 'float', min: 4, max: 200, slider: 'yearLen' },
   FERTILITY: { path: 'fertility', type: 'float', min: 0, max: 3 },
   EXPOSURE: { path: 'exposure', type: 'float', min: 0.1, max: 1.2 },

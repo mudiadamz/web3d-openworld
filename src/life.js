@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { MAP_SCALE, P, PEOPLE_CEILING, SEA, SNOW, WORLD } from './params.js';
+import { MAP_SCALE, P, SEA, SNOW, WORLD } from './params.js';
 import { clamp, fbm, flatnessAt, lerp, mulberry32, sampleHeight } from './noise.js';
 import { forageSeason, seasonName, seasonUniforms } from './scene.js';
 import { ORCHARD_BUCKET, HIDDEN, _c, orchard, stats } from './world.js';
@@ -14,8 +14,10 @@ import {
   fadeSkills, knowsFrom, practise, skillTier,
 } from './skills.js';
 import { FISH, forageRichness, nearestShore } from './larder.js';
+import { bagAdd } from './bag.js';
+import { restHeal } from './vitals.js';
 import {
-  BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, drawGraves, layoutCamp, paintPeople, people, personParts
+  BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, dressStores, drawGraves, growPeople, layoutCamp, paintPeople, people, personParts, storesFor
 } from './people.js';
 import { PATH, fadePaths } from './paths.js';
 import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
@@ -79,6 +81,8 @@ export const MILESTONES = new Set([
   'plague',     // a sickness reached a camp
   'hunger',     // the store ran out
   'relief',     // ...and the day it came back
+  'find',       // the first of a metal carried home
+  'slain',      // somebody killed a tiger
   'extinct',    // a band ended
   'end',        // and the last one of them
 ]);
@@ -174,12 +178,16 @@ export function renderTribes(now = 0) {
      the band card already, which is one click away and has room to lay it out.
      A list you scan and a card you read are different jobs. */
   el.innerHTML = camps.map((c, i) => {
+    /* A band that has died out keeps its camp in the world — the tents, the
+       granaries, the stones — but not its row here: a list of the living is
+       what this is for, and the record of the dead is the chronicle's. */
+    if (c.gone) return '';
     let pop = 0;
     for (const p of people) if (p.camp === c) pop++;
     return `<div data-camp="${i}"><i style="background:${TRIBE_COLORS[i % TRIBE_COLORS.length]}"></i>`
       + `<b class="wcode" style="background:${c.color}">${c.code}</b>`
       + `<b>${c.name}</b> <span>${pop || 'empty'}</span></div>`;
-  }).join('') || '<div><span>no camps</span></div>';
+  }).join('') || '<div><span>' + (camps.length ? 'every band has died out' : 'no camps') + '</span></div>';
 
   drawTribeChart();
   renderTribeCard();
@@ -710,6 +718,7 @@ export const QUARRY = {
   rabbit: { meat: 2.5, chance: 0.06, regrow: 0.35 },
 };
 
+
 export let simDay = 0;
 export let lastDawn = -1;
 
@@ -1121,6 +1130,10 @@ export function updateEconomy(days) {
     if (before > 0 && c.food === 0) logEvent('hunger', `[${c.code}] ${c.name} has nothing left`, c.x, c.z);
     if (c.wasEmpty && c.food > c.need) logEvent('relief', `[${c.code}] ${c.name} has food again`, c.x, c.z);
     c.wasEmpty = c.food === 0;
+    /* And the granaries follow it. Dressed only when the count changes, which
+       is a few times a season rather than every step. */
+    const stores = storesFor(c, daysOfFood(c));
+    if (stores !== c.storesUp) { c.storesUp = stores; dressStores(c); }
   }
 }
 
@@ -1199,7 +1212,8 @@ export function updateSickness(days) {
   // Running its course. Whoever is left standing at the end of it recovers.
   for (const p of people) {
     if (!p.sick) continue;
-    p.sick -= days * (p.tended ? 1 + PLAGUE.nurse : 1);
+    // Faster for the person you are playing, resting at home (vitals.js).
+    p.sick -= days * (p.tended ? 1 + PLAGUE.nurse : 1) * restHeal(p);
     p.tended = false;
     if (p.sick <= 0) {
       p.sick = 0;
@@ -1227,7 +1241,7 @@ export function repopulate(days) {
     if (alive.length >= target || alive.length === 0) continue;
     const rate = q.regrow * alive.length * (1 - alive.length / target);
     if (luck() > rate * days) continue;
-    const born = pack.list.find((a) => a.dead);
+    const born = pack.list.find((a) => a.dead && !a.carcass);
     if (!born) continue;
     const h = pack.herds[(luck() * pack.herds.length) | 0];
     born.dead = false;
@@ -1289,6 +1303,7 @@ export function tryKill(p, dt) {
   const meat = q.meat * (a.scale || 1);
   p.haul += meat;
   p.carry = 1;
+  bagAdd(p, 'game', 1, prey.pack.spec.key);
   p.prey = null;
   p.kills++;
   logEvent('kill', `${who(p)} took a ${prey.pack.spec.key} · ${meat.toFixed(0)} food`, p.x, p.z);
@@ -1364,6 +1379,48 @@ export function pickFruit(x, z, reach = ORCHARD.reach, takes = ORCHARD.takes) {
   }
   if (taken) logFruit(taken, x, z);
   return taken * ORCHARD.worth;
+}
+
+/** The nearest ripe fruit to here within reach, as a place — for the ring
+    under its tree. Found in the buckets, without a draw from the stream. */
+export function nearestRipeFruit(x, z, reach) {
+  if (!orchard) return null;
+  const cell = ORCHARD_BUCKET;
+  let best = null, bestD = reach * reach;
+  for (let bi = Math.floor((x - reach) / cell); bi <= Math.floor((x + reach) / cell); bi++) {
+    for (let bj = Math.floor((z - reach) / cell); bj <= Math.floor((z + reach) / cell); bj++) {
+      const here = orchard.buckets?.get(bi + ',' + bj);
+      if (!here) continue;
+      for (const i of here) {
+        if (!orchard.on[i]) continue;
+        const fx = orchard.home[i * 16 + 12], fz = orchard.home[i * 16 + 14];
+        const d = (fx - x) ** 2 + (fz - z) ** 2;
+        if (d < bestD) { bestD = d; best = { x: fx, z: fz }; }
+      }
+    }
+  }
+  return best;
+}
+
+/** How much fruit hangs within reach of here — counted, not picked, and
+    without a draw from the stream, so a frame can ask it for the prompt. The
+    same buckets pickFruit walks, for the same reason. */
+export function fruitNear(x, z, reach = ORCHARD.reach) {
+  if (!orchard) return 0;
+  const r2 = reach * reach, cell = ORCHARD_BUCKET;
+  let n = 0;
+  for (let bi = Math.floor((x - reach) / cell); bi <= Math.floor((x + reach) / cell); bi++) {
+    for (let bj = Math.floor((z - reach) / cell); bj <= Math.floor((z + reach) / cell); bj++) {
+      const here = orchard.buckets?.get(bi + ',' + bj);
+      if (!here) continue;
+      for (const i of here) {
+        if (!orchard.on[i]) continue;
+        const dx = orchard.home[i * 16 + 12] - x, dz = orchard.home[i * 16 + 14] - z;
+        if (dx * dx + dz * dz <= r2) n++;
+      }
+    }
+  }
+  return n;
 }
 
 /* Somewhere with fruit still on it, for something that eats fruit to walk to.
@@ -1796,7 +1853,6 @@ export function updateLives(days) {
 
   // ---- being born ----
   for (const camp of camps) {
-    if (people.length >= peopleCapacity) break;
     /* It takes one of each, and the number of children a camp can have is set
        by its women rather than by its head count — so a run of sons is a real
        problem a generation later, which is the sort of thing worth being able
@@ -1839,6 +1895,8 @@ export function updateLives(days) {
        through three generations of a band and enough for it not to be a rule. */
     child.traits = traitsFor(luck, mother, father);
     inheritLooks(child, mother, father);
+    // Nothing refuses a birth for want of room: the room is made.
+    if (people.length >= peopleCapacity) growPeople(people.length + 1);
     recordPerson(child);
     people.push(child);
     bornCount++;

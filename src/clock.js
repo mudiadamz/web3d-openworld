@@ -78,7 +78,8 @@ export function clockRate() {
   return RATES[rateIndex];
 }
 
-export const PACE_DAY = 3600;
+/* The reference day used to be a constant here. It is P.paceDay now: set with
+   PACE_DAY, or the day itself when that is not set — see params.js. */
 export const PACE_MAX_STEP = 0.25;
 /* How far anything is allowed to MOVE in one unwatched step. Larger than the
    live cap — smoothness is not a consideration when there is nothing to be
@@ -219,7 +220,7 @@ export let drawingWorld = true;
    has to be measured against. Dividing world metres by wall seconds gave a
    person walking at 1.35 a measured speed of 11 at 8x. */
 export let worldClock = 0;
-export function pace() { return clamp(PACE_DAY / P.dayLength, 0.5, 12); }
+export function pace() { return clamp((P.paceDay || P.dayLength) / P.dayLength, 0.5, 12); }
 
 /* A person, in the proportions of one. The limbs are in two pieces with a joint
    between them, which is most of what separates a figure from a mannequin: an
@@ -243,7 +244,8 @@ export const PERSON = {
   headY: 0.70, head: [0.20, 0.235, 0.205],
   hair: [0.215, 0.085, 0.22],
   spear: [0.045, 2.1, 0.045],
-  load: [0.34, 0.26, 0.24],
+  load: [0.30, 0.11, 0.26],       // the heap: across, high, deep
+  basket: [0.19, 0.15, 0.17],     // the basket: rim, base, height
   stride: 0.78, walk: 1.35, jog: 3.6, turn: 3.0,
 };
 
@@ -258,7 +260,7 @@ export const PERSON_PARTS = {
   torso: 1, neck: 1, head: 1, hair: 1,
   upperArm: 2, foreArm: 2, hand: 2,
   thigh: 2, shin: 2, foot: 2,
-  spear: 1, load: 1,
+  spear: 1, load: 1, basket: 1,
 };
 export const partsPer = (key) => PERSON_PARTS[key] || 1;
 

@@ -453,6 +453,54 @@
     font: inherit; font-size: 12px;
   }
   .mapBtn:hover { background: rgba(58, 44, 28, 0.95); color: #fff; }
+  .mapBtn svg { width: 12px; height: 12px; display: block; margin: auto; }
+  .mapBtn svg > * { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
+  /* Filled while anything is hidden, the way the chronicle's funnel is. */
+  .mapBtn.filtering { color: #fff; border-color: rgba(236, 200, 112, 0.9); }
+  .mapBtn.filtering svg > * { fill: currentColor; }
+  /* The list of layers, under the buttons that open it. It doubles as the
+     legend: each line carries the colour its layer is drawn in. */
+  #mapLayers {
+    position: absolute; right: 14px; top: 44px; min-width: 128px;
+    /* Fifteen lines now; on a short window the list scrolls rather than
+       running off the bottom of the map. */
+    max-height: calc(100% - 60px); overflow-y: auto;
+    display: flex; flex-direction: column; gap: 1px; padding: 5px;
+    background: rgba(24, 18, 12, 0.94); border: 1px solid rgba(214, 184, 130, 0.45);
+    border-radius: 4px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  }
+  #mapLayers[hidden], #map:not(.full) #mapLayers { display: none; }
+  #mapLayers button {
+    display: flex; align-items: center; gap: 7px; padding: 4px 6px;
+    background: none; border: 0; border-radius: 3px; cursor: pointer; text-align: left;
+    color: rgba(232, 214, 178, 0.92); font: inherit; font-size: 10px;
+  }
+  #mapLayers button:hover { background: rgba(58, 44, 28, 0.95); color: #fff; }
+  #mapLayers i {
+    width: 9px; height: 9px; border-radius: 50%; flex: none;
+    background: var(--c); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  }
+  /* Off: the swatch goes hollow and the line goes quiet. */
+  #mapLayers button[aria-pressed="false"] { color: rgba(232, 214, 178, 0.42); }
+  #mapLayers button[aria-pressed="false"] i { background: none; box-shadow: inset 0 0 0 1.5px var(--c); }
+  /* "All": every layer's colour at once, hollow when nothing is showing and
+     half full when some of them are. */
+  #mapLayers button[data-all] i {
+    background: conic-gradient(#e07a50, #ffcc74, #a3d672, #76c8f0, #f2c84b, #e07a50);
+  }
+  #mapLayers button[data-all][aria-pressed="false"] i {
+    background: none; box-shadow: inset 0 0 0 1.5px rgba(232, 214, 178, 0.7);
+  }
+  #mapLayers button[data-all][aria-pressed="mixed"] i {
+    background: linear-gradient(90deg, rgba(232, 214, 178, 0.9) 50%, transparent 50%);
+    box-shadow: inset 0 0 0 1.5px rgba(232, 214, 178, 0.7);
+  }
+  #mapLayers button[data-all][aria-pressed="mixed"] { color: rgba(232, 214, 178, 0.92); }
+  #mapLayers .rule { height: 1px; margin: 3px 4px; background: rgba(214, 184, 130, 0.25); }
+  #mapLayers .h {
+    padding: 6px 6px 2px; font-size: 8px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(232, 214, 178, 0.5);
+  }
   /* A bar and a number, the way a map says how far a thing is. */
   #mapScale { display: none; }
   #map.full #mapScale {
@@ -477,14 +525,80 @@
   #orders[hidden] { display: none; }
   #orders .btn.order { width: 30px; height: 28px; padding: 0; }
   #orders .btn.order svg { width: 15px; height: 15px; }
+  /* The last two are not errands. A hairline says so, because a row of twelve
+     identical squares gives no clue which of them send somebody out. */
+  #orders .sep { width: 1px; align-self: stretch; margin: 2px 1px; background: var(--line); }
+  #orders .btn.order:disabled { opacity: 0.32; cursor: default; }
+  #orders .btn.order:disabled:hover { background: rgba(255, 255, 255, 0.06); }
+  /* The basket, at the left of the bar. */
+  #orders .bag {
+    display: flex; flex-direction: column; justify-content: center;
+    min-width: 120px; max-width: 200px; padding: 0 6px;
+    font-size: 10px; line-height: 1.25; color: var(--text);
+  }
+  #orders .bag b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #orders .bag .bar {
+    display: block; height: 3px; margin: 3px 0 2px; border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12); overflow: hidden;
+  }
+  #orders .bag .bar i { display: block; height: 100%; background: #d9b36c; }
+  #orders .bag .bar.full i { background: #e2857c; }
+  #orders .bag i.heavy { font-style: normal; color: #ffb4a8; font-weight: 600; }
+  /* The life bar: out of a hundred, with the number beside it. */
+  #orders .bag .vit { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 8px; color: var(--muted); white-space: nowrap; }
+  #orders .bag .vit u { text-decoration: none; color: var(--text); font-weight: 600; }
+  #orders .bag .vit i { position: relative; display: block; flex: none; width: 56px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); }
+  #orders .bag .vit b { display: block; height: 100%; border-radius: 2px; background: #9fd46e; }
+  #orders .bag .vit b.low { background: #e2857c; }
+  #orders .bag .vit.ill b { background: #d9a05a; }
+  #orders .bag .vit b.mid { background: #e0c060; }
+  #orders .bag .vit strong { min-width: 16px; font-size: 9px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  #orders .bag .vit em { font-size: 8px; }
+  #orders .bag em.cold { color: #9fd0ee; }
+  #orders .bag small { color: var(--muted); font-size: 9px; white-space: nowrap; }
+  #orders .bag em { font-style: normal; font-size: 9px; color: #d9b36c; white-space: nowrap; }
+  /* In the storage area: the same green as the ring on the ground. */
+  #orders .bag em.here { color: #9fe39a; font-weight: 600; }
+  #orders .btn.order.ready { color: #bff0b8; border-color: #8fd18a; box-shadow: 0 0 0 1px rgba(143, 209, 138, 0.35); }
   @media (max-width: 720px) { #orders { display: none; } }
+  /* What E would do, just above the order row. */
+  #actPrompt {
+    position: fixed; left: 50%; bottom: 58px; transform: translateX(-50%);
+    padding: 5px 12px; border-radius: 8px;
+    background: var(--panel); backdrop-filter: blur(14px); border: 1px solid var(--line);
+    color: var(--text); font-size: 11px; letter-spacing: 0.02em; white-space: nowrap;
+  }
+  #actPrompt kbd {
+    display: inline-block; min-width: 16px; padding: 0 4px; margin-right: 6px;
+    border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 10px; text-align: center;
+  }
+  #actPrompt[hidden] { display: none; }
+  /* Stuck under a load: said in the colour of a warning. */
+  #actPrompt.heavy { color: #ffb4a8; border-color: rgba(226, 133, 124, 0.65); }
+  /* The tiger warning, high and in the middle, where the eye is. */
+  #danger {
+    position: fixed; left: 50%; top: 58px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 9px;
+    background: rgba(40, 24, 14, 0.82); backdrop-filter: blur(14px);
+    border: 1px solid rgba(236, 200, 112, 0.6); color: #f3dcae; font-size: 11px; white-space: nowrap;
+  }
+  #danger[hidden] { display: none; }
+  #danger .arrow { display: inline-block; font-style: normal; font-size: 13px; line-height: 1; }
+  #danger span { color: rgba(243, 220, 174, 0.8); }
+  #danger.hunted {
+    background: rgba(70, 14, 12, 0.88); border-color: #e2574c; color: #ffd0c8;
+    animation: dangerPulse 0.9s ease-in-out infinite alternate;
+  }
+  #danger.hunted span { color: #ffb4a8; }
+  @keyframes dangerPulse { from { box-shadow: 0 0 0 0 rgba(226, 87, 76, 0.2); } to { box-shadow: 0 0 18px 2px rgba(226, 87, 76, 0.55); } }
+  @media (max-width: 720px) { #actPrompt { display: none; } }
   #mapCanvas {
     /* Drawn larger than it is shown, so it stays crisp on a retina display.
        The display size is set from MAP_DISPLAY in one place, not here. */
     display: block; border-radius: 5px; cursor: crosshair;
   }
   #toast {
-    position: fixed; left: 50%; bottom: 54px; transform: translateX(-50%);
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
     padding: 6px 14px; background: var(--panel); backdrop-filter: blur(14px);
     border: 1px solid var(--line); border-radius: 9px;
     color: var(--text); font-size: 10px; letter-spacing: 0.04em; white-space: nowrap;
@@ -668,8 +782,13 @@
     <div class="keyRow"><span><kbd>R</kbd></span><em>somewhere else on the island — drops you into Orbit over a random spot, and again for another one. Dry land and not a cliff, so there is always something under you</em></div>
     <div class="keyRow"><span>click</span><em><i>(in Follow)</i> go there — click the ground and the person you are behind walks to it, on their own, with a ring on the spot. Click again and they turn round. Nothing else steers them while you have them — not dusk, not a job, not a tiger — but they still tire, still get hungry, and can still be caught</em></div>
     
-    <div class="keyRow"><span><kbd>W</kbd></span><em><i>(in Follow)</i> hold to make them run instead of walk. It is a jog and it is charged for like one — it costs energy, it slows with a full basket, and it gives out when there is nothing left</em></div>
-    <div class="keyRow"><span><kbd>shift</kbd>+<kbd>W</kbd></span><em><i>(in Follow)</i> let go, and they pick up their own life where they stand</em></div>
+    <div class="keyRow"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><em><i>(in Follow)</i> walk them yourself — W is the way the camera looks. Hold <kbd>shift</kbd> to run: it is a jog and it is charged for like one, it slows with a full basket, and it gives out when there is nothing left. Clicking the ground still sends them somewhere</em></div>
+    <div class="keyRow"><span><kbd>E</kbd></span><em><i>(in Follow)</i> do what is in front of them — pick fruit, forage at a berry thicket, cut wood at a tree (the logs go on the band's stack by the granaries when put away, and a band on a coast builds its raft out of that stack), take the band's raft out from its dock and fish from it out on deep water (there is no fishing from the bank, and E back at the dock ties it up), dig a quarry, tend the fire, or throw a spear at the nearest animal (a tiger first, if one is in reach) — a ring round them shows how far a spear goes, green once something is inside it, and what they bring down lies where it fell until E picks it up — and inside the ring round the granaries, put away what they are carrying. The prompt at the bottom says which, a ring on the ground marks each thing within a short walk, and the one E would act on is green. They are still yours when it is done</em></div>
+    <div class="keyRow"><span><kbd>Z</kbd></span><em><i>(in Follow)</i> take cover — up the tree they are at, where a tiger cannot reach them, or down low anywhere else, where it has to nearly walk onto them. Down low, WASD crawls: slowly, and nothing grazing notices them — a crawl is how to get within a throw, and a throw from down low is surer. Z again to come down or stand, or shift to get up and run. A tiger in sight is shown at the top, with which way and how far</em></div>
+    <div class="keyRow"><span><kbd>G</kbd></span><em><i>(in Follow)</i> put a handful down in front of them — ten berries, five fruit, a fish, a stone, an animal — and <kbd>shift</kbd>+<kbd>G</kbd> for all of it. It stays on the ground with a ring round it, and E picks it up again; food left lying spoils in a few days. A load weighs what it is — the fuller, the slower — and past what they can carry they cannot walk, though they can still do whatever is in reach</em></div>
+    <div class="keyRow"><span><kbd>X</kbd></span><em><i>(in Follow)</i> sit down to rest, or get up. Resting wins some of the life bar back — faster at home by their own fire, where an illness passes quicker too — but never all of it: only food does that</em></div>
+    <div class="keyRow"><span><kbd>N</kbd></span><em><i>(in Follow)</i> eat: out of the band's store at home, out of the basket anywhere else. A meal gives back more of the life bar than resting can. The bar under the basket is their life, out of a hundred: walking, far more running, working, carrying, and the cold away from the camp at night or in winter all wear it down, and near empty they slow and cannot run</em></div>
+    <div class="keyRow"><span><kbd>Q</kbd></span><em><i>(in Follow)</i> let go, and they pick up their own life where they stand</em></div>
     <div class="keyRow"><span>icons</span><em><i>(in Follow)</i> a row across the bottom tells them what to do rather than where to go — find food, hunt, knap, tend the fire, rest, walk to the next band. One instruction, taken up once: afterwards they are choosing for themselves again</em></div>
 
     <div class="keyGroup">On screen</div>
@@ -701,6 +820,14 @@
      world. The name of each is on its title and its aria-label, so nothing is
      hidden from a pointer that hovers or a reader that speaks. -->
 <div id="orders" hidden>
+  <!-- What they are carrying, how full, and the store it is for. -->
+  <div id="bagHud" class="bag"></div>
+  <!-- Put it away (lit in the storage area) and drop it. -->
+  <button class="btn icon order" data-act="store" aria-label="Put it away" title="Put it away (E at the granaries)" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v6"/><path d="M5.5 5.5 8 8l2.5-2.5"/><path d="M3 9.5h10l-1.3 4H4.3z"/></svg></button>
+  <button class="btn icon order" data-act="drop" aria-label="Put one handful down" title="Put one handful down (G) — shift+G for all of it" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 6.6 12 4.1l1.2 4.3-8.8 2.5z"/><path d="M6.5 13.2h.01"/><path d="M9.5 14h.01"/></svg></button>
+  <button class="btn icon order" data-act="rest" aria-label="Sit down to rest" title="Sit down to rest, or get up (X) — fastest at home"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5h11"/><path d="M4 12.5V9.4h5a2.3 2.3 0 0 1 2.3 2.3v.8"/><circle cx="5.3" cy="6.8" r="1.3"/><path d="M10.3 3h2.4l-2.4 2.7h2.4"/></svg></button>
+  <button class="btn icon order" data-act="eat" aria-label="Eat" title="Eat (N) — from the store at home, from the basket anywhere" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 8.3h10.4a5.2 5.2 0 0 1-10.4 0z"/><path d="M6.2 5.8c0-1 .8-1.4.8-2.5"/><path d="M9.2 5.8c0-1 .8-1.4.8-2.5"/></svg></button>
+  <span class="sep" aria-hidden="true"></span>
   <button class="btn icon order" data-order="gather" aria-label="Find food" title="Find food"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5.2" cy="6" r="2.3"/><circle cx="10.8" cy="5.2" r="2"/><circle cx="8" cy="10.8" r="2.6"/></svg></button>
   <button class="btn icon order" data-order="hunt" aria-label="Go hunting" title="Go hunting"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5 12 4"/><path d="M9.2 3.4 13.2 2.6 12.5 6.6z"/></svg></button>
   <button class="btn icon order" data-order="craft" aria-label="Knap" title="Knap"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2 13.4 12.4H2.6z"/><path d="M5.4 8.6h5.2"/></svg></button>
@@ -712,18 +839,54 @@
        somebody has been buried. -->
   <button class="btn icon order" data-order="quarry" aria-label="Work the rock" title="Work the rock"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5 6 5l4.5 3L14 12.5Z"/><path d="M6 5l1.6 3.5"/></svg></button>
   <button class="btn icon order" data-order="fish" aria-label="Go fishing" title="Go fishing"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8c3-3.4 7.2-3.4 9.6 0-2.4 3.4-6.6 3.4-9.6 0Z"/><path d="M12.1 8l2.4-2.2v4.4Z"/></svg></button>
+  <button class="btn icon order" data-order="wood" aria-label="Gather wood" title="Gather wood"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 12.6 9.4 6.2"/><path d="M8.3 3.7l3.5 3.5-2 2-3.5-3.5z"/><path d="M8.6 13.4h5.2"/></svg></button>
   <button class="btn icon order" data-order="raid" aria-label="Go and take it" title="Go and take it"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 11 5"/><path d="M9 3h4v4"/><path d="M3 9l4 4"/></svg></button>
   <button class="btn icon order" data-order="mourn" aria-label="Go to the stones" title="Go to the stones"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 13V6.4a2.8 2.8 0 0 1 5.6 0V13"/><path d="M3.6 13h8.8"/></svg></button>
+  <!-- Not errands: the two ways of stopping. The first takes your hand off
+       their shoulder and drops any order with it, drawn as the ring you point
+       with, crossed out. The second walks them back to their own fire and
+       leaves them there, their own again. -->
+  <span class="sep" aria-hidden="true"></span>
+  <button class="btn icon order" data-act="free" aria-label="Let them carry on" title="Let them carry on"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2"/><path d="M4.3 11.7 11.7 4.3"/></svg></button>
+  <button class="btn icon order" data-act="home" aria-label="Go home" title="Go home"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.4 7.7 8 3.1l5.6 4.6"/><path d="M4.1 8.4v4.8h7.8V8.4"/></svg></button>
 </div>
 
+<div id="actPrompt" hidden></div>
+<!-- A tiger in sight: which way, how far, and whether it has chosen you. -->
+<div id="danger" hidden></div>
+
 <div id="map">
-  <canvas id="mapCanvas" width="384" height="384" title="click to travel"></canvas>
+  <canvas id="mapCanvas" width="384" height="384" title="open the map"></canvas>
   <!-- Only on the full-page map. A corner map is too small to put controls on
        and does not need them: M is the whole interface it has. -->
   <div id="mapUi">
+    <button class="mapBtn" id="mapFilter" aria-expanded="false" aria-controls="mapLayers" aria-label="What the map shows" title="What the map shows"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 2.6h12.4a.5.5 0 0 1 .38.82L9.8 9.2v4.05a.5.5 0 0 1-.72.45l-2.4-1.2a.5.5 0 0 1-.28-.45V9.2L1.42 3.42a.5.5 0 0 1 .38-.82z"/></svg></button>
     <button class="mapBtn" id="mapOut" title="Zoom out">−</button>
     <button class="mapBtn" id="mapIn" title="Zoom in">+</button>
     <button class="mapBtn" id="mapMin" title="Smaller map (M)">▣</button>
+  </div>
+  <!-- What the map shows. Each line puts one layer away or brings it back, and
+       its swatch is the colour that layer is drawn in. -->
+  <div id="mapLayers" hidden>
+    <button data-all aria-pressed="true"><i></i>All</button>
+    <span class="rule" aria-hidden="true"></span>
+    <button data-layer="camps" aria-pressed="true"><i style="--c: #e07a50"></i>Bands</button>
+    <button data-layer="people" aria-pressed="true"><i style="--c: #ffcc74"></i>People</button>
+    <button data-layer="animals" aria-pressed="true"><i style="--c: #d6e6c2"></i>Animals</button>
+    <button data-layer="paths" aria-pressed="true"><i style="--c: #b08a5a"></i>Paths</button>
+    <button data-layer="barrows" aria-pressed="true"><i style="--c: #d8d2c4"></i>Burial grounds</button>
+    <span class="h">Food</span>
+    <button data-layer="fruit" aria-pressed="true"><i style="--c: #f08497"></i>Fruit</button>
+    <button data-layer="forage" aria-pressed="true"><i style="--c: #a3d672"></i>Foraging</button>
+    <button data-layer="fish" aria-pressed="true"><i style="--c: #76c8f0"></i>Fishing</button>
+    <button data-layer="rafts" aria-pressed="true"><i style="--c: #c9a36b"></i>Rafts</button>
+    <button data-layer="stores" aria-pressed="true"><i style="--c: #ecc870"></i>Granaries</button>
+    <span class="h">Quarries</span>
+    <button data-layer="stone" aria-pressed="true"><i style="--c: #bdb6aa"></i>Stone</button>
+    <button data-layer="iron" aria-pressed="true"><i style="--c: #c0603f"></i>Iron</button>
+    <button data-layer="bronze" aria-pressed="true"><i style="--c: #d6934f"></i>Bronze</button>
+    <button data-layer="silver" aria-pressed="true"><i style="--c: #dde5ea"></i>Silver</button>
+    <button data-layer="gold" aria-pressed="true"><i style="--c: #f2c84b"></i>Gold</button>
   </div>
   <div id="mapScale"><i></i><span>—</span></div>
 </div>

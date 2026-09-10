@@ -27,8 +27,15 @@ export const world = new THREE.Group();
 export const terrainGroup = new THREE.Group();
 export const floraGroup = new THREE.Group();
 export const rockGroup = new THREE.Group();
+/* The quarries' heaps. A group of their own rather than the rocks', because the
+   rocks slider rebuilds that one and a quarry is not scenery. */
+export const depositGroup = new THREE.Group();
+/* And the berry thickets', for the same reason. */
+export const thicketGroup = new THREE.Group();
 /* Every rock worth quarrying, in world coordinates. Rebuilt with the world. */
 export const outcrops = [];
+/* And every tree, where it stands, so somebody can climb one. */
+export const treeSpots = [];
 
 /** The nearest one to here, or nothing if they are all too far to be worth it. */
 export function nearestRock(x, z, within) {
@@ -46,7 +53,7 @@ export const fauna = new THREE.Group();
    had not finished making. */
 export function wireWorld() {
   scene.add(world);
-  world.add(terrainGroup, floraGroup, rockGroup, grassGroup, fauna);
+  world.add(terrainGroup, floraGroup, rockGroup, depositGroup, thicketGroup, grassGroup, fauna);
 }
 
 /* The pickable fruit: the mesh, every fruit's resting transform, which of them
@@ -80,10 +87,11 @@ export function disposeWorld() {
      face, however briefly. */
   setNearParts(null);
   stats.graves = 0;
-  for (const g of [terrainGroup, floraGroup, rockGroup, grassGroup, fauna, tribeGroup]) disposeGroup(g);
+  for (const g of [terrainGroup, floraGroup, rockGroup, depositGroup, thicketGroup, grassGroup, fauna, tribeGroup]) disposeGroup(g);
   grassTiles = [];
   dirtyTiles = [];
   outcrops.length = 0;
+  treeSpots.length = 0;
   streams.length = 0;
   setWet(null);
   clearPaths();
@@ -515,6 +523,7 @@ export function drainDirtyTiles(budget) {
 export function buildTrees(count) {
   const rng = mulberry32(P.seed ^ 0x9e3779b9);
   const pine = [], round = [];
+  treeSpots.length = 0;
   let tries = 0;
   const limit = count * 60;
   while (pine.length + round.length < count && tries < limit) {
@@ -539,6 +548,7 @@ export function buildTrees(count) {
     const m = new THREE.Matrix4().compose(_v, _q, _s);
     // Pines take the high ground, broadleaves the valleys.
     (h > 46 + rng() * 26 ? pine : round).push(m);
+    treeSpots.push({ x, z });
   }
 
   const trunkGeoA = new THREE.CylinderGeometry(0.20, 0.42, 4.4, 6);

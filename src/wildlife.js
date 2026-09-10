@@ -779,12 +779,16 @@ export function nearestQuarry(d, spec) {
   for (let i = 0; i < people.length; i++) {
     const p = people[i];
     if (p.asleep) continue;                     // inside a hut, out of reach
+    if (p.climbed) continue;                    // up a tree, out of reach too
     // Nor will it come to the fire. Standing in camp is standing somewhere.
     if (inCamp(p.x, p.z, safeGround(p.camp))) continue;
     const dist = Math.hypot(p.x - d.x, p.z - d.z);
     // Much shorter than the range it spots a deer at: it has to nearly walk
     // into them, rather than pick them out of the middle distance.
     if (dist > h.seesPeople) continue;
+    /* Hidden, down and still: it has to nearly walk onto them — a quarter of
+       the distance it would notice them at (HIDE_SEEN, in danger.js). */
+    if (p.hiding && dist > h.seesPeople * 0.25) continue;
     // And somebody with company is not on the menu at all.
     if (hasCompany(p, h.company)) continue;
     /* A person is scored as though they were much further away, so a tiger with
@@ -836,7 +840,11 @@ export function updatePredator(d, spec, dt) {
     const gone = d.prey.kind === 'animal'
       ? d.prey.a.dead
       : !people.includes(d.prey.person)
-        || inCamp(d.prey.person.x, d.prey.person.z, safeGround(d.prey.person.camp));
+        || inCamp(d.prey.person.x, d.prey.person.z, safeGround(d.prey.person.camp))
+        /* Up a tree it cannot follow; hidden past a dozen metres it has lost
+           them (HIDE_LOST, in danger.js). */
+        || d.prey.person.climbed
+        || (d.prey.person.hiding && Math.hypot(d.prey.person.x - d.x, d.prey.person.z - d.z) > 12);
     if (gone) { d.prey = null; d.chase = 0; }
   }
 
@@ -981,6 +989,7 @@ export function updateQuadrupeds(dt) {
          already was, and over a simulated year that was most of what was left
          of the herd cost after the grouping. `hidden` is cleared when the
          animal comes back into its slot. */
+      if (d.carcass && drawCarcass(d, i, spec, model, parts, slice)) continue;
       if (d.dead && d.hidden) continue;
       if (d.dead) {
         d.hidden = true;
@@ -1372,16 +1381,74 @@ export function writeFlyer(parts, i, b, pitch, roll, beat, shoulderX, shoulderY,
   parts.wings.setMatrixAt(i * 2 + 1, _mChain);
 }
 
+/* Brought down by the person you are playing (spear.js): it lies where it
+   fell, on its side and still, until it is picked up or its day is up — then
+   it is hidden like any other kill. A moment after the throw it goes over, so
+   the spear is seen to land before it falls. */
+function drawCarcass(d, i, spec, model, parts, slice) {
+  const c = d.carcass;
+  if (simDay > c.until) { d.carcass = null; return false; }
+  c.fall = Math.min(1, c.fall + slice * 2.5);
+  d.speed = 0;
+  if (!drawingWorld) return true;
+  const f = Math.max(0, c.fall);
+  const ground = sampleHeight(d.x, d.z);
+  _eAnim.set(0, d.yaw, f * Math.PI / 2, 'YXZ');
+  _qAnim.setFromEuler(_eAnim);
+  if (model) {
+    _pAnim.set(d.x, ground + model.footOffset * d.scale * (1 - f) + 0.3 * d.scale * f, d.z);
+    writeModelInstance(model, i, _pAnim, _qAnim, d.scale * model.scale, 0);
+    return true;
+  }
+  _pAnim.set(d.x, ground + spec.legLen * d.scale * (1 - 0.7 * f), d.z);
+  _sAnim.setScalar(d.scale);
+  _mAnim.compose(_pAnim, _qAnim, _sAnim);
+  parts.body.setMatrixAt(i, _mAnim);
+  if (parts.hump) parts.hump.setMatrixAt(i, _mAnim);
+  _mLocal.makeRotationX(spec.neck.rest * (1 - f) + 0.9 * f);
+  _mLocal.setPosition(0, spec.neck.y, spec.neck.z);
+  _mChain.multiplyMatrices(_mAnim, _mLocal);
+  parts.neck.setMatrixAt(i, _mChain);
+  _mOff.makeTranslation(0, spec.neck.len, 0.02);
+  _mHead.multiplyMatrices(_mChain, _mOff);
+  parts.head.setMatrixAt(i, _mHead);
+  if (parts.horns) {
+    for (let side = -1; side <= 1; side += 2) {
+      _mLocal.makeRotationZ(-side * spec.horns.tilt);
+      _mLocal.setPosition(side * spec.horns.x, spec.horns.y, spec.horns.z);
+      _mChain.multiplyMatrices(_mHead, _mLocal);
+      parts.horns.setMatrixAt(i * 2 + (side > 0 ? 1 : 0), _mChain);
+    }
+  }
+  _mLocal.makeRotationY(0);
+  _mLocal.setPosition(...spec.tailPos);
+  _mChain.multiplyMatrices(_mAnim, _mLocal);
+  parts.tail.setMatrixAt(i, _mChain);
+  for (let k = 0; k < 4; k++) {
+    _mLocal.makeRotationX(k < 2 ? 0.35 * f : -0.35 * f);
+    _mLocal.setPosition(k % 2 === 0 ? spec.hipX : -spec.hipX, 0, k < 2 ? spec.hipZ : -spec.hipZ);
+    _mChain.multiplyMatrices(_mAnim, _mLocal);
+    parts.legs.setMatrixAt(i * 4 + k, _mChain);
+  }
+  return true;
+}
+
 /* What a grazing animal is afraid of: you, and anyone out hunting. Flat pairs
    of x,z because this is read once per animal per frame. */
 export const threats = [];
 export function collectThreats() {
   threats.length = 0;
-  threats.push(camera.position.x, camera.position.z);
+  let led = null;
   for (let i = 0; i < people.length; i++) {
     const p = people[i];
+    if (p.led) led = p;
     if (p.job === 'hunt' && !p.asleep) threats.push(p.x, p.z);
   }
+  /* You: the camera — or, when you are walking somebody yourself, that person,
+     and not at all while they are down low (Z). A crawl is how to get within a
+     throw; the throw itself is a hunt, and scatters the rest. */
+  if (!led) threats.push(camera.position.x, camera.position.z);
+  else if (!led.hiding) threats.push(led.x, led.z);
   // A tiger frightens the herds whether or not it is hunting them, which is
   // what makes one moving across the map visible in how everything else moves.
   for (const pack of packs) {

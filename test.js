@@ -781,7 +781,7 @@ group('pace');
 const PACE_DAY = 3600, PACE_MAX_STEP = 0.25;
 const paceOf = (dayLength) => Math.min(Math.max(PACE_DAY / dayLength, 0.5), 12);
 check('the page uses the same reference day and clamp',
-  html.includes('const PACE_DAY = 3600;') && html.includes('const PACE_MAX_STEP = 0.25;'));
+  html.includes('paceDay: null,') && html.includes('const PACE_MAX_STEP = 0.25;'));
 check('the reference day runs at pace 1', paceOf(3600) === 1);
 check('half the day is twice the pace', paceOf(1800) === 2);
 check('a long day slows down, but only so far', paceOf(7200) === 0.5);
@@ -1146,21 +1146,21 @@ check('and nothing else clones the scratch matrix before filling it', (() => {
 })() === true);
 
 check('an errand either takes you out or it does not',
-  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
+  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
 /* Standing at the stones happens outdoors, and it is the one job that has
    nowhere indoors to be mistaken for. */
 check('and going to the stones or the rocks takes you out too',
-  /'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
+  /'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
 /* The one job whose name says where it happens. It was on the indoor side, so
    somebody "at the fire" was hidden inside a tent — the caption said one thing
    and the camp showed another — and with a full store it is better than a third
    of a band, which is most of the people who were never drawn. */
 check('and sitting at the fire is not one of them',
-  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
+  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
 /* Nor is somebody you are walking about by hand, or they wink out the moment
    you lead them into their own camp. */
 check('and neither is somebody you are leading',
-  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish'\]\);/.test(html));
+  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
 /* Between the stones and the tents: the huts stand 6.5m out and are about two
    metres across, so their inner edge is near 4.1m, and the fire ring is 1.15m. */
 check('somebody at the fire sits between the stones and the tents', (() => {
@@ -1454,12 +1454,116 @@ check('and it goes up the moment they learn',
 check('the camps are dressed whenever the band changes',
   /dressCamps\(\);/.test(html) && /function dressCamps\(\)/.test(html));
 
+/* The store, kept somewhere you can see it. Run as well as read: the slack is
+   the part that is easy to get backwards, and backwards it raises a granary
+   every morning and takes it down every night. */
+const storesFor = (() => {
+  const at = html.indexOf('function storesFor(');
+  if (at < 0) return null;
+  const src = html.slice(at, html.indexOf('\n}\n', at) + 2);
+  const num = (re) => Number(html.match(re)?.[1]);
+  const days = JSON.parse(html.match(/const STORE_DAYS = (\[[^\]]*\]);/)?.[1] || 'null');
+  return new Function('STORES', 'STORE_DAYS', 'STORE_SLACK', `${src}; return storesFor;`)(
+    num(/const STORES = (\d+);/), days, num(/const STORE_SLACK = ([\d.]+);/));
+})();
+check('a band keeps its food somewhere', typeof storesFor === 'function');
+if (storesFor) {
+  const band = (up, pop = 5) => ({ storesUp: up, pop });
+  check('none while the store is empty',
+    storesFor(band(0), 0) === 0 && storesFor(band(2), 0) === 0);
+  check('one for a band getting by', storesFor(band(0), 3) === 1, String(storesFor(band(0), 3)));
+  check('four for a band with a month put by', storesFor(band(0), 40) === 4,
+    String(storesFor(band(0), 40)));
+  check('and none for a band nobody is left in', storesFor(band(3, 0), 40) === 0);
+  /* Back and forth across the week line. With the slack it goes up once and
+     comes down once; without it, this same walk changes four times. */
+  let up = 1, changes = 0;
+  for (const d of [5.5, 6.5, 5.9, 6.8, 6.2, 7.5, 6.5, 5.8]) {
+    const n = storesFor(band(up), d);
+    if (n !== up) changes++;
+    up = n;
+  }
+  check('and a band hovering on a line does not flicker', changes === 2, `${changes} changes`);
+}
+check('the granaries follow the store, and only when the count changes',
+  /const stores = storesFor\(c, daysOfFood\(c\)\);\s*if \(stores !== c\.storesUp\) \{ c\.storesUp = stores; dressStores\(c\); \}/.test(html));
+check('each has a mesh behind it',
+  /campParts\.stores = instancedFrom\(/.test(html) && /campParts\.storeRoofs = instancedFrom\(/.test(html)
+  && /stores: STORES,\s*storeRoofs: STORES,/.test(html));
+/* The camp's rng lays out every tent and stone after this, so a draw taken
+   here would move all of them. */
+check('laid out without touching the camp\'s dice', (() => {
+  const a = html.indexOf('camp.storeAt = [];'), b = html.indexOf('camp.fireAt = [];', a);
+  if (a < 0 || b < 0) return 'no store layout';
+  return /\brng\(\)/.test(html.slice(a, b)) ? 'draws from rng' : true;
+})() === true);
+check('and composed before it is kept',
+  /camp\.storeAt\.push\(_m4\.compose\(_v, _q, _s\)\.clone\(\)\);/.test(html));
+/* A camp is sited for dry flat ground at its middle and nothing more, so
+   thirteen metres out can be sea. A granary there is one nobody reaches: they
+   stand at the water until the errand times out and the food never goes in. */
+check('a granary never stands in the water, or where they stand to fill it',
+  /sampleHeight\(x, z\) < SEA \+ 1\.5 \|\| sampleHeight\(fx, fz\) < SEA \+ 1\.5/.test(bodyOf('storeGround') || ''));
+check('nor on a hillside', /flatnessAt\(x, z\) < STORE_FLAT/.test(bodyOf('storeGround') || ''));
+check('nor in a tent, round any fire the village could light',
+  /for \(let f = 0; f < HEARTHS; f\+\+\)[\s\S]*?< TENT_REACH \+ roof\) return false;/.test(bodyOf('storeGround') || ''));
+/* Two numbers written down twice, once where the thing is built and once where
+   it is kept clear of. Checked against each other so moving one moves both. */
+check('and the reach it keeps clear of is the tents as built', (() => {
+  const n = (re) => Number(html.match(re)?.[1]);
+  const built = 6.5 + n(/const r = 6\.5 \+ rng\(\) \* ([\d.]+);/)
+    + n(/new THREE\.ConeGeometry\(([\d.]+), 2\.5, 7\)/) * (0.85 + n(/const sc = 0\.85 \+ rng\(\) \* ([\d.]+);/));
+  const said = new Function(`return ${html.match(/const TENT_REACH = ([^;]+);/)?.[1]};`)();
+  return Math.abs(built - said) < 1e-9 ? true : `TENT_REACH ${said} but tents reach ${built}`;
+})() === true);
+check('and the thatch it measures is the thatch as built',
+  Number(html.match(/const STORE_ROOF = ([\d.]+);/)?.[1])
+  === Number(html.match(/new THREE\.ConeGeometry\(([\d.]+), 1\.05, 8\)/)?.[1]));
+check('and none of that rolls the camp\'s dice',
+  !/\brng\(\)/.test(bodyOf('storeCandidates') || 'rng()') && !/\brng\(\)/.test(bodyOf('storeGround') || 'rng()'));
+if (storesFor) {
+  check('and only as many go up as there was ground for',
+    storesFor({ storesUp: 0, pop: 5, storeAt: [1, 2] }, 40) === 2
+    && storesFor({ storesUp: 0, pop: 5, storeAt: [] }, 40) === 0);
+}
+check('a spot for every granary', (() => {
+  const spots = html.match(/const STORE_SPOTS = \[(.*)\];/)?.[1] || '';
+  const n = (spots.match(/\[/g) || []).length;
+  return n === Number(html.match(/const STORES = (\d+);/)?.[1]) ? true : `${n} spots`;
+})() === true);
+/* Clear of every tent that could ever stand: the biggest tent at the far edge
+   of its ring, round every fire a village can light. Read off the numbers the
+   camp is actually laid out with, so moving a tent ring moves this. */
+check('and none of them stands in a tent', (() => {
+  const n = (re) => Number(html.match(re)?.[1]);
+  const ringOut = n(/const r = 6\.5 \+ rng\(\) \* ([\d.]+);/) + 6.5;
+  const tent = n(/new THREE\.ConeGeometry\(([\d.]+), 2\.5, 7\)/)
+    * (0.85 + n(/const sc = 0\.85 \+ rng\(\) \* ([\d.]+);/));
+  const roof = n(/new THREE\.ConeGeometry\(([\d.]+), 1\.05, 8\)/) * n(/STORE_SCALE = ([\d.]+);/);
+  const out = n(/STORE_OUT = ([\d.]+);/), apart = n(/HEARTH_SPACING = ([\d.]+);/), fires = n(/HEARTHS = (\d+);/);
+  const spots = JSON.parse(html.match(/const STORE_SPOTS = (\[.*\]);/)[1]);
+  const hearths = [[0, 0]];
+  for (let f = 1; f < fires; f++) {
+    hearths.push([Math.cos((f / fires) * Math.PI * 2) * apart, Math.sin((f / fires) * Math.PI * 2) * apart]);
+  }
+  let worst = Infinity;
+  for (const [o, a] of spots) {
+    for (const [hx, hz] of hearths) {
+      worst = Math.min(worst, Math.hypot(out + o - hx, a - hz) - ringOut - tent - roof);
+    }
+  }
+  for (let i = 0; i < spots.length; i++) for (let j = i + 1; j < spots.length; j++) {
+    worst = Math.min(worst, Math.hypot(spots[i][0] - spots[j][0], spots[i][1] - spots[j][1]) - 2 * roof);
+  }
+  return worst > 0 ? true : `overlap by ${(-worst).toFixed(2)}m`;
+})() === true);
+
 group('nursing');
 
 check('somebody can sit with the ill', /\['nurse', ill > 0 && !p\.child/.test(html)
   && /nurse: 'sitting with the ill'/.test(html));
 check('and it shortens the illness',
-  /p\.sick -= days \* \(p\.tended \? 1 \+ PLAGUE\.nurse : 1\);/.test(html));
+  /p\.sick -= days \* \(p\.tended \? 1 \+ PLAGUE\.nurse : 1\)( \* restHeal\(p\))?;/.test(html));
 /* Or it is a free improvement rather than a decision. */
 check('but the one sitting with them can catch it',
   /if \(luck\(\) < PLAGUE\.catching \* days\)/.test(html) && /catching: [\d.]+,/.test(html));
@@ -1998,7 +2102,7 @@ check('resetting sets the distance too, which is what the wheel moved',
    held its bearing and you watched them walk away sideways, then head-on. */
 const chronSrc = moduleSource('chronicle.js');
 check('the shoulder view keeps station behind them as they walk',
-  /if \(cam\.astern\) \{[^]*?cam\.yaw \+= off \* Math\.min\(1, dt \* ASTERN_EASE\)/.test(chronSrc));
+  /if \(cam\.astern && !steering\) \{[^]*?cam\.yaw \+= off \* Math\.min\(1, dt \* ASTERN_EASE\)/.test(chronSrc));
 check('and V is what puts you back on it',
   /P\.followDist = SHOULDER\.dist;\s*cam\.astern = true;\s*return true;/.test(chronSrc));
 check('dragging to look around lets go of their shoulder',
@@ -2036,7 +2140,11 @@ check('the ease is a real rate, not a snap', EASE > 0 && EASE < 8, String(EASE))
 check('both new keys are on the keys card',
   /<kbd>shift<\/kbd>\+<kbd>F<\/kbd>/.test(html) && /<kbd>V<\/kbd>/.test(html));
 check('entering follow picks somebody', /if \(mode === 'follow'\) pickFollow\(false\);/.test(html));
-check('N is gone', !/KeyN/.test(html) && !/<kbd>N<\/kbd>/.test(html));
+/* N used to follow somebody, which F does now. It is back, for eating, and
+   only in Follow. */
+check('N no longer follows anybody: it eats',
+  !/ev\.code === 'KeyN'[^\n]*\n[^\n]*(pickFollow|setViewMode)/.test(html)
+  && /if \(P\.view === 'follow' && ev\.code === 'KeyN'\) \{\s*if \(!eatHere\(\)\)/.test(html));
 check('and the key list says F', /<kbd>F<\/kbd>/.test(html));
 
 /* -------------------------------------------------------------------------
@@ -2112,6 +2220,11 @@ check('and nothing in between reads 0',
   JSON.stringify([0.001, 0.02, 0.049].map((e) => energyOutOfTen({ energy: e }))));
 check('it never goes over ten', energyOutOfTen({ energy: 1.5 }) === 10);
 check('the meter turns red on the last of it', /ten <= 2 \? ' low' : ''/.test(html));
+/* The basket at the bottom of the screen says what they carry and how much
+   they have left; the caption says neither while it is showing. */
+check('and the caption does not repeat what the basket says',
+  /const carrying = !hud && p\.haul > 0/.test(bodyOf('updateFollowCaption') || '')
+  && /\+ \(hud \? '' : ` <span class="meter/.test(bodyOf('updateFollowCaption') || ''));
 
 /* -------------------------------------------------------------------------
    Where you pointed, and who goes there
@@ -2157,9 +2270,9 @@ check('a click hands them their destination',
 check('they walk there on their own',
   !/leadWalking/.test(html));
 /* And W is the extra rather than the whole instruction: hold it and they run. */
-check('and holding W makes them run',
+check('and holding shift makes them run',
   /if \(p\.led && leadRunning\(\)\) want = PERSON\.jog \* \(p\.child \? 0\.75 : 1\);/.test(html)
-  && /function leadRunning\(\) \{ return keys\.has\('KeyW'\); \}/.test(html));
+  && /function leadRunning\(\) \{ return keys\.has\('ShiftLeft'\) \|\| keys\.has\('ShiftRight'\); \}/.test(html));
 /* Charged for like any other jog. Set before the clamps rather than after, so a
    run costs energy, is cut short when there is none left, and slows with a full
    basket — a run you can hold for ever for nothing makes walking pointless. */
@@ -2168,12 +2281,12 @@ check('and running is charged for like any other jog', (() => {
   if (!body) return 'no updatePeople';
   const at = body.indexOf('if (p.led && leadRunning())');
   const clamp = body.indexOf('want = PERSON.walk + (want - PERSON.walk) * clamp(p.energy');
-  const carry = body.indexOf('if (p.carry) want *= 0.8;');
+  const carry = body.indexOf('if (p.carry || p.led) want *= carryFactor(p);');
   return at > 0 && at < clamp && at < carry
     ? true : 'the run is set after the clamps that would charge for it';
 })() === true);
 check('and the state they are put in is the one that walks',
-  /if \(p\.led\) \{[\s\S]{0,200}?p\.state = 'goto';/.test(html));
+  /if \(p\.led && !p\.acting\) \{[\s\S]{0,200}?p\.state = 'goto';/.test(html));
 /* Point somewhere else and they turn round: the lead point is copied to the
    target on every turn, so a new click is picked up without anything else. */
 check('a new click turns them round',
@@ -2225,7 +2338,7 @@ check('an order is taken up once and then let go of',
   /if \(p\.orders\) \{\s*p\.job = p\.orders;\s*p\.orders = null;\s*setOut\(p\);\s*\} else chooseJob\(p, day\);/.test(html));
 /* Two things steering one person is one too many. */
 check('and being told what to do ends being walked by hand',
-  /if \(p\.led\) releaseLead\(false\);\s*p\.orders = job;/.test(html));
+  /if \(p\.led\) releaseLead\(false, false\);\s*p\.orders = job;/.test(html));
 
 /* The rule that keeps a world reproducible: only what the step calls may draw
    from the stream. A click happens on a frame, not on a step — so the order is
@@ -2245,6 +2358,632 @@ check('and the thing that does is only called from the step', (() => {
 })() === true);
 
 /* -------------------------------------------------------------------------
+   The two on the end that are not errands
+
+   Everything in ORDERS sends somebody out. These are the other direction: one
+   takes the instructions off them, one brings them in. They carry `data-act`
+   rather than `data-order` so the row's listener can tell them apart, which is
+   also why they are checked apart from the loop above.
+   ------------------------------------------------------------------------- */
+for (const [act, what] of [['free', 'handing them back'], ['home', 'sending them home']]) {
+  check(`there is a button for ${what}`,
+    new RegExp(`data-act="${act}" aria-label="[^"]+" title="[^"]+"`).test(html),
+    `no labelled data-act="${act}"`);
+}
+/* Both halves of being told what to do. Shift+W dropped the hand on the
+   shoulder and left a pending order sitting there, which is a person you have
+   let go of who still does the next thing you said. */
+check('handing them back drops the lead and the order together', (() => {
+  const body = bodyOf('handBack');
+  if (!body) return 'no handBack';
+  return /p\.orders = null;/.test(body) && /releaseLead\(false\)/.test(body)
+    ? true : 'handBack undoes only one of the two';
+})() === true);
+/* And it does not stop you watching them. Letting go of somebody and turning
+   away from them are different things, and the second one is Esc. */
+check('and it leaves you still behind them',
+  !/setViewMode\(/.test(bodyOf('handBack') || ''), 'handBack leaves Follow');
+
+/* Going home is the walk that ends every errand, started early: it is a state
+   the person already has, not a new one. */
+check('going home is the ordinary walk back',
+  /if \(p\.goingHome\) \{\s*p\.goingHome = false;/.test(html)
+  && /p\.state = 'return';\s*const to = homeward\(p, 0\);\s*p\.targetX = to\.x;/.test(html));
+/* The same place every other walk home goes: the granaries with food in their
+   arms, their own hearth without — the same fire they sleep at, which is what
+   homeFire is for. */
+check('and it is their own fire they are sent to when they carry nothing',
+  /const f = homeFire\(p\);\s*return \{ x: f\.x, z: f\.z, spread \};/.test(html));
+
+/* The rule that keeps a world reproducible, again: a click happens on a frame,
+   so it may not draw from the stream. Home is left on the person and the next
+   turn spends it, exactly as an order is. */
+check('being sent home draws nothing from the world stream', (() => {
+  const body = bodyOf('sendHome');
+  if (!body) return 'no sendHome';
+  return !/\bluck\(\)/.test(body) && !/travelTimeout\(/.test(body) && !/homeFire\(/.test(body)
+    ? true : 'sendHome points them at something itself';
+})() === true);
+
+/* And the wiring, which is the part that has actually been wrong: the buttons
+   shipped invisible once because the line that drew them was written into a
+   patch that never applied, and every check about them passed. An export
+   nothing imports is the same failure one step earlier. */
+check('the row reads the two of them', (() => {
+  const ui = rawSources[srcFiles.indexOf('ui.js')] || '';
+  const wired = /data-act\]/.test(ui) && /handBack\(\)/.test(ui) && /sendHome\(\)/.test(ui);
+  const imported = /import \{[^}]*\bhandBack\b[^}]*\} from '\.\/chronicle\.js'/s.test(ui)
+    && /import \{[^}]*\bsendHome\b[^}]*\} from '\.\/chronicle\.js'/s.test(ui);
+  if (!wired) return 'the listener does not call them';
+  return imported ? true : 'called but never imported';
+})() === true);
+/* Nothing to undo is a thing the button has to say. Pressing it and having
+   nothing happen reads as the button being broken. */
+check('and the one that undoes is greyed when there is nothing to undo',
+  /button\[data-act="free"\]/.test(bodyOf('updateOrders') || '')
+  && /free\.disabled/.test(bodyOf('updateOrders') || ''));
+
+/* -------------------------------------------------------------------------
+   Bringing it in
+
+   Food carried home goes to the granaries, not the fire. Run as well as read:
+   which granary, and what happens when none is standing yet, are the parts a
+   regex cannot see.
+   ------------------------------------------------------------------------- */
+const homeward = (() => {
+  const at = html.indexOf('function homeward(');
+  if (at < 0) return null;
+  const src = html.slice(at, html.indexOf('\n}\n', at) + 2);
+  return new Function('homeFire', `${src}; return homeward;`)((p) => p.hearth || p.camp);
+})();
+check('there is somewhere to bring food in to', typeof homeward === 'function');
+if (homeward) {
+  const spots = [
+    { x: 13, z: 0, fx: 11.3, fz: 0 }, { x: 13, z: -2.7, fx: 11.3, fz: -2.7 },
+    { x: 13, z: 2.7, fx: 11.3, fz: 2.7 }, { x: 15.4, z: 1.35, fx: 13.7, fz: 1.35 },
+  ];
+  const hearth = { x: -4, z: 6 };
+  const camp = (up) => ({ x: 0, z: 0, storesUp: up, storeSpots: spots });
+  const who = (up, haul, x, z) => ({ camp: camp(up), hearth, haul, x, z });
+  const a = homeward(who(4, 1, 20, -5), 6);
+  check('with food, to the front of the nearest granary', a.x === 11.3 && a.z === -2.7,
+    `${a.x},${a.z}`);
+  /* The nearest standing, not the nearest there is room for. */
+  const b = homeward(who(2, 1, 20, 5), 6);
+  check('and only one that is actually standing', b.x === 11.3 && b.z === 0, `${b.x},${b.z}`);
+  const c = homeward(who(0, 1, 20, 5), 6);
+  check('and where the first will go when none is up yet', c.x === 11.3 && c.z === 0,
+    `${c.x},${c.z}`);
+  const d = homeward(who(3, 0, 20, 5), 6);
+  check('empty-handed, to their own fire', d.x === -4 && d.z === 6 && d.spread === 6,
+    `${d.x},${d.z} spread ${d.spread}`);
+  check('and a granary is walked up to, not sat round', a.spread < d.spread, String(a.spread));
+}
+/* Every walk home that is a walk home. The tiger is not one: running from it
+   goes to the nearest fire, and the granaries are not somewhere to hide. */
+check('every errand ends at the granaries when there is food to bring',
+  (html.match(/aimHome\(p, \d\);/g) || []).length === 3
+  && !/p\.state = 'return';\s*p\.targetX = homeFire/.test(html),String((html.match(/aimHome\(p, \d\);/g) || []).length));
+check('but running from a tiger is still to the nearest fire',
+  /const run = nearestFire\(p\.camp, p\.x, p\.z\);/.test(html));
+/* Two draws whichever way they go, the same two the fire always took, so a
+   band carrying nothing replays exactly as it did. */
+check('and aiming home takes the same two draws it always did',
+  ((bodyOf('aimHome') || '').match(/\bluck\(\)/g) || []).length === 2);
+check('they stand there putting it away',
+  /p\.stowed = p\.haul > 0;\s*if \(p\.haul > 0\) \{\s*p\.camp\.food \+= p\.haul;/.test(html)
+  && /case 'idle':[\s\S]{0,400}?p\.stowed = false;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Bubbles
+
+   What somebody is doing, over their head, while they are stopped doing it.
+   ------------------------------------------------------------------------- */
+const BUBBLE = (() => {
+  const m = html.match(/const BUBBLE = (\{[^}]*\});/);
+  return m ? new Function(`return ${m[1]};`)() : null;
+})();
+const bubbleFor = (() => {
+  const at = html.indexOf('function bubbleFor(');
+  if (at < 0 || !BUBBLE) return null;
+  const src = html.slice(at, html.indexOf('\n}\n', at) + 2);
+  const walking = Number(html.match(/const WALKING_AT = ([\d.]+);/)?.[1]);
+  return new Function('BUBBLE', 'WALKING_AT', `${src}; return bubbleFor;`)(BUBBLE, walking);
+})();
+check('there is a bubble for what people do', typeof bubbleFor === 'function');
+if (bubbleFor) {
+  const at = (o) => bubbleFor({ speed: 0, state: 'work', hidden: false, ...o });
+  check('stopped in a berry patch, foraging', at({ job: 'gather' }) === BUBBLE.gather);
+  check('walking to one, nothing', at({ job: 'gather', state: 'goto', speed: 1.3 }) === -1);
+  check('at the water, fishing', at({ job: 'fish' }) === BUBBLE.fish);
+  check('at the next band, trading', at({ job: 'visit' }) === BUBBLE.visit);
+  check('just in with food, putting it away', at({ job: 'gather', state: 'idle', stowed: true }) === BUBBLE.store);
+  check('stood between errands, resting', at({ job: 'gather', state: 'idle' }) === BUBBLE.rest);
+  check('knapping in a tent, over the tent', at({ job: 'craft', hidden: true }) === BUBBLE.craft);
+  check('asleep, over the tent', at({ job: 'sleep', hidden: true, asleep: true }) === BUBBLE.sleep);
+  check('sitting about in a tent, nothing', at({ job: 'tend', hidden: true, state: 'idle' }) === -1);
+  check('being led, nothing', at({ job: 'led', led: true }) === -1);
+  check('running from something, nothing', at({ job: 'gather', panic: 2 }) === -1);
+  check('a child at play, nothing', at({ job: 'play' }) === -1);
+}
+/* The drawings live in icons.js, shared with the map. It imports nothing, so
+   it can be run here as it is. Every bubble is the picture of its own name, or
+   of the one its alias names. */
+const ICON_PATHS = (() => {
+  const src = sources[srcFiles.indexOf('icons.js')];
+  try { return src ? new Function(`${src}\nreturn ICON_PATHS;`)() : null; } catch { return null; }
+})();
+check('every bubble has a drawing', (() => {
+  if (!ICON_PATHS) return 'no icons.js';
+  const alias = new Function(`return ${html.match(/const BUBBLE_ICON = (\{[^}]*\});/)?.[1] || '{}'};`)();
+  const missing = Object.keys(BUBBLE || {}).filter((k) => !ICON_PATHS[alias[k] || k]);
+  return missing.length ? `none for ${missing.join(', ')}` : true;
+})() === true);
+/* And something draws them: the part that has actually gone missing before. */
+check('and they are drawn every frame, after the people move', (() => {
+  const main = rawSources[srcFiles.indexOf('main.js')] || '';
+  if (!/import \{ updateBubbles \} from '\.\/bubbles\.js';/.test(main)) return 'never imported';
+  return /updatePeople\(paced, daylight\);\s*\/\/[^\n]*\n\s*updateBubbles\(\);/.test(main)
+    ? true : 'not called after updatePeople';
+})() === true);
+/* The atlas is painted with Path2D, which a browser has and the boot check
+   does not. Guarded, or the page boots and the check does not. */
+check('and the painting does not need a browser to build',
+  /if \(typeof Path2D !== 'function'\) return;/.test(bodyOf('drawIcon') || ''));
+
+/* And a word beside the icon, near enough to read one. */
+const BUBBLE_SAYS = (() => {
+  const m = html.match(/const BUBBLE_SAYS = (\{[^}]*\});/);
+  return m ? new Function(`return ${m[1]};`)() : null;
+})();
+check('every bubble says one word', (() => {
+  if (!BUBBLE || !BUBBLE_SAYS) return 'no words';
+  const bad = Object.keys(BUBBLE).filter((k) => !/^[a-z]+$/.test(BUBBLE_SAYS[k] || ''));
+  return bad.length ? `no single word for ${bad.join(', ')}` : true;
+})() === true);
+/* Near: the word. Further out, the icon alone — a word has to be about twelve
+   pixels tall to be read, and at seventy metres that makes every bubble wider
+   than the person under it. */
+check('the word goes up near, the icon alone further out',
+  /const near = d < BUBBLE_WORDS;/.test(html) && /icon\.setX\(n, near \? k \+ WORD_AT : k\);/.test(html));
+check('and the shader sizes the worded ones as the wide ones',
+  /gl_PointSize = aIcon > \$\{\(WORD_AT - 0\.5\)\.toFixed\(1\)\} \? wide : round;/.test(html));
+check('and the atlas has a cell for both shapes of every bubble', (() => {
+  const n = Object.keys(BUBBLE || {}).length;
+  const at = Number(html.match(/const WORD_AT = (\d+);/)?.[1]);
+  const [, cols, rows] = (html.match(/const ATLAS_COLS = (\d+), ATLAS_ROWS = (\d+);/) || []).map(Number);
+  return n <= at && at + n <= cols * rows ? true : `${n} bubbles, words at ${at}, ${cols * rows} cells`;
+})() === true);
+/* The boot check's canvas has arcs and lines and nothing rounder, and neither
+   do older browsers. */
+check('and the pill is drawn from arcs and lines',
+  !/roundRect\(|arcTo\(/.test(bodyOf('paintPill') || 'roundRect('));
+
+/* -------------------------------------------------------------------------
+   Where the food is, and what the map shows
+
+   Marks on the full map for the four places food comes from, each one a place
+   you can click to go to; and every layer of the map one you can put away.
+   ------------------------------------------------------------------------- */
+const MAP_LAYERS = JSON.parse((html.match(/const MAP_LAYERS = (\[[^\]]*\]);/)?.[1] || '[]').replace(/'/g, '"'));
+check('the map has layers you can put away', MAP_LAYERS.length >= 9, MAP_LAYERS.join(' '));
+check('and a line in the filter list for each of them', (() => {
+  const missing = MAP_LAYERS.filter((k) => !new RegExp(`data-layer="${k}" aria-pressed="true"`).test(html));
+  return missing.length ? `no line for ${missing.join(', ')}` : true;
+})() === true);
+/* A switch that nothing reads is a switch that does nothing, and passes every
+   other check here. */
+check('every layer the map draws asks whether it is showing', (() => {
+  const drawn = (bodyOf('drawMap') || '') + (bodyOf('gatherMarks') || '');
+  /* The quarry layers are asked by the deposit's own kind, one line for all
+     five, rather than five lines saying the same thing. */
+  const ores = /mapShows\[d\.kind\]/.test(drawn) ? ['stone', 'iron', 'bronze', 'silver', 'gold'] : [];
+  const missing = MAP_LAYERS.filter((k) => !drawn.includes(`mapShows.${k}`) && !ores.includes(k));
+  return missing.length ? `never asked: ${missing.join(', ')}` : true;
+})() === true);
+check('the paths are only drawn while they are showing', /if \(mapShows\.paths\) drawPathLayer\(\);/.test(html));
+check('the food is only marked on the full map',
+  /mapMarks\.length = 0;\s*if \(!mapIsFull\(\)\) return;/.test(bodyOf('gatherMarks') || ''));
+check('every kind of food has a drawing', (() => {
+  const kinds = [...(html.match(/const MARK_KINDS = \{([\s\S]*?)\n\};/)?.[1] || '').matchAll(/icon: '(\w+)'/g)].map((m) => m[1]);
+  const missing = kinds.filter((k) => !ICON_PATHS?.[k]);
+  return kinds.length >= 4 && !missing.length ? true : `kinds ${kinds.join(',')} missing ${missing.join(',')}`;
+})() === true);
+check('the fruit marked is the fruit still on the trees',
+  /if \(!orchard\.on\[i\]\) continue;/.test(bodyOf('clumpFruit') || ''));
+/* The first world this drew had 117 clumps worth a mark on the whole island. */
+check('and only the richest few of it, in view',
+  /fruitClumps\.sort\(\(a, b\) => b\.n - a\.n\);/.test(bodyOf('clumpFruit') || '')
+  && /if \(shown >= FRUIT_MARKS\) break;\s*if \(put\('fruit'/.test(bodyOf('gatherMarks') || ''));
+check('clicking a mark goes there and says what it is',
+  /travelTo\(hit\.mark\.x, hit\.mark\.z\);\s*toast\(hit\.mark\.label\);/.test(html));
+check('and a granary beside its own fire goes to whichever the pointer is nearer',
+  /if \(hit && \(!camp \|\| hit\.d < campDist\(camp, ev\.clientX, ev\.clientY\)\)\)/.test(html));
+check('hovering one says what it is', /if \(mapCanvas\.title !== tip\) mapCanvas\.title = tip;/.test(html));
+check('each band\'s raft is on the full map, wherever it is, with a layer of its own',
+  /if \(mapShows\.rafts && c\.raft\) \{/.test(bodyOf('gatherMarks') || '')
+  && /const out = at && raftBusy\(c\) \? c\.raftOut : null;/.test(bodyOf('gatherMarks') || '')
+  && /rafts: \{ icon: 'raft'/.test(html) && /data-layer="rafts" aria-pressed="true"/.test(html));
+/* The corner map: for glancing at, and a way into the full one. */
+check('the corner map is plain: land and water, the paths, and a dot for each band',
+  /if \(!mapIsFull\(\)\) \{ drawCornerMap\(\); return; \}/.test(bodyOf('drawMap') || '')
+  && /drawImage\(mapPlain \|\| mapBase, sx, sz, src, src, 0, 0, MAP_N, MAP_N\)/.test(bodyOf('drawCornerMap') || '')
+  && /drawPathLayer\(\);/.test(bodyOf('drawCornerMap') || '')
+  && !/mapShows\.people|gatherMarks|pack\.list/.test(bodyOf('drawCornerMap') || ''));
+check('and its ground is flat land and water, with no relief',
+  /const flat = h < SEA \? PLAIN_WATER : PLAIN_LAND/.test(bodyOf('renderMapBase') || ''));
+check('a click on the corner map opens the full map rather than travelling',
+  /if \(!mapIsFull\(\)\) \{ setMapSize\(FULL_MAP\); return; \}/.test(html)
+  && /const tip = !mapIsFull\(\) \? 'open the map'/.test(html));
+check('the E prompt sits above the order row, however tall it is',
+  /const lift = row && !row\.hidden && row\.offsetHeight \? row\.offsetHeight \+ 20 : 58;/.test(bodyOf('updateActPrompt') || ''));
+check('the map remembers what you put away',
+  /localStorage\.setItem\(MAP_LAYERS_STORE/.test(bodyOf('setMapLayer') || '')
+  && /localStorage\.getItem\(MAP_LAYERS_STORE\)/.test(html));
+check('and the funnel fills while anything is hidden',
+  /classList\?\.toggle\('filtering', MAP_LAYERS\.some/.test(bodyOf('paintLayerButtons') || ''));
+check('there is a line to put them all away or bring them all back',
+  /<button data-all aria-pressed="true"><i><\/i>All<\/button>/.test(html));
+check('which brings everything back when anything is hidden, and puts it all away when nothing is',
+  /if \(ev\.target\?\.closest\?\.\('button\[data-all\]'\)\) \{\s*setAllMapLayers\(!MAP_LAYERS\.every\(\(k\) => mapShows\[k\]\)\);/.test(html));
+check('and says so when it is some of each',
+  /on === MAP_LAYERS\.length \? 'true' : on === 0 \? 'false' : 'mixed'/.test(bodyOf('paintLayerButtons') || ''));
+check('and is remembered like the rest',
+  /localStorage\.setItem\(MAP_LAYERS_STORE/.test(bodyOf('setAllMapLayers') || ''));
+check('the list goes away with the full map', /if \(!at\.fills\) \{ mapZoom = 1; closeMapLayers\(\); \}/.test(html));
+check('and the marks do not need a browser to build',
+  /const paths = typeof Path2D === 'function';/.test(bodyOf('drawMarks') || ''));
+
+/* -------------------------------------------------------------------------
+   Doing it yourself
+
+   WASD walks the person you are behind; E does what is in front of them. Both
+   ride on what being led already is, and both keep the rule that a frame may
+   not draw from the world's stream.
+   ------------------------------------------------------------------------- */
+check('WASD walks them, the way the camera looks', (() => {
+  const body = bodyOf('steerFollowed') || '';
+  return /const sx = Math\.sin\(cam\.yaw\), sz = Math\.cos\(cam\.yaw\);/.test(body)
+    && ['KeyW', 'KeyA', 'KeyS', 'KeyD'].every((k) => body.includes("keys.has('" + k + "')"))
+    && /p\.leadX = p\.x \+ \(fx \/ len\) \* STEER_AHEAD;/.test(body) ? true : 'not steered off the camera';
+})() === true);
+check('and letting go of the keys stops them where they are',
+  /\} else if \(steering\) \{[\s\S]{0,120}?p\.leadX = p\.x; p\.leadZ = p\.z;/.test(bodyOf('steerFollowed') || ''));
+check('and it is done every frame', /updateOrders\(\);\s*steerFollowed\(\);\s*updateActPrompt\(\);/.test(html));
+/* The camera stops swinging round behind them while they are walked with keys,
+   or S turns them round, which turns the camera, which turns them round. */
+check('and the camera holds its bearing while they are', /if \(cam\.astern && !steering\) \{/.test(html));
+check('E does what is in front of them', /if \(P\.view === 'follow' && ev\.code === 'KeyE'\) \{\s*const done = actHere\(\);/.test(html));
+check('and it is left on them for the step to do, not done by the frame', (() => {
+  const body = bodyOf('actHere') || '';
+  return /p\.act = t;/.test(body) && !/\bluck\(\)/.test(body) && !/throwSpear\(|startAct\(/.test(body)
+    ? true : 'actHere does the act itself';
+})() === true);
+check('and the frame that works out what is there draws nothing either', (() => {
+  const body = (bodyOf('whatHere') || '') + (bodyOf('fruitNear') || '') + (bodyOf('preyNear') || '');
+  return !/\bluck\(\)/.test(body) && !/nearestFruit\(/.test(body) ? true : 'it draws from the stream';
+})() === true);
+check('the next turn starts it', /if \(p\.act\) \{ startAct\(p\); p\.act = null; \}/.test(html));
+check('as the errand of the same name, where they stand',
+  /p\.acting = true;\s*p\.job = job;\s*p\.state = 'work';/.test(bodyOf('startAct') || ''));
+check('and the spear is thrown in the step, by the stream',
+  /\bluck\(\)/.test(bodyOf('throwSpear') || '')
+  && !/throwSpear\(/.test(moduleSource('chronicle.js')) && !/throwSpear\(/.test(moduleSource('ui.js')));
+check('closer is surer, and the band\'s spears count',
+  /THROW\.point \* \(1 - 0\.7 \* d \/ THROW\.reach\)\s*\* \(1 \+ SKILL\.spearChance \* p\.camp\.skill\.spears\)/.test(bodyOf('throwSpear') || ''));
+/* The whole difference from an errand: somebody you did it with is still yours. */
+check('and when it is done they are still yours, not walked home',
+  /if \(p\.acting\) \{ endAct\(p\); break; \}\s*p\.state = 'return';/.test(html)
+  && /p\.job = 'led';\s*p\.state = 'goto';/.test(bodyOf('endAct') || ''));
+check('the errand timer runs for somebody you are leading only while they are doing something',
+  /if \(p\.timer <= 0 && \(!p\.led \|\| p\.acting\)\) \{/.test(html));
+check('and letting go drops whatever they were doing', /p\.acting = false;\s*p\.act = null;/.test(bodyOf('releaseLead') || ''));
+check('the prompt says what E would do before you press it',
+  /el\.innerHTML = '<kbd>E<\/kbd> ' \+ t\.words/.test(html) && /<div id="actPrompt" hidden><\/div>/.test(html));
+check('and the keys card says all three',
+  /<kbd>W<\/kbd><kbd>A<\/kbd><kbd>S<\/kbd><kbd>D<\/kbd><\/span><em><i>\(in Follow\)<\/i> walk them yourself/.test(html)
+  && /<kbd>E<\/kbd><\/span><em><i>\(in Follow\)<\/i> do what is in front of them/.test(html)
+  && /<kbd>Q<\/kbd><\/span><em><i>\(in Follow\)<\/i> let go/.test(html));
+check('the throw reach is the same number in both places',
+  Number(html.match(/THROW_REACH = (\d+);/)?.[1]) === Number(html.match(/THROW = \{ reach: (\d+),/)?.[1]));
+
+/* The basket, on screen: what is in it, how full, and what it is for. */
+check('the action bar says what they are carrying',
+  /<div id="bagHud" class="bag"><\/div>/.test(html) && /updateBagHud\(p\);/.test(bodyOf('updateOrders') || ''));
+check('how full: what it weighs against what they can carry',
+  /clamp\(loadOf\(p\) \/ carryCap\(p, SKILL\.basketHaul, p\.camp\.skill\?\.baskets \|\| 0\), 0, 1\)/.test(bodyOf('updateBagHud') || ''));
+check('and the slowness it quotes is the slowness in the step',
+  /if \(p\.carry \|\| p\.led\) want \*= carryFactor\(p\);/.test(html) && /carryFactor\(p\)/.test(bodyOf('updateBagHud') || ''));
+check('and the store it is all for', /daysOfFood\(p\.camp\)/.test(bodyOf('updateBagHud') || ''));
+/* Putting it away: E at the granary, or at the fire before there is one. */
+check('carrying something in the storage area, E puts it away',
+  /if \(hasLoad\(p\) && inStoreArea\(p\)\) \{/.test(bodyOf('whatHere') || ''));
+check('the same unloading a walk home ends in',
+  /bankLoad\(p\);\s*p\.state = 'idle';/.test(html)
+  && /if \(a\.kind === 'store'\) \{[\s\S]{0,200}?bankLoad\(p\);/.test(bodyOf('startAct') || ''));
+/* A band that has died out keeps its camp, not its row. */
+/* The storage area is a place with an edge, and the edge is drawn. */
+check('the storage area is the ground round the granaries',
+  /camp\.storeArea = \{ x: cx, z: cz, r \};/.test(html)
+  && /const r = STORE_AREA_EDGE \+ Math\.max\(/.test(html));
+check('with a ring on the ground round it, green once they are in',
+  /storeRing\.material\.color\.setHex\(inStoreArea\(p\) \? STORE_RING_IN : STORE_RING_OUT\);/.test(html)
+  && /updateStoreRing\(\);/.test(html));
+check('and the basket on screen says how far, or that they are there',
+  /at the granaries · E puts it away/.test(bodyOf('updateBagHud') || '')
+  && /granaries ' \+ Math\.ceil\(off\) \+ ' m/.test(bodyOf('updateBagHud') || ''));
+check('and there is a button for it, lit only where it works',
+  /data-act="store"/.test(html) && /const can = loadNow && inStoreArea\(p\);/.test(html));
+/* Foraging is only something where there is food: the grounds the map marks. */
+check('E forages at a berry thicket and nowhere else',
+  /on: d < THICKET_REACH/.test(bodyOf('actionTargets') || '')
+  && !/if \(sampleHeight\(p\.x, p\.z\) > SEA \+ 0\.9\) return \{ kind: 'gather'/.test(html)
+  && !/function forageGroundNear/.test(html));
+/* And a load can be put down. */
+check('G puts a handful down and shift+G all of it, and the step does it',
+  /if \(P\.view === 'follow' && ev\.code === 'KeyG'\) \{\s*if \(!dropHere\(ev\.shiftKey\)\)/.test(html)
+  && /p\.act = \{ kind: 'drop', all: Boolean\(all\) \};/.test(bodyOf('dropHere') || '')
+  && /const out = takeOut\(p\);\s*if \(!out\) break;\s*putDown\(p, out\);/.test(bodyOf('startAct') || ''));
+check('and nothing put down is lost: it is a pile, and E picks it up again',
+  !/if \(a\.kind === 'drop'\) \{[\s\S]{0,200}?p\.haul = 0;\s*emptyBag\(p\);/.test(bodyOf('startAct') || '')
+  && /putIn\(p, pile\);\s*removeDrop\(pile\);/.test(bodyOf('startAct') || '')
+  && /kind: 'pickup'/.test(bodyOf('actionTargets') || ''));
+check('a pile put down where another of its kind lies joins it, and anywhere else is its own',
+  /Math\.hypot\(d\.x - x, d\.z - z\) < DROP\.merge/.test(bodyOf('putDown') || ''));
+check('food left lying spoils, and stone does not',
+  /if \(d\.kind !== 'ore' && d\.kind !== 'wood' && simDay - d\.born > DROP\.keeps\)/.test(bodyOf('updateDrops') || ''));
+check('and what is lying on the ground survives a reload',
+  /drops: keptDrops\(\),/.test(html) && /restoreDrops\(st\.drops\);/.test(html));
+check('and there is a button for it too',
+  /data-act="drop"/.test(html) && /if \(a\?\.dataset\.act === 'drop'\) dropHere\(\);/.test(html)
+  && /<kbd>G<\/kbd><\/span><em><i>\(in Follow\)<\/i> put a handful down in front of them/.test(html));
+
+/* A load weighs something, for the person you are playing: run, not read. */
+const WEIGH = (() => {
+  const src = sources[srcFiles.indexOf('bag.js')];
+  try { return src ? new Function(src + '\nreturn { loadOf, carryCap, loadPace };')() : null; } catch { return null; }
+})();
+check('a basketful of food is a load of one', (() => {
+  if (!WEIGH) return 'no bag.js';
+  const b = (o) => ({ bag: { fruit: 0, berries: 0, fish: 0, game: 0, animal: null, ore: 0, oreKind: null, ...o } });
+  const ok = Math.abs(WEIGH.loadOf(b({ berries: 50 })) - 1) < 1e-9 && Math.abs(WEIGH.loadOf(b({ fish: 10 })) - 1) < 1e-9
+    && WEIGH.loadOf(b({ game: 1, animal: 'bison' })) > 1 && WEIGH.loadOf(b({ game: 1, animal: 'deer' })) < 1;
+  return ok ? true : 'weights are off';
+})() === true);
+check('the fuller, the slower, and none at all at or past full', (() => {
+  if (!WEIGH) return 'no bag.js';
+  const paces = [0, 0.25, 0.5, 0.75, 0.99].map((f) => WEIGH.loadPace(f, 1));
+  const falling = paces.every((v, i) => i === 0 || v < paces[i - 1]);
+  return falling && paces[0] === 1 && WEIGH.loadPace(1, 1) === 0 && WEIGH.loadPace(1.4, 1) === 0
+    ? true : paces.map((v) => v.toFixed(2)).join(' ');
+})() === true);
+check('better baskets carry more, and a child half as much',
+  WEIGH && WEIGH.carryCap({}, 0.6, 1) > WEIGH.carryCap({}, 0.6, 0)
+  && WEIGH.carryCap({ child: true }, 0.6, 0) === WEIGH.carryCap({}, 0.6, 0) / 2);
+/* The band's own foragers keep the flat fifth: they cannot put a load down, so
+   one that could stop them would stop them for good. */
+check('only the person you are playing is weighed down by it',
+  /if \(!p\.led\) return 0\.8;/.test(bodyOf('carryFactor') || ''));
+check('too heavy to walk is not too heavy to do what is in reach',
+  !/return 'heavy'/.test(bodyOf('actHere') || '')
+  && !/if \(tooHeavy\(p\)\) \{\s*p\.actResult = 'too heavy/.test(bodyOf('startAct') || ''));
+check('and the prompt says how to get moving', /put one down — too heavy to walk/.test(bodyOf('updateActPrompt') || ''));
+check('but too heavy to walk is too heavy to be sent anywhere: no order, no walk home, no letting go',
+  ['orderJob', 'handBack', 'sendHome'].every((f) => /if \(tooHeavyToSend\(p\)\) return false;/.test(bodyOf(f) || ''))
+  && /if \(b\.dataset\?\.order && b\.disabled !== heavy\) b\.disabled = heavy;/.test(bodyOf('updateOrders') || '')
+  && /if \(home && home\.disabled !== heavy\) home\.disabled = heavy;/.test(bodyOf('updateOrders') || ''));
+check('and the one you are playing is weighed by what is in the basket, whatever the carry flag says',
+  /if \(p\.carry \|\| p\.led\) want \*= carryFactor\(p\);/.test(html));
+/* One handful at a time, and the pile and the basket add up to what there was. */
+const HAND = (() => {
+  const src = sources[srcFiles.indexOf('bag.js')];
+  try { return src ? new Function(src + '\nreturn { takeOut, putIn };')() : null; } catch { return null; }
+})();
+check('a handful out is ten berries, and the food goes with it', (() => {
+  if (!HAND) return 'no bag.js';
+  const p = { haul: 0.3, bag: { fruit: 0, berries: 15, fish: 0, game: 0, animal: null, ore: 0, oreKind: null } };
+  const out = HAND.takeOut(p);
+  return out && out.kind === 'berries' && out.n === 10 && p.bag.berries === 5
+    && Math.abs(out.food + p.haul - 0.3) < 1e-9 ? true : JSON.stringify(out);
+})() === true);
+check('an animal comes out before anything lighter, and the last handful takes what is left', (() => {
+  if (!HAND) return 'no bag.js';
+  const p = { haul: 20.1, bag: { fruit: 0, berries: 5, fish: 0, game: 1, animal: 'deer', ore: 0, oreKind: null } };
+  const a = HAND.takeOut(p), b = HAND.takeOut(p);
+  return a.kind === 'game' && b.kind === 'berries' && p.haul === 0 && Math.abs(a.food + b.food - 20.1) < 1e-9
+    ? true : JSON.stringify([a, b, p.haul]);
+})() === true);
+check('and a pile picked up goes back in as it came out', (() => {
+  if (!HAND) return 'no bag.js';
+  const p = { haul: 0.1, bag: { fruit: 0, berries: 5, fish: 0, game: 0, animal: null, ore: 0, oreKind: null } };
+  HAND.putIn(p, { kind: 'berries', n: 10, food: 0.2 });
+  return p.bag.berries === 15 && Math.abs(p.haul - 0.3) < 1e-9 ? true : JSON.stringify(p);
+})() === true);
+
+/* Who you were watching survives a refresh. */
+check('who you are behind is kept as it changes, by id and seed',
+  /localStorage\.setItem\(FOCUS_STORE, JSON\.stringify\(\{ seed: P\.seed, view: P\.view, id \}\)\)/.test(bodyOf('keepFocus') || '')
+  && /updateStoreRing\(\);\s*keepFocus\(\);/.test(html));
+check('and only written when it changes, though it is asked every frame',
+  /if \(keptSeed === P\.seed && keptView === P\.view && keptId === id\) return;/.test(bodyOf('keepFocus') || ''));
+check('and put back only on the island it belongs to, by who they are',
+  /kept\.seed !== P\.seed/.test(bodyOf('restoreFocus') || '') && /return followPersonById\(kept\.id\);/.test(bodyOf('restoreFocus') || ''));
+check('once the world is standing and the view is set',
+  /setViewMode\(P\.view\);\s*placeCamera\(\);\s*\/\/[^\n]*\n\s*restoreFocus\(\);/.test(moduleSource('main.js')));
+check('and a browser with nowhere to keep it still boots',
+  /try \{ localStorage\.setItem\(FOCUS_STORE/.test(html) && /try \{ kept = JSON\.parse\(localStorage\.getItem\(FOCUS_STORE\)/.test(html));
+
+/* Food you can see: berry thickets, laid out with the island. */
+check('the thickets come off the world seed, the richest ground first, kept apart', (() => {
+  const body = bodyOf('buildThickets') || '';
+  return /const rng = mulberry32\(P\.seed \^ 0x[0-9a-f]+\);/.test(body) && !/\bluck\(\)/.test(body)
+    && /cand\.sort\(\(a, b\) => b\.rich - a\.rich\);/.test(body) && /THICKET\.apart/.test(body)
+    ? true : 'not seeded, ranked and spaced';
+})() === true);
+check('and their berries are the ground\'s own richness, picked thin and grown back',
+  /forageRichness\(/.test(bodyOf('thicketRipe') || '')
+  && /const n = Math\.round\(thicketRipe\(t\) \* THICKET\.berries\);/.test(bodyOf('updateThickets') || ''));
+check('and the map marks the thickets as the foraging',
+  /put\('forage', t\.x, t\.z, 'Berries: ' \+ ripeWord\(t\)\)/.test(bodyOf('gatherMarks') || ''));
+/* Every place E acts on has an edge, and the edge is the thing and a metre. */
+check('each area is the thing on the ground and about a metre more', (() => {
+  const n = (re) => Number(html.match(re)?.[1]);
+  const fire = n(/FIRE_REACH = ([\d.]+);/), dig = n(/DIG_BUFFER = ([\d.]+);/);
+  const fruit = n(/FRUIT_REACH = ([\d.]+);/), store = n(/STORE_AREA_EDGE = ([\d.]+);/);
+  const bad = [];
+  if (!(fire > 1.15 && fire < 3)) bad.push('fire ' + fire);
+  if (!(dig <= 1.5)) bad.push('dig ' + dig);
+  if (!(fruit <= 4)) bad.push('fruit ' + fruit);
+  if (!(store > 1.7 && store <= 2.5)) bad.push('store ' + store);
+  return bad.length ? bad.join(', ') : true;
+})() === true);
+check('a ring goes down on each thing within a short walk, and the one E would act on is green',
+  /actionRings\.setColorAt\(n, _rc\.setHex\(t === chosen \? RING_ON : RING_OFF\)\);/.test(bodyOf('updateActionRings') || ''));
+check('in the storage ring\'s own two colours',
+  Number(html.match(/RING_ON = (0x[0-9a-f]+), RING_OFF = (0x[0-9a-f]+);/)?.[1]) === Number(html.match(/STORE_RING_OUT = (0x[0-9a-f]+), STORE_RING_IN = (0x[0-9a-f]+);/)?.[2])
+  && Number(html.match(/RING_ON = (0x[0-9a-f]+), RING_OFF = (0x[0-9a-f]+);/)?.[2]) === Number(html.match(/STORE_RING_OUT = (0x[0-9a-f]+), STORE_RING_IN = (0x[0-9a-f]+);/)?.[1]));
+check('and what E does is the ring that is green', /if \(t\) \{ chosen = t; return t; \}/.test(bodyOf('whatHere') || '')
+  && /updateActionRings\(P\.view === 'follow' \? followedPerson\(\) : null\);/.test(html));
+
+/* Let go of, they do what somebody in their shoes would. */
+check('let go with a full load or an animal, they take it home',
+  /if \(load >= cap \* 0\.85 \|\| kind === 'game'\) \{ p\.goingHome = true; return 'home'; \}/.test(bodyOf('carryOn') || ''));
+check('and with room left, they go on with what they were doing',
+  /p\.orders = kind === 'fish' \? 'fish' : kind === 'wood' \? 'wood' : \(p\.bag\?\.ore > 0 \? 'quarry' : 'gather'\);/.test(bodyOf('carryOn') || ''));
+check('but an order or a walk home is what they were told, not what they would do',
+  /if \(p\.led\) releaseLead\(false, false\);\s*p\.orders = null;\s*p\.goingHome = true;/.test(html));
+
+/* Danger, for the person you are playing. */
+check('a tiger in sight is on screen, which way and how far',
+  /predatorNear\(p\.x, p\.z, watchRange\(\)\)/.test(bodyOf('updateDanger') || '')
+  && /Math\.atan2\(side, fore\)/.test(bodyOf('updateDanger') || ''));
+check('and you see less far at night',
+  /DANGER\.far \* \(DANGER\.night \+ \(1 - DANGER\.night\) \* daylight\(\)\)/.test(bodyOf('watchRange') || ''));
+check('and it says when it has chosen them', /hunting\(t\.animal, p\)/.test(bodyOf('updateDanger') || ''));
+check('Z takes cover: a tree if there is one, the ground if not',
+  /if \(P\.view === 'follow' && ev\.code === 'KeyZ'\)/.test(html)
+  && /p\.climbed = a\.tree;/.test(bodyOf('startAct') || '') && /p\.hiding = true;/.test(bodyOf('startAct') || ''));
+check('a tiger does not choose somebody up a tree, or somebody hidden until nearly on them',
+  /if \(p\.climbed\) continue;/.test(html) && /if \(p\.hiding && dist > h\.seesPeople \* 0\.25\) continue;/.test(html));
+check('and one already after them gives up',
+  /\|\| d\.prey\.person\.climbed/.test(html) && /d\.prey\.person\.hiding && Math\.hypot\(d\.prey\.person\.x - d\.x, d\.prey\.person\.z - d\.z\) > 12/.test(html));
+check('and the numbers wildlife.js writes out are the ones danger.js names',
+  Number(html.match(/HIDE_SEEN = ([\d.]+);/)?.[1]) === 0.25 && Number(html.match(/HIDE_LOST = (\d+);/)?.[1]) === 12);
+check('up a tree they stay up it, and are drawn up it',
+  /if \(p\.climbed\) return;/.test(bodyOf('steerFollowed') || '') && /\+ bounce \+ \(p\.lift \|\| 0\), p\.z\);/.test(html));
+check('E throws at a tiger before anything else',
+  /const FIRST = \['fight',/.test(html) && /what: 'fight'/.test(bodyOf('actionTargets') || ''));
+check('a hit kills it and is worth a line; a miss brings it on',
+  /logEvent\('slain'/.test(bodyOf('throwSpear') || '') && /a\.prey = \{ kind: 'person', person: p \};/.test(bodyOf('throwSpear') || '')
+  && /'slain',/.test(html.slice(html.indexOf('MILESTONES = new Set'), html.indexOf('MILESTONES = new Set') + 900)));
+check('how they are is one bar, life, with a number out of a hundred',
+  /const c = condition\(p\);/.test(bodyOf('vitalsHtml') || '') && /<u>life<\/u>/.test(bodyOf('vitalsHtml') || '')
+  && /'<strong>' \+ c\.life \+ '<\/strong>'/.test(bodyOf('vitalsHtml') || '')
+  && /const life = Math\.round\(clamp\(p\.life \?\? startLife\(p\), 0, 1\) \* 100\);/.test(bodyOf('condition') || '')
+  && !/function vbar/.test(html));
+check('and it says what to do about it', /hint = 'worn out — eat \(N\) or rest \(X\)';/.test(bodyOf('condition') || '')
+  && /hint = 'cold out here — get home';/.test(bodyOf('condition') || ''));
+check('walking, running, working, carrying and the cold all wear it down',
+  /\(LIFEBAR\.walk \* walk \+ LIFEBAR\.run \* run\) \* \(1 \+ clamp\(loadFrac, 0, 1\)\)/.test(bodyOf('spendLife') || '')
+  && /p\.acting \? LIFEBAR\.work : 0/.test(bodyOf('spendLife') || '')
+  && /LIFEBAR\.cold \* \(1 - \(p\.cold \?\? 1\)\)/.test(bodyOf('spendLife') || ''));
+check('running costs more than walking, and walking more than standing', (() => {
+  const L = html.slice(html.indexOf('const LIFEBAR = {'), html.indexOf('const LIFEBAR = {') + 900);
+  const n = (k) => Number(L.match(new RegExp('\\s' + k + ': ([\\d.]+),'))?.[1]);
+  return n('run') > n('walk') && n('walk') > n('idle') && n('idle') > 0 ? true : [n('idle'), n('walk'), n('run')].join(' ');
+})() === true);
+check('resting wins some back but never fills it; a meal wins more', (() => {
+  const cap = html.match(/restCap: \{ out: ([\d.]+), home: ([\d.]+) \}/);
+  const meal = Number(html.match(/meal: ([\d.]+),\s*\/\/ life a meal/)?.[1]);
+  const rest = html.match(/rest: \{ out: ([\d.]+), home: ([\d.]+) \}/);
+  if (!cap || !rest || !meal) return 'no LIFE';
+  return Number(cap[2]) < 1 && Number(cap[1]) < Number(cap[2]) && Number(rest[1]) < Number(rest[2])
+    && meal > Number(rest[2]) * 30 && /p\.life = clamp\(life \+ LIFEBAR\.meal \* share, 0, 1\);/.test(bodyOf('eat') || '')
+    ? true : [cap[0], rest[0], meal].join(' ');
+})() === true);
+check('and the step spends it, for the person you are playing, and it is their energy',
+  /spendLife\(p, slice, loadFrac\);/.test(html) && /want = lifeWant\(p, want\);/.test(html)
+  && /if \(p\.led && p\.life != null\) p\.energy = Math\.max\(0\.05, p\.life\);/.test(html));
+check('worn down they slow, and near the end cannot run',
+  /if \(p\.life < LIFEBAR\.runFrom\) want = Math\.min\(want, PERSON\.walk\);/.test(bodyOf('lifeWant') || '')
+  && /if \(!p\.led \|\| p\.life == null\) return want;/.test(bodyOf('lifeWant') || ''));
+check('and it survives a reload',
+  /lf: p\.life != null \? r2\(p\.life\) : undefined,/.test(html) && /life: Number\.isFinite\(r\.lf\) \? r\.lf : undefined,/.test(html));
+/* Rest and eat, for the person you are playing. */
+check('X rests and N eats, and the step does both',
+  /ev\.code === 'KeyX'\) \{\s*if \(!restHere\(\)\)/.test(html) && /ev\.code === 'KeyN'\) \{\s*if \(!eatHere\(\)\)/.test(html)
+  && /if \(a\.kind === 'rest'\) \{\s*p\.resting = !p\.resting;/.test(bodyOf('startAct') || '')
+  && /if \(a\.kind === 'eat'\) \{\s*p\.actResult = eat\(p\);/.test(bodyOf('startAct') || ''));
+check('and there are buttons for both',
+  /data-act="rest"/.test(html) && /data-act="eat"/.test(html)
+  && /if \(a\?\.dataset\.act === 'rest' && !restHere\(\)\)/.test(html) && /if \(a\?\.dataset\.act === 'eat' && !eatHere\(\)\)/.test(html));
+check('resting, they stay where they are, sat down',
+  /if \(p\.climbed \|\| p\.resting\) want = 0;/.test(html) && /else if \(p\.resting\) \{ wantCrouch/.test(html));
+/* Crawl, throw, and what is brought down. */
+check('down low they crawl, and nothing grazing notices them',
+  /else if \(p\.hiding\) want = Math\.min\(want, PERSON\.walk \* CRAWL\);/.test(html)
+  && /if \(!led\) threats\.push\(camera\.position\.x, camera\.position\.z\);\s*else if \(!led\.hiding\) threats\.push\(led\.x, led\.z\);/.test(bodyOf('collectThreats') || '')
+  && /if \(leadRunning\(\)\) p\.hiding = false;/.test(bodyOf('steerFollowed') || ''));
+check('and a crawl is slow', (() => { const c = Number(html.match(/const CRAWL = ([\d.]+);/)?.[1]); return c > 0 && c < 0.6; })());
+check('a throw from down low is surer', /\(p\.hiding \? THROW\.stalk : 1\)\);/.test(bodyOf('throwSpear') || '')
+  && Number(html.match(/stalk: ([\d.]+) \}/)?.[1]) > 1);
+check('a spear brings it down where it stood, rather than straight into the basket',
+  /a\.carcass = \{ until: simDay \+ CARCASS_DAYS, fall: -0\.5 \};/.test(bodyOf('throwSpear') || '')
+  && !/bagAdd\(/.test(bodyOf('throwSpear') || ''));
+check('and it lies there, still, until it is picked up — and does not come back to life meanwhile',
+  /if \(d\.carcass && drawCarcass\(d, i, spec, model, parts, slice\)\) continue;/.test(html)
+  && /_eAnim\.set\(0, d\.yaw, f \* Math\.PI \/ 2, 'YXZ'\);/.test(bodyOf('drawCarcass') || '')
+  && /\(a\) => a\.dead && !a\.carcass/.test(bodyOf('repopulate') || ''));
+check('E picks it up, onto the shoulder, as meat',
+  /kind: 'carcass'/.test(bodyOf('actionTargets') || '') && /const FIRST = \['fight', 'carcass',/.test(html)
+  && /bagAdd\(p, 'game', 1, key\);/.test(bodyOf('takeCarcass') || '')
+  && /if \(a\.kind === 'carcass'\) \{ takeCarcass\(p, a\.carcass\); return; \}/.test(bodyOf('startAct') || ''));
+check('the throw is drawn: the arm, and the spear in the air',
+  /p\.threw = \{ fromX: p\.x, fromZ: p\.z,/.test(html) && /if \(side === 0 && p\.throwPose > 0\) \{/.test(html)
+  && /spearMesh\.quaternion\.setFromUnitVectors\(_up, _dir\);/.test(bodyOf('updateSpearFlight') || '')
+  && /updateHunt\(\);/.test(html));
+check('and a ring round them shows how far a spear goes, green with something inside it',
+  /rangeRing\.material\.color\.setHex\(inReach \? RING_ON : RING_OFF\);/.test(bodyOf('updateThrowRange') || ''));
+check('resting pays back faster, and fastest at home', (() => {
+  const m = html.match(/const REST = \{\s*out: ([\d.]+),[^\n]*\n\s*home: ([\d.]+),/);
+  if (!m) return 'no REST';
+  return Number(m[2]) > Number(m[1]) && Number(m[1]) > 1
+    && /const heal = \(p\.sick \? PLAGUE\.drag : 1\) \* restBoost\(p\);/.test(html) ? true : m[0];
+})() === true);
+check('and only for somebody sat down on purpose: the band rest as they always have',
+  /return p\.resting \? \(atHome\(p\) \? REST\.home : REST\.out\) : 1;/.test(bodyOf('restBoost') || ''));
+check('and an illness passes quicker resting at home',
+  /p\.sick -= days \* \(p\.tended \? 1 \+ PLAGUE\.nurse : 1\) \* restHeal\(p\);/.test(html));
+check('a meal is out of the store at home, out of the basket anywhere',
+  /if \(atHome\(p\) && p\.camp\.food >= EAT\.meal\) \{\s*p\.camp\.food -= EAT\.meal;/.test(bodyOf('eat') || '')
+  && /ate = eatFromBag\(p, EAT\.meal\);/.test(bodyOf('eat') || ''));
+const MEAL = (() => {
+  const src = sources[srcFiles.indexOf('bag.js')];
+  try { return src ? new Function(src + '\nreturn { eatFromBag };')() : null; } catch { return null; }
+})();
+check('a meal out of the basket is berries first, and comes off the haul', (() => {
+  if (!MEAL) return 'no bag.js';
+  const p = { haul: 0.5, carry: 1, bag: { fruit: 0, berries: 20, fish: 2, game: 0, animal: null, ore: 0, oreKind: null } };
+  const ate = MEAL.eatFromBag(p, 0.3);
+  return Math.abs(ate - 0.3) < 1e-9 && p.bag.berries === 5 && p.bag.fish === 2 && Math.abs(p.haul - 0.2) < 1e-9
+    ? true : JSON.stringify([ate, p]);
+})() === true);
+check('and an empty basket is no meal', (() => {
+  if (!MEAL) return 'no bag.js';
+  const p = { haul: 0, carry: 0, bag: { fruit: 0, berries: 0, fish: 0, game: 0, animal: null, ore: 3, oreKind: 'stone' } };
+  return MEAL.eatFromBag(p, 0.3) === 0 && p.bag.ore === 3;
+})());
+check('the bubbles are small and see-through',
+  /float wide = clamp\(1\.8 \* perMetre/.test(html) && /const BUBBLE_OPACITY = 0\.8;/.test(html)
+  && /const HIDE = 'rgba\(248, 243, 231, 0\.55\)';/.test(html));
+check('and night and winter in the open make resting do less — for the person you are playing only',
+  /if \(!p\.led \|\| inCamp\(p\.x, p\.z, 0\)\) return 1;/.test(bodyOf('coldFactor') || ''));
+check('every tree is kept where it stands, so one can be climbed', /treeSpots\.push\(\{ x, z \}\);/.test(html));
+
+check('the panel lists the bands still living',
+  /if \(c\.gone\) return '';/.test(html.slice(html.indexOf('function renderTribes'), html.indexOf('function drawTribeChart'))));
+
+/* -------------------------------------------------------------------------
    A ring where you pointed
 
    From behind somebody's shoulder at three metres, a person setting off looks
@@ -2255,7 +2994,7 @@ check('the point they are walking to is marked',
   /export function updateLeadMark\(\)/.test(html.replace(/^export /gm, 'export '))
   || /function updateLeadMark\(\)/.test(html));
 check('and it is only there while somebody is being led',
-  /if \(!p \|\| !p\.led\) \{ if \(leadMark\) leadMark\.visible = false; return; \}/.test(html));
+  /if \(!p \|\| !p\.led \|\| steering\) \{ if \(leadMark\) leadMark\.visible = false; return; \}/.test(html));
 /* And nothing is built until there is something to mark. three.js gives every
    geometry, material and object a UUID out of Math.random, so a mesh made on
    the first frame regardless is a feature nobody has used yet spending draws —
@@ -2281,16 +3020,19 @@ check('and it survives a new world being built', (() => {
 check('and it is drawn every frame, from the one thing that runs every frame',
   /export function moveCamera\(dt\) \{\s*updateLeadMark\(\);/.test(html.replace(/^export /gm, 'export '))
   || /function moveCamera\(dt\) \{\s*updateLeadMark\(\);/.test(html));
-check('shift and W give them back',
-  /if \(ev\.code === 'KeyW' && ev\.shiftKey && P\.view === 'follow'\)/.test(html)
-  && /function releaseLead\(announce = true\)/.test(html));
-/* Read before `keys` sees the W, or letting go of somebody also tells them to
-   walk on the way out. */
-check('and letting go does not also tell them to walk', (() => {
-  const i = html.indexOf("if (ev.code === 'KeyW' && ev.shiftKey");
+check('Q gives them back',
+  /if \(P\.view === 'follow' && ev\.code === 'KeyQ'\) \{\s*if \(tooHeavyToSend\(followedPerson\(\)\)\) return;\s*if \(!releaseLead\(\)\)/.test(html)
+  && /function releaseLead\(announce = true, natural = true\)/.test(html));
+/* Read before `keys` sees the key: in Orbit Q and E move the rig, and letting go
+   of somebody must not also lower the camera. */
+check('and letting go does not also move the camera', (() => {
+  const q = html.indexOf("if (P.view === 'follow' && ev.code === 'KeyQ')");
+  const e = html.indexOf("if (P.view === 'follow' && ev.code === 'KeyE')");
   const k = html.indexOf('keys.add(ev.code);');
-  return i > 0 && k > i ? true : 'the release is handled after keys.add';
+  return q > 0 && e > 0 && k > q && k > e ? true : 'Q or E is handled after keys.add';
 })() === true);
+check('and shift and W is running forward now, not letting go',
+  !/ev\.code === 'KeyW' && ev\.shiftKey/.test(html));
 check('and they pick up their own life again',
   /p\.led = false;\s*p\.state = 'idle';\s*p\.timer = 0;/.test(html));
 
@@ -2301,7 +3043,7 @@ check('nothing else steers them while they are led', (() => {
   const want = [
     ["the tiger they'd run from", /if \(!p\.led && !p\.asleep && p\.panic <= 0 && nearestPredator/],
     ['dusk sending them home', /if \(!p\.led && day < 0\.25 && p\.job !== 'sleep'/],
-    ['the errand timer', /if \(p\.timer <= 0 && !p\.led\) \{/],
+    ['the errand timer', /if \(p\.timer <= 0 && \(!p\.led \|\| p\.acting\)\) \{/],
     ['waking them for the day', /if \(day >= 0\.25 && p\.job === 'sleep' && !p\.led\)/],
   ];
   const missing = want.filter(([, re]) => !re.test(html)).map(([n]) => n);
@@ -2653,7 +3395,8 @@ for (const part of ['p.head', 'p.hair', 'spec.head', 'spec.hump.size']) {
   check(`${part} is rounded`, html.includes(`roundBox(...${part})`));
 }
 for (const [what, call] of [['a spear', 'roundLimb(...p.spear)'],
-                            ['a bundle', 'roundBox(...p.load)'], ['a tail', 'roundLimb(...spec.tail)'],
+                            ['a heap', 'heapGeo(...p.load)'], ['a basket', 'basketGeoFrom(...p.basket)'],
+                            ['a tail', 'roundLimb(...spec.tail)'],
                             ['horns', 'roundLimb(...spec.horns.size)']]) {
   check(`${what} rounded`, html.includes(call), call);
 }
@@ -3160,7 +3903,7 @@ check('and having picked a side they keep it', /const DODGE_HOLD = \d+;/.test(ht
 check('until the way ahead is clear again', /if \(tryAt\(p\.yaw, WALKABLE\)\) \{ p\.dodgeUntil = 0; return true; \}/.test(html));
 check('or that side runs out of room', /p\.dodgeSide = -\(p\.dodgeSide \|\| 1\)/.test(html));
 // And the walking actually goes through it, rather than it merely existing.
-check('and the walk uses it', /if \(step > 0 && !stepPerson\(p, step\)\)/.test(html));
+check('and the walk uses it', /if \(step > 0 && !\(p\.onRaft \? raftStep\(p, step\) : stepPerson\(p, step\)\)\)/.test(html));
 check('the heading that worked is kept, so a spur is followed round',
   /p\.yaw = a;/.test(html));
 /* Somebody boxed in on every heading has to be able to leave, or they stand
@@ -3175,7 +3918,7 @@ check('which is looser than the ground they would choose',
    so the first bump on the way to a neighbour 260 metres off sent the visitor
    home, every time, and nobody ever arrived. */
 check('a visit is never given up because of a hillside',
-  /if \(p\.job !== 'visit'\) pickWork\(p\);/.test(html));
+  /if \(p\.job !== 'visit' && !p\.onRaft\) pickWork\(p\);/.test(html));
 
 group('long enough to get there');
 
@@ -3243,9 +3986,13 @@ check('and how far they still have to go',
 check('the numbers are tabular, so they do not dance while you read them',
   /#following \.where \{[^}]*font-variant-numeric: tabular-nums/.test(html));
 
-// A tenth of a unit of berries is still something in their arms.
+/* A tenth of a unit of berries is still something in their arms. It used to be
+   a number rounded to one place; it is counted things now, and the berries and
+   the catch are counted at least one apiece, so a small haul still says it is
+   something — and "food" when nothing was counted at all. */
 check('a small haul is not rounded away to nothing',
-  /p\.haul < 10 \? p\.haul\.toFixed\(1\) : p\.haul\.toFixed\(0\)/.test(caption));
+  /bagAdd\(p, 'berries', Math\.max\(1,/.test(html) && /bagAdd\(p, 'fish', Math\.max\(1,/.test(html)
+  && /\$\{bagWords\(p\.bag\) \|\| 'food'\}/.test(caption));
 
 /* -------------------------------------------------------------------------
    Starting again
@@ -3400,6 +4147,67 @@ check('a day of hunting is not', (() => {
   const leaked = noise.filter((k) => MILE.includes(k));
   return leaked.length ? `${leaked.join(', ')} kept` : true;
 })() === true);
+
+/* -------------------------------------------------------------------------
+   Quarries
+
+   Deposits laid out with the island, five kinds of rock in the quantities they
+   come in, each the size of what is left in it, and dug a trip at a time.
+   ------------------------------------------------------------------------- */
+const ORES_SRC = (() => {
+  const m = html.match(/const ORES = (\{[\s\S]*?\n\});/);
+  try { return m ? new Function(`return ${m[1]};`)() : null; } catch { return null; }
+})();
+const ORE_ORDER = ['stone', 'iron', 'bronze', 'silver', 'gold'];
+check('there are five kinds of rock worth digging',
+  Boolean(ORES_SRC) && ORE_ORDER.every((k) => k in ORES_SRC), Object.keys(ORES_SRC || {}).join(' '));
+check('and the rarer the metal, the fewer the places and the less in each', (() => {
+  if (!ORES_SRC) return 'no ORES';
+  for (let i = 1; i < ORE_ORDER.length; i++) {
+    const a = ORES_SRC[ORE_ORDER[i - 1]], b = ORES_SRC[ORE_ORDER[i]];
+    if (!(b.sites <= a.sites && b.amount[1] < a.amount[1])) return `${ORE_ORDER[i]} is not rarer than ${ORE_ORDER[i - 1]}`;
+  }
+  return true;
+})() === true);
+check('the deposits come off the world seed, not the step\'s stream',
+  /const rng = mulberry32\(P\.seed \^ 0x[0-9a-f]+\);/.test(bodyOf('buildDeposits') || '')
+  && !/\bluck\(\)/.test(bodyOf('buildDeposits') || ''));
+check('never in a camp, and never on top of each other',
+  /CAMP_CLEARING/.test(bodyOf('buildDeposits') || '') && /DEPOSIT_APART/.test(bodyOf('buildDeposits') || ''));
+check('and laid out after the camp sites are chosen',
+  /chooseCampSites\([^)]*\);[\s\S]{0,200}?buildDeposits\(\);/.test(html));
+check('a deposit stands the size of what is left in it',
+  /d\.left > 0 \? [\d.]+ \+ [\d.]+ \* Math\.cbrt\(d\.left \/ 100\) : 0/.test(bodyOf('depositRadius') || ''));
+check('and shrinks as it is dug', /d\.left -= took;\s*dressDeposit\(d\);/.test(bodyOf('mineDeposit') || ''));
+check('a band chooses among them rather than always the nearest',
+  /const d = pickDeposit\(camp, luck, /.test(html) && !/nearestRock\(camp\.x, camp\.z/.test(html));
+check('and only from the step, which is the only place that may roll',
+  !/pickDeposit\(/.test(moduleSource('ui.js')) && !/pickDeposit\(/.test(moduleSource('chronicle.js')));
+check('dug where they stood, and carried home',
+  /const took = mineDeposit\(d, ORES\[d\.kind\]\.per \* \(1 \+ p\.camp\.skill\.mining\)\);\s*if \(took > 0\) \{ bagAdd\(p, 'ore', took, d\.kind\); p\.carry = 1; \}/.test(html));
+check('and put on the pile, not in the food store',
+  /storeOre\(p\.camp, p\.bag\.oreKind \|\| 'stone', p\.bag\.ore\);/.test(html));
+check('the first of a metal is worth a line in the chronicle',
+  MILE.includes('find') && /logEvent\('find'/.test(html));
+check('a band\'s card says what it has dug', /<em>\(\$\{heldWords\(camp\)\}\)<\/em>/.test(html));
+check('the quarries are on the map, sized by what is left',
+  /put\('quarry', d\.x, d\.z,/.test(bodyOf('gatherMarks') || '')
+  && /Math\.cbrt\(d\.left \/ 100\)/.test(bodyOf('gatherMarks') || ''));
+check('with a line in the filter for every kind of rock',
+  ORE_ORDER.every((k) => new RegExp(`data-layer="${k}" aria-pressed="true"`).test(html)));
+check('and what is left in them survives a reload',
+  /quarries: deposits\.map\(\(d\) => d\.left\),/.test(html)
+  && /st\.quarries\.length === deposits\.length/.test(html));
+check('and so does the pile, which it never used to',
+  /stone: r2\(c\.stone \|\| 0\), ores: c\.ores \|\| undefined/.test(html) && /camps\[i\]\.stone = Number\(c\.stone\) \|\| 0;/.test(html));
+check('ore comes home the colour of the rock it came out of', (() => {
+  const src = moduleSource('move.js');
+  const bad = ['iron', 'bronze', 'silver', 'gold'].filter((k) => {
+    const hex = (src.match(new RegExp(`${k}:\\s*\\{ scale: [^}]*hex: (0x[0-9a-f]+)`)) || [])[1];
+    return !hex || Number(hex) !== ORES_SRC?.[k]?.rock;
+  });
+  return bad.length ? `${bad.join(', ')} differ` : true;
+})() === true);
 /* A sickness reaching a camp is the band's news; one person catching it off
    another is not. They shared a kind, so neither could be filtered alone. */
 check('a plague arriving and a person catching it are different kinds',
@@ -3479,11 +4287,11 @@ check('and the save carries the mastery, not the announcement', (() => {
    the simulation already had, because a skill that only shows on a readout is a
    readout.
    ------------------------------------------------------------------------- */
-check('there are fourteen of them', Object.keys(
+check('there are fifteen of them', Object.keys(
   (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
     .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
     .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
-).length === 14);
+).length === 15);
 check('and every one of them does something', (() => {
   const want = [
     ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
@@ -3492,6 +4300,7 @@ check('and every one of them does something', (() => {
     ['herbs', /SKILL\.herbCure \* \(p\.camp\.skill\.herbs \|\| 0\)/],
     ['tracking', /SKILL\.trackFar \* \(camp\?\.skill\?\.tracking \|\| 0\)/],
     ['fire', /PANIC\.fireSafe \* \(camp\?\.skill\?\.fire \|\| 0\)/],
+    ['woodcraft', /WOOD\.perTrip \* \(1 \+ \(p\.camp\.skill\.woodcraft \|\| 0\)\)/],
   ];
   const idle = want.filter(([, re]) => !re.test(html)).map(([n]) => n);
   return idle.length ? `${idle.join(', ')} changes nothing` : true;
@@ -3991,7 +4800,17 @@ check('which makes foraging far out a risk taken, not a thing that happens',
    person. Every chase that started, finished. Running home only decided where
    you died: eight years of it, twelve of sixteen deaths were tigers, and the
    island emptied. */
-const tigerHunt = html.slice(html.indexOf("hunt: {"), html.indexOf("hunt: {") + 1400);
+/* The tiger's hunting block: the first `hunt: {` that has a chase in it, not
+   the first in the page. icons.js sorts ahead of the wildlife and has an icon
+   by the same name, and taking that one made three tiger checks read a list of
+   path strings. */
+const tigerHunt = (() => {
+  for (let i = html.indexOf('hunt: {'); i >= 0; i = html.indexOf('hunt: {', i + 1)) {
+    const block = html.slice(i, i + 1400);
+    if (/chase: \d+,/.test(block)) return block;
+  }
+  return '';
+})();
 check('the tiger is faster than everything it hunts', (() => {
   const flee = [...html.matchAll(/fleeSpeed: ([\d.]+)/g)].map((m) => Number(m[1]));
   const jog = Number((html.match(/walk: [\d.]+, jog: ([\d.]+)/) || [, 0])[1]);
@@ -4281,16 +5100,29 @@ group('room to grow');
 
 const roomSrc = moduleSource('people.js');
 check('room is made for everybody the island can feed',
-  /setPeopleCapacity\(Math\.max\(count, PEOPLE_CEILING\)\)/.test(roomSrc));
+  /setPeopleCapacity\(Math\.max\(count, PEOPLE_ROOM\)\)/.test(roomSrc));
 check('and not for a multiple of the band that happens to start',
   !/setPeopleCapacity\(Math\.round\(clamp\(count \* 4/.test(roomSrc));
 /* Somebody may start more people than the ground would carry, and they have to
    be drawable on the first frame. */
 check('a band larger than the island still fits on it',
-  /Math\.max\(count, PEOPLE_CEILING\)/.test(roomSrc));
-check('the ceiling is the island, not a constant',
-  /PEOPLE_CEILING =\s*Math\.round\(Math\.min\(4000, \(WORLD \/ 1000\) \*\* 2 \* PEOPLE_PER_KM2\)\)/
+  /Math\.max\(count, PEOPLE_ROOM\)/.test(roomSrc));
+check('the room it starts with is the island, not a constant',
+  /PEOPLE_ROOM =\s*Math\.round\(Math\.min\(4000, \(WORLD \/ 1000\) \*\* 2 \* PEOPLE_PER_KM2\)\)/
     .test(moduleSource('params.js')));
+/* And it is only where the room starts. A band that fills it is given more:
+   every piece rebuilt twice the size, what was drawn and painted copied across,
+   and the new slots parked out of sight until somebody is born into them. */
+check('a band can outgrow the room it started with', (() => {
+  const body = bodyOf('growPeople') || '';
+  const needs = [
+    /while \(room < need\) room \*= 2;/, /instanceMatrix\.array\.set\(old\.instanceMatrix\.array\)/,
+    /instanceColor\.array\.set\(old\.instanceColor\.array\)/, /m\.setMatrixAt\(i, HIDDEN\)/,
+    /m\.count = old\.count;/, /setPeopleCapacity\(room\);/,
+  ];
+  const missing = needs.filter((re) => !re.test(body));
+  return missing.length ? `missing ${missing.map(String).join(' ')}` : true;
+})() === true);
 
 /* Same argument for the fires. Starting two camps capped an island at six of
    them whatever its size, and where a camp may go is decided by the ground —
@@ -4308,8 +5140,11 @@ check('not three times the number it started with',
 check('an empty slot is never submitted',
   /personParts\[key\]\.count = Math\.min\(from \* per, personParts\[key\]\.instanceMatrix\.count\)/
     .test(moduleSource('life.js')));
-check('and the only thing that refuses a birth is running out of room at all',
-  /if \(people\.length >= peopleCapacity\) break;/.test(html));
+check('and nothing refuses a birth for want of room: the room is made',
+  !/if \(people\.length >= peopleCapacity\) break;/.test(html)
+  && /if \(people\.length >= peopleCapacity\) growPeople\(people\.length \+ 1\);\s*recordPerson\(child\);\s*people\.push\(child\);/.test(html));
+check('and a saved world comes back at the size it was',
+  /growPeople\(st\.people\.length\);\s*for \(const r of st\.people\) people\.push\(personFromRecord\(r\)\);/.test(html));
 check('and a split, somewhere to put the fire',
   /if \(camps\.length >= campCapacity\) return false;/.test(html));
 
@@ -4433,7 +5268,7 @@ check('the ground keeps pace with the pointer',
   /const per = mapView\.span \/ mapCanvas\.getBoundingClientRect\(\)\.width;/.test(mapMod));
 check('and never off the side of the world',
   /const edge = \(WORLD - mapView\.span\) \/ 2/.test(mapMod));
-check('leaving full size drops the zoom with it', /if \(!at\.fills\) mapZoom = 1/.test(mapMod));
+check('leaving full size drops the zoom with it', /if \(!at\.fills\) \{ mapZoom = 1;/.test(mapMod));
 
 /* The relief is one image of the whole island, so zooming is a crop rather than
    a redraw: a keypress does not re-sample a quarter of a million heights. */
@@ -4459,7 +5294,7 @@ check('the roads are cached until the ground changes',
 
 check('camps wear their band code at this size', /mapCtx\.strokeText\(c\.code, at, py\)/.test(mapMod)
   && /mapCtx\.fillText\(c\.code, at, py\)/.test(mapMod));
-check('and only at this size', /if \(mapIsFull\(\)\) \{\s*mapCtx\.font/.test(mapMod));
+check('and only at this size', /if \(mapIsFull\(\) && mapShows\.camps\) \{\s*mapCtx\.font/.test(mapMod));
 check('a band that is gone is not labelled', /if \(c\.gone\) continue;/.test(mapMod));
 
 /* A scale that reads "0.83 km" is a scale nobody can use, so the bar is a round
@@ -4567,15 +5402,37 @@ check('and so does the sanctuary a well-kept fire buys',
   })());
 
 /* The one number that decides how fast the world looks. `pace()` multiplies
-   every walk, flight and camera move by PACE_DAY / dayLength, so the default
-   day has to be the length the speeds were written against or people move at a
-   speed nobody chose — 1.35 m/s becomes 4.05 at a twenty-minute day, which is a
-   sprint the walk animation is not playing. */
-check('the default day is the one the speeds are tuned against',
-  /dayLength: 3600,/.test(moduleSource('params.js'))
-  && /PACE_DAY = 3600/.test(html));
+   every walk, flight and camera move by paceDay / dayLength, and paceDay is
+   unset by default — the day itself — so the multiplier is 1 and a walk is the
+   1.35 m/s it is written as at any day length. Setting PACE_DAY is what makes a
+   short day a fast one: at a twelve-minute day against an hour the same walk
+   is 6.75 m/s, a sprint the walk animation is not playing. */
+check('unset, the reference day is the day itself', /paceDay: null,/.test(moduleSource('params.js')));
+check('and the default day is twenty-four minutes',
+  /dayLength: 1440,/.test(moduleSource('params.js')));
 check('and pace is that ratio, clamped',
-  /function pace\(\) \{ return clamp\(PACE_DAY \/ P\.dayLength, 0\.5, 12\); \}/.test(html));
+  /function pace\(\) \{ return clamp\(\(P\.paceDay \|\| P\.dayLength\) \/ P\.dayLength, 0\.5, 12\); \}/.test(html));
+/* Run, not just read: the page's own expression, given the two cases. */
+const pagePace = (() => {
+  const expr = html.match(/function pace\(\) \{ return (.*?); \}/)?.[1];
+  return expr ? new Function('P', 'clamp', `return ${expr};`) : null;
+})();
+const clampPace = (v, a, b) => Math.min(Math.max(v, a), b);
+check('with PACE_DAY unset, everything moves at written speed at any day length',
+  pagePace && [300, 1440, 3600, 7200].every((d) => pagePace({ paceDay: null, dayLength: d }, clampPace) === 1));
+check('and with it set, a short day is a fast one',
+  pagePace && pagePace({ paceDay: 3600, dayLength: 1440 }, clampPace) === 2.5);
+check('and an unset PACE_DAY stays unset on its way to the page',
+  !('paceDay' in resolveConfig({}).values));
+/* And the reference day is a setting now. Through the real resolver, so the
+   path and the range are the ones the server will actually apply. */
+const pacedAt = resolveConfig({ PACE_DAY: '1440' });
+check('PACE_DAY sets the reference day', pacedAt.values.paceDay === 1440,
+  JSON.stringify(pacedAt.values));
+check('and is kept inside the range pace can use',
+  resolveConfig({ PACE_DAY: '10' }).values.paceDay === 300
+  && resolveConfig({ PACE_DAY: '99999' }).values.paceDay === 7200);
+check('and nothing reads a fixed hour any more', !/const PACE_DAY\s*=/.test(html));
 /* The economy does not notice the day length: a day is always PACE_DAY seconds
    of activity however many real seconds it takes to watch. */
 check('so shortening the day speeds the world up rather than starving it',
@@ -4592,15 +5449,21 @@ check('so shortening the day speeds the world up rather than starving it',
 group('what they are doing now');
 
 const sayingSrc = moduleSource('chronicle.js');
+/* The words for a basket live in life.js, and doingWords calls them. */
+const bagWordsFn = (() => {
+  const src = moduleSource('bag.js');
+  const at = src.indexOf('function bagWords(');
+  return at < 0 ? () => '' : new Function(`${src.slice(at, src.indexOf('\n}\n', at) + 2)}\nreturn bagWords;`)();
+})();
 const doingWords = new Function('JOB_WORDS', 'INDOOR_WORDS', 'GOING_WORDS', 'CAME_WORDS',
-  'HOMEWARD', 'WALKING_AT', 'visitWords', 'fireWords',
+  'HOMEWARD', 'WALKING_AT', 'visitWords', 'fireWords', 'bagWords',
   sayingSrc.slice(sayingSrc.indexOf('function doingWords'),
     sayingSrc.indexOf('\n}', sayingSrc.indexOf('function doingWords')) + 2)
   + '\nreturn doingWords;');
 const WORDS = (k) => new Function(`return ${sayingSrc.slice(sayingSrc.indexOf(`const ${k} = {`) + `const ${k} = `.length, sayingSrc.indexOf('};', sayingSrc.indexOf(`const ${k} = {`)) + 2)}`)();
 const say = doingWords(WORDS('JOB_WORDS'), WORDS('INDOOR_WORDS'), WORDS('GOING_WORDS'),
   WORDS('CAME_WORDS'), new Set(['tend', 'craft', 'sleep', 'nurse']), 0.25, () => 'visiting',
-  () => 'at the fire');
+  () => 'at the fire', bagWordsFn);
 
 /* The bug, both halves of it. */
 check('somebody walking to the fire is not "at the fire"',
@@ -4644,8 +5507,32 @@ check('and what they were at is recorded where the choosing happens',
 /* Coming back is its own thing, and worth saying: a forager walking home with
    something is the moment the whole errand was for. */
 check('walking home says so', say({ job: 'gather', state: 'return', speed: 1.35 }) === 'walking home');
-check('and says when they are carrying something',
-  say({ job: 'gather', state: 'return', speed: 1.35, carry: 1 }) === 'carrying it home');
+/* And what, the way you would say it: not "carrying it home · carrying 10". */
+const bag = (o) => ({ fruit: 0, berries: 0, fish: 0, game: 0, animal: null, ...o });
+const home = (o) => say({ job: 'gather', state: 'return', speed: 1.35, carry: 1, ...o });
+check('and says what they are bringing home',
+  home({ bag: bag({ fruit: 10 }) }) === 'bringing home 10 fruit', home({ bag: bag({ fruit: 10 }) }));
+check('a catch is fish and a kill is the animal',
+  home({ job: 'fish', bag: bag({ fish: 5 }) }) === 'bringing home 5 fish'
+  && home({ job: 'hunt', bag: bag({ game: 1, animal: 'deer' }) }) === 'bringing home a deer'
+  && bagWordsFn(bag({ game: 2, animal: 'rabbit' })) === '2 rabbits'
+  && bagWordsFn(bag({ game: 1, animal: 'aurochs' })) === 'an aurochs',
+  home({ job: 'hunt', bag: bag({ game: 1, animal: 'deer' }) }));
+check('two things at most, and a sentence rather than a list',
+  home({ bag: bag({ fruit: 4, berries: 22, fish: 1 }) }) === 'bringing home 1 fish and 4 fruit',
+  home({ bag: bag({ fruit: 4, berries: 22, fish: 1 }) }));
+check('and food when nothing was counted', home({}) === 'bringing home food', home({}));
+check('a quarry trip is the rock it came out of',
+  bagWordsFn(bag({ ore: 2, oreKind: 'iron' })) === '2 iron ore'
+  && bagWordsFn(bag({ ore: 1, oreKind: 'stone' })) === '1 stone'
+  && bagWordsFn(bag({ ore: 3, oreKind: 'stone' })) === '3 stones',
+  bagWordsFn(bag({ ore: 2, oreKind: 'iron' })));
+/* The basket on screen lists all of it, where a caption says two things. */
+check('all of it, as a list rather than a sentence',
+  bagWordsFn({ fruit: 4, berries: 22, fish: 1, game: 0, ore: 0 }, true) === '1 fish, 4 fruit, 22 berries',
+  bagWordsFn({ fruit: 4, berries: 22, fish: 1, game: 0, ore: 0 }, true));
+check('the caption no longer gives a bare number of food units',
+  !/carrying \$\{p\.haul/.test(sayingSrc) && /!doing\.startsWith\('bringing home'\)/.test(sayingSrc));
 
 /* The threshold has to sit under a walk and over a standstill, or somebody
    coasting to a halt flickers between the two. */
@@ -4797,7 +5684,7 @@ check('travelling puts a full-page map away',
 check('but leaves a corner map where it is',
   /if \(mapIsFull\(\)\) setMapSize/.test(clickSrc) && !/setMapSize\(SMALL_MAP\);\s*const ground/.test(clickSrc));
 check('clicking one goes and looks at it rather than at the ground nearby',
-  /const camp = campUnder\(ev\.clientX, ev\.clientY\);\s*if \(camp\) \{\s*travelTo\(camp\.x, camp\.z\);/.test(clickSrc));
+  /const camp = campUnder\(ev\.clientX, ev\.clientY\);[\s\S]{0,400}?if \(camp\) \{\s*travelTo\(camp\.x, camp\.z\);/.test(clickSrc));
 check('and opens that band\'s card', /openTribe\(camps\.indexOf\(camp\)\);/.test(clickSrc));
 
 /* Three things a click can mean here, and a target you cannot see is a target
@@ -4886,8 +5773,10 @@ const fireSrc = moduleSource('move.js');
    whole village to be standing in the same place, and there are seven. */
 check('nothing aims at the middle of the village any more',
   !/p\.targetX = p\.camp\.x/.test(fireSrc) && !/p\.targetZ = p\.camp\.z/.test(fireSrc));
+/* Directly, or through homeward — which is homeFire for anybody carrying
+   nothing, and the granaries for anybody bringing food in. */
 check('they go to the fire they live at',
-  (fireSrc.match(/homeFire\(p\)/g) || []).length >= 8);
+  (fireSrc.match(/homeFire\(p\)|homeward\(p, |aimHome\(p, /g) || []).length >= 8);
 check('and "am I home yet" is asked of that fire too',
   /Math\.hypot\(p\.x - homeFire\(p\)\.x, p\.z - homeFire\(p\)\.z\) > 12/.test(fireSrc));
 
@@ -5045,7 +5934,7 @@ check('and a band that is gone is not walked to',
 
 /* On the map, because a graveyard is a place. */
 check('the burial ground is on the map',
-  /for \(const c of camps\) \{\s*if \(!c\.barrow\) continue;/.test(moduleSource('map.js')));
+  /for \(const c of mapShows\.barrows \? camps : \[\]\) \{\s*if \(!c\.barrow\) continue;/.test(moduleSource('map.js')));
 check('in a colour nothing else on the map uses',
   /fillStyle = 'rgba\(216, 210, 196, 0\.92\)'/.test(moduleSource('map.js')));
 /* How much is standing is the thing worth seeing from above; where it is, is
@@ -5123,28 +6012,29 @@ const mineSrc = moduleSource('move.js');
 /* Worked at an outcrop that is actually on the hillside. A spot invented for
    the errand is a person standing in a field pretending. */
 check('quarrying happens at a rock somebody can see',
-  /const at = nearestRock\(camp\.x, camp\.z, QUARRY_TRIP\.reach\);/.test(mineSrc)
-  && /function nearestRock\(x, z, within\)/.test(html));
+  /const d = pickDeposit\(camp, luck, [\s\S]{0,80}?\);[\s\S]{0,200}?depositRadius\(d\) \+ 0\.8;/.test(mineSrc)
+  && /depositMesh\.setMatrixAt\(slot, _m4\.compose\(_v, _q, _s\)\);/.test(html));
 check('and only the ones big enough to be worth the walk',
   /if \(s > 1\.1\) outcrops\.push\(\{ x, z \}\);/.test(html));
 check('the outcrops go with the world they belong to',
   /outcrops\.length = 0;/.test(moduleSource('world.js')));
 /* No rock within reach is not a person standing still all afternoon. */
 check('and a band with no rock near it does something else',
-  /p\.job = 'craft';\s*\/\/ no rock within reach/.test(mineSrc));
+  /p\.job = 'craft';\s*\/\/ nothing within reach/.test(mineSrc));
 
 /* Not while hungry, and not when the pile is already high. */
 check('nobody quarries on an empty store',
   /QUARRY_TRIP\.chance \* \(1 - hunger\) \* rested/.test(mineSrc));
-check('nor when the camp already has all it can keep',
-  /\(p\.camp\.stone \|\| 0\) < SKILL\.stoneMax/.test(mineSrc));
+check('nor for stone when the camp already has all it can keep',
+  /if \(d\.kind === 'stone' && stoneFull\) return 0;/.test(html)
+  && /quarryInReach\(p\.camp, \(p\.camp\.stone \|\| 0\) >= SKILL\.stoneMax\)/.test(mineSrc));
 
 /* The stock, which is the point of it: stone does not spoil, so a band can hold
    it and therefore trade it. */
 check('a trip brings stone back, and the better they are the more of it',
-  /SKILL\.stonePerTrip \* \(1 \+ p\.camp\.skill\.mining\)/.test(mineSrc));
+  /mineDeposit\(d, ORES\[d\.kind\]\.per \* \(1 \+ p\.camp\.skill\.mining\)\)/.test(mineSrc));
 check('the pile is capped — a camp is not a warehouse',
-  /Math\.min\(SKILL\.stoneMax,/.test(mineSrc));
+  /camp\.stone = Math\.min\(SKILL\.stoneMax,/.test(moduleSource('quarries.js')));
 check('and a new band starts at the rocks again', (() => {
   const splits = (html.match(/food: 0, pop: 0, need: 0, hunger: 1, wasEmpty: false,/g) || []).length;
   const stones = (html.match(/\n\s*stone: 0,/g) || []).length;
@@ -5192,7 +6082,10 @@ group('the size of a saved world');
 
 const LINE_MAX = Number((html.match(/LINE_MAX = (\d+)/) || [, 0])[1]);
 const GRAVE_MAX = Number((html.match(/GRAVE_MAX = (\d+)/) || [, 0])[1]);
-const PEOPLE_CAP = 4000;                 // the ceiling PEOPLE_CEILING clamps to
+/* There is no ceiling on people any more (growPeople), so there is no worst
+   case to measure against. This is the size a save is promised to fit at:
+   twenty thousand, which is past anything that still draws. */
+const PEOPLE_CAP = 20000;
 const STATE_LIMIT = Number((serverSrc.match(/STATE_LIMIT = ([\d_]+)/) || [, '0'])[1].replace(/_/g, ''));
 
 /* Measured off the shapes the code actually writes, not guessed: one lineage
@@ -5594,7 +6487,7 @@ const larderSrc = moduleSource('larder.js');
 check('a catch lands in the same haul as a basket of berries',
   /if \(p\.job === 'fish'\) \{[^]*?p\.haul \+= got;/.test(moduleSource('move.js')));
 check('and takes off the same ground that runs down',
-  /if \(p\.job === 'fish'\) \{[^]*?takeForage\(p\.x, p\.z\);/.test(moduleSource('move.js')));
+  /if \(p\.job === 'fish'\) \{[^]*?takeForage\(spot\.x, spot\.z\);/.test(moduleSource('move.js')));
 /* Baskets carry fish as well as berries. */
 check('and the same baskets carry it',
   /if \(p\.job === 'fish'\) \{[^]*?SKILL\.basketHaul \* p\.camp\.skill\.baskets/.test(moduleSource('move.js')));
@@ -5610,14 +6503,52 @@ check('and a landlocked band forages instead of standing about',
 /* The good water is the deep water, and most of it is out of reach from the
    bank — which is what a raft is for, and the only thing in this world that
    opens ground rather than improving what a band already does with it. */
-check('the good water is the deep water',
-  /if \(h < SEA\) deep = Math\.max\(deep, Math\.min\(1, -h \/ 22\)\);/.test(larderSrc));
-check('and most of it is out of reach without a raft',
-  /const reach = camp\?\.raft \? 1 : FISH\.fromBank;/.test(larderSrc)
-  && Number((larderSrc.match(/fromBank: ([\d.]+),/) || [, 1])[1]) < 0.5);
-check('a band builds one once it is sure it is worth the wood',
-  /camp\.skill\.fishing >= FISH\.raftAt && camp\.shore/.test(moduleSource('skills.js'))
-  && /camp\.raft = true;/.test(moduleSource('skills.js')));
+check('the fish are out in deep water',
+  /const deep = Math\.max\(0, Math\.min\(1, \(SEA - h - FISH\.shallow\) \/ FISH\.deep\)\);/.test(larderSrc));
+check('and there is no fishing at all without a raft',
+  /if \(!camp\?\.raft\) return 0;/.test(larderSrc)
+  && /\['fish', p\.camp\.raft && !raftBusy\(p\.camp\) \? FISH\.chance/.test(moduleSource('move.js'))
+  && !/nearestWater\(p\.x, p\.z, SHOW_WITHIN\)/.test(moduleSource('reach.js')));
+check('a band on a coast builds one out of the wood it has stacked',
+  /if \(camp\.shore && !camp\.raft && camp\.wood >= WOOD\.raft\) \{\s*camp\.wood -= WOOD\.raft;\s*camp\.raft = true;/.test(moduleSource('wood.js')));
+/* Wood: a skill, an errand, a stack by the granaries. */
+check('people go out for wood, with a raft to build or the stack low',
+  /\['wood', !p\.child \? woodWant\(p\.camp\) \*/.test(moduleSource('move.js'))
+  && /if \(camp\.shore && !camp\.raft\) return WOOD\.chance;/.test(moduleSource('wood.js'))
+  && /return \(camp\.wood \|\| 0\) < WOOD\.keep \? WOOD\.chance \* 0\.35 : 0;/.test(moduleSource('wood.js')));
+check('to a tree near the fire, and back with logs on the shoulder',
+  /if \(p\.job === 'wood'\) \{\s*const t = pickTree\(camp, luck\);/.test(moduleSource('move.js'))
+  && /if \(p\.job === 'wood'\) chopDone\(p\);/.test(moduleSource('move.js'))
+  && /bagAdd\(p, 'wood', logs\);/.test(moduleSource('wood.js')));
+check('and put away, the logs go on the stack',
+  /if \(p\.bag\?\.wood > 0\) \{ storeWood\(p\.camp, p\.bag\.wood\); p\.bag\.wood = 0; \}/.test(bodyOf('bankLoad') || ''));
+check('woodcraft is learned at the tree', /practise\(p\.camp, 'woodcraft', WOOD\.practise\);/.test(moduleSource('wood.js')));
+check('and E at a tree cuts wood, for the person you are playing',
+  /kind: 'wood'/.test(bodyOf('actionTargets') || '') && /a\.kind === 'wood'\) job = a\.kind;/.test(bodyOf('startAct') || ''));
+check('a log weighs something, and the stack is drawn',
+  Number(html.match(/wood: ([\d.]+),\s*\/\/ a log/)?.[1]) > 0 && /updateWoodpiles\(\);/.test(moduleSource('main.js')));
+/* Everything bagKind can say has a shape on the shoulder or in the basket: the
+   figure is drawn off that table, and a load it does not know is a crash. */
+check('and logs are drawn on the shoulder of whoever carries them',
+  /\n\s*wood:\s+\{ scale: new THREE\.Vector3\([^)]*\), hex: 0x[0-9a-f]+, basket: false \},/.test(moduleSource('move.js'))
+  && /if \(bag\.wood > 0\) return 'wood';/.test(moduleSource('bag.js')));
+check('and the band keeps its stack over a reload', /wd: r2\(c\.wood \|\| 0\)/.test(moduleSource('save.js'))
+  && /camps\[i\]\.wood = Number\(c\.wd\) \|\| 0;/.test(moduleSource('save.js')));
+check('the raft is on the water, tied up at a dock at the landing',
+  /updateRafts\(\);/.test(moduleSource('main.js')) && /function dockOf\(camp\)/.test(larderSrc)
+  && /raftMesh\.setMatrixAt\(i, _m\.compose\(_v, _q, _s\)\);/.test(moduleSource('rafts.js')));
+check('the band\'s fishers take it out to deep water and back',
+  /if \(p\.raftTrip \|\| \(p\.job === 'fish' && p\.state === 'work'\)\) raftTrip\(p\);/.test(moduleSource('move.js'))
+  && /const spot = pickFishing\(camp, luck\);/.test(moduleSource('rafts.js'))
+  && /const spot = p\.raftTrip \? p\.raftTrip\.spot : p;/.test(moduleSource('move.js')));
+check('one raft, one fisher at a time',
+  /return Boolean\(r\) && \(Boolean\(r\.raftTrip\) \|\| r\.onRaft === camp\) && people\.includes\(r\);/.test(moduleSource('rafts.js')));
+check('and you can take it out yourself: E at the landing, paddle, fish, E back at the dock',
+  /kind: 'raft'/.test(bodyOf('actionTargets') || '') && /kind: 'moor'/.test(bodyOf('actionTargets') || '')
+  && /if \(a\.kind === 'raft' \|\| a\.kind === 'moor'\)/.test(bodyOf('startAct') || '')
+  && /p\.onRaft \? raftStep\(p, step\) : stepPerson\(p, step\)/.test(moduleSource('move.js')));
+check('a raft, and whoever is out on one, survive a reload — ashore',
+  /raft: c\.raft \? 1 : 0/.test(moduleSource('save.js')) && /x: r2\(landing\(p\)\.x\)/.test(moduleSource('save.js')));
 
 /* And the sea does not have a winter the way the ground does, which is the
    whole point of a coast. */
@@ -5630,7 +6561,7 @@ check('winter takes less off the water than off the ground', (() => {
 /* And the mistake foraging already made once: one landing is everybody in the
    same water until it is fished out, with nothing telling them to walk along
    the beach. */
-check('fishing spreads along the coast rather than sitting on one spot',
+check('fishing spreads over the water rather than sitting on one spot',
   /function pickFishing\(camp, luck\)/.test(larderSrc)
   && /const value = \(worth - away \/ 700\) \* \(0\.78 \+ luck\(\) \* 0\.44\);/.test(larderSrc));
 
@@ -5744,22 +6675,41 @@ group('the load');
    nothing about what they had been doing. */
 check('a load takes the shape of the thing it is',
   /const LOADS = \{/.test(moduleSource('move.js'))
-  && /gather:\s*\{ scale:[^]*?hunt:\s*\{ scale:[^]*?fish:\s*\{ scale:/.test(moduleSource('move.js')));
-check('and a catch is not the same shape as a joint of meat', (() => {
+  && ['berries', 'fruit', 'fish', 'game', 'stone'].every((k) =>
+    new RegExp(`${k}:\\s*\\{ scale:`).test(moduleSource('move.js'))));
+check('and a catch is not the same shape as a kill', (() => {
   const src = moduleSource('move.js');
   const grab = (k) => (src.match(new RegExp(`${k}:\\s*\\{ scale: new THREE\\.Vector3\\(([\\d., ]+)\\)`)) || [, ''])[1];
-  return grab('fish') !== grab('hunt') && grab('fish') !== grab('gather');
+  return grab('fish') !== grab('game') && grab('fish') !== grab('berries');
 })());
-check('stone comes home the same way, being also a thing somebody carries',
-  /quarry:\s*\{ scale:/.test(moduleSource('move.js')));
-/* One geometry still: a person is seventeen instanced pieces and a fourth load
-   mesh is another two thousand slots. */
-check('and it is still one mesh, scaled',
-  /_mChain\.scale\(kind\.scale\);/.test(moduleSource('move.js')));
+/* The things you pick go in a basket; an animal goes over the shoulders. */
+check('berries, fruit and fish come home in a basket, and an animal does not', (() => {
+  const src = moduleSource('move.js');
+  const inBasket = (k) => new RegExp(`${k}:\\s*\\{[^}]*basket: true`).test(src);
+  return inBasket('berries') && inBasket('fruit') && inBasket('fish') && !inBasket('game');
+})());
+check('the basket is a part of a person, painted wicker',
+  PERSON_PARTS.basket === 1 && /personParts\.basket\.setColorAt\(i, _c\.setHex\(0x9a7446\)\)/.test(html));
+check('and heaped to how full it is',
+  /const full = clamp\(p\.haul \/ BASKET_FULL, [\d.]+, [\d.]+\);/.test(moduleSource('move.js')));
+check('and put away with the load',
+  /personParts\.basket\.setMatrixAt\(i, HIDDEN\);\s*personParts\.load\.setMatrixAt\(i, HIDDEN\);\s*p\.loadKind = null;/.test(moduleSource('move.js')));
 /* The colour of a load is a fact about the errand, not about the frame. */
 check('the colour is written when it changes hands, not every frame',
-  /if \(p\.loadKind !== p\.job\) \{/.test(moduleSource('move.js'))
+  /if \(p\.loadKind !== key\) \{/.test(moduleSource('move.js'))
   && /p\.loadKind = null;/.test(moduleSource('move.js')));
+
+/* Counted where it is made, in the units you would count it in, and the food
+   the store gets is the sum it always was. */
+check('a foraging trip is counted as berries and fruit',
+  /bagAdd\(p, 'berries', Math\.max\(1, Math\.round\(ground \* hands \/ BAG\.berry\)\)\);\s*bagAdd\(p, 'fruit', Math\.round\(fruit \/ ORCHARD\.worth\)\);/.test(html)
+  && /const got = \(ground \+ fruit\) \* baskets \* \(p\.child \? FORAGE\.childHaul : 1\);/.test(html));
+check('a catch as fish', /bagAdd\(p, 'fish', Math\.max\(1, Math\.round\(got \/ BAG\.fish\)\)\);/.test(html));
+check('a kill as the animal it was', /bagAdd\(p, 'game', 1, prey\.pack\.spec\.key\);/.test(html));
+check('and the basket is emptied with the haul, into the store',
+  /p\.haul = 0;\s*emptyBag\(p\);/.test(html));
+check('and what is in it survives a reload',
+  /bg: p\.haul > 0 && p\.bag \?/.test(html) && /bag: Array\.isArray\(r\.bg\)/.test(html));
 
 /* -------------------------------------------------------------------------
    A face, and where the detail goes

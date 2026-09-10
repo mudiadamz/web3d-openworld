@@ -96,7 +96,7 @@ will tell you so after six seconds. three.js r169 is pulled from a CDN
 
 Every knob on the panel can be given a starting value by an environment
 variable, so a world can be described by a `.env` file and handed to someone
-else. `.env.example` lists all forty-two of them with their ranges. Real environment
+else. `.env.example` lists all forty-three of them with their ranges. Real environment
 variables win over the file, and a `--flag` wins over both.
 
 ```
@@ -104,8 +104,8 @@ SEED  QUALITY                             the world
 WIND  WIND_DIR  GUST                      wind
 VIEW  FOV                                 camera
 MODELS                                    real geometry for the wildlife
-SHADOWS  WATER  SOUND  VOLUME             rendering and sound
-TIME  DAY_LENGTH  YEAR_LENGTH  EXPOSURE    time, sky and seasons
+SHADOWS  WATER  SOUND  VOLUME  EXPOSURE   rendering and sound
+TIME  DAY_LENGTH  PACE_DAY  YEAR_LENGTH   time, sky and seasons
 GRASS  TREES  ROCKS  FLOWERS  FRUIT       vegetation
 STREAMS  WAVES                            water
 BISON  DEER  RABBITS  BIRDS  BUTTERFLIES  wildlife
@@ -1132,8 +1132,9 @@ Name a number of years on the panel and press **Run years**. The world runs on
 with nothing drawn, a progress bar says where it has got to, and when it stops
 you are looking at what it arrived at.
 
-The clock goes to 16× and 16× is nothing: a year is twenty-four days of an hour
-each, so watching a decade at full speed is fifteen hours of sitting there.
+The clock goes to 16× and 16× is nothing: a year is twenty-four days of
+twenty-four minutes each, so watching a decade at full speed is six hours of
+sitting there.
 
 **It is not faked.** The food in a store is not a rate — it is what people
 actually carried home, one foraging trip at a time — and a band's skills are
@@ -2243,11 +2244,17 @@ exists pays for the whole thing and more:
 
 ## Pace
 
-Every speed in the world — a walk, a jog, a deer's flight, the camera — is tuned
-against an hour-long day, and then scaled by how compressed the day actually is.
-**A short day is a fast one.** Halve `DAY_LENGTH` and everything moves twice as
-quickly, so a walk across camp costs the same slice of a day whichever length
-you pick, and the sun does not race past a band that is still ambling.
+Every speed in the world — a walk, a jog, a deer's flight, the camera — is
+multiplied by `PACE_DAY / DAY_LENGTH`. **By default `PACE_DAY` is the day
+itself**, so the multiplier is 1: a walk is 1.35 m/s whatever `DAY_LENGTH` says,
+and a shorter day is a day with less done in it.
+
+**Set `PACE_DAY` and a short day becomes a fast one instead.** It is how many
+seconds of errands a day holds, and the food a band needs was balanced against
+3600 of them — so `PACE_DAY=3600` with the default 24-minute day is everything
+at 2.5× and a full day's work, while leaving it unset is walking pace and 40% of
+the errands against the same mouths to feed. A balance setting as much as a
+speed one.
 
 The multiplier is clamped to 0.5×–12×, and the step it produces to 0.25s. Below
 about a five-minute day the world stops keeping up — that is deliberate, and far
@@ -2532,7 +2539,7 @@ for each. Travelling lands one rig now.
 
 Three modes, cycled with `C` or picked on the panel. **Fly** is the default.
 
-**There is no move speed to adjust.** One speed, and `DAY_LENGTH` sets it — see
+**There is no move speed to adjust.** One speed, and `PACE_DAY` against `DAY_LENGTH` sets it — see
 below.
 
 | mode | what it is |
@@ -2575,7 +2582,7 @@ and drags that point along as you walk, so the ground clamp is always in frame
 and you can never really leave head height. Rather than bend orbit into
 something it is not, it became one option of three.
 
-The clock runs on its own — a full day takes an hour by default, and the only
+The clock runs on its own — a full day takes twenty-four minutes by default, and the only
 time control is how long that day lasts. Everything else is on the panel: day
 length, exposure, wind strength/direction/gustiness, nature sound and volume,
 the population of each species, grass/tree/rock density, quality, shadows,
@@ -2825,6 +2832,9 @@ and the hunting rather than to a birth-rate constant.
 An `InstancedMesh` cannot be resized, so the meshes are allocated with headroom
 — **for everybody the island can feed**, which is 195 people per square
 kilometre: 499 on the default 1600 m map, 1997 at 3200, and 4000 at the top.
+**That is where the room starts, not a ceiling**: when the bands fill it, every
+piece of a person is built again at twice the size, what was drawn is copied
+across, and they go on. Nothing refuses a birth for want of room.
 Every slot is given a skin, garment and hair colour up front, including the
 empty ones, because a child born on day forty has to look like a person the
 instant it exists.
@@ -2836,7 +2846,8 @@ the world behind it. Allocating for the crowd instead costs a matrix per empty
 slot and no drawing at all, because the draw count is turned down to the band
 that exists: about a kilobyte a person across the seventeen pieces, so room for
 two thousand is a couple of megabytes and no frames. What stops a band now is
-the island — the ground it forages, the winters, and how many fires fit on it.
+the island — the ground it forages, the winters, and how many fires fit on it —
+and, on a big enough one, the frame rate.
 
 `FERTILITY` scales the birth rate; zero is a band that will not replace itself.
 

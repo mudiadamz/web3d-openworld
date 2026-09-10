@@ -5,7 +5,7 @@ import {
   buildField, clamp, field, fieldCell, fieldSeg, flatnessAt, mulberry32, sampleHeight
 } from './noise.js';
 import {
-  camera, controls, renderer, starUniforms, streamMaterial, sunLight, waterUniforms,
+  camera, controls, renderer, seasonName, starUniforms, streamMaterial, sunLight, waterUniforms,
   windUniforms
 } from './scene.js';
 import { roleWeight } from './skills.js';
@@ -21,7 +21,7 @@ import {
 } from './wildlife.js';
 import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
 import {
-  CAMP_CLEARING, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
+  CAMP_CLEARING, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
 import { buildPaths, tread } from './paths.js';
 import {
@@ -29,6 +29,18 @@ import {
 } from './life.js';
 import { followIdx, leadRunning, syncLookFromCamera } from './chronicle.js';
 import { renderMapBase } from './map.js';
+import {
+  DIG_REACH, ORES, buildDeposits, depositRadius, mineDeposit, pickDeposit, quarryInReach, storeOre
+} from './quarries.js';
+import { BAG, bagAdd, bagKind, bagWords, carryCap, emptyBag, hasLoad, loadOf, loadPace, putIn, takeOut } from './bag.js';
+import { chopDone, pickTree, storeWood, woodWant } from './wood.js';
+import { pileWords, putDown, removeDrop } from './drops.js';
+import { takeCarcass, throwSpear } from './spear.js';
+import { boardRaft, landRaft, moorRaft, raftBusy, raftStep, raftTrip } from './rafts.js';
+import { dockOf } from './larder.js';
+import { buildThickets } from './thickets.js';
+import { CLIMB_HEIGHT, CLIMB_REACH, CRAWL } from './danger.js';
+import { atHome, eat, lifeWant, restBoost, spendLife } from './vitals.js';
 import { arm } from './ui.js';
 import { updateHud } from './main.js';
 
@@ -142,6 +154,189 @@ export function stepPerson(p, step) {
 
    Doubled and a bit, because going round a hill is the normal case rather than
    the exception. */
+/* Points somebody at home: the granaries if they are carrying food, their own
+   fire if not. Two draws from the stream whichever it is, the same two the
+   fire always took, so a band carrying nothing walks exactly as it did. */
+function aimHome(p, spread) {
+  const to = homeward(p, spread);
+  p.targetX = to.x + (luck() - 0.5) * to.spread;
+  p.targetZ = to.z + (luck() - 0.5) * to.spread;
+}
+
+/* -------------------------------------------------------------------------
+   Doing it yourself, in the step
+
+   E leaves an act on the person (actHere, in chronicle.js); the next turn
+   starts it here. It is the errand of the same name, done where they stand: the
+   same work state, the same yields at the end of it from the same ground, the
+   tools making it quicker the same way. A spear is thrown at once. What is
+   different is afterwards — see endAct.
+   ------------------------------------------------------------------------- */
+/* Cold, for the person you are playing: out in the open, resting does less at
+   night and less again in winter. The band's own people are not touched — the
+   balance they live by was set without it. */
+export const COLD = { night: 0.6, winter: 0.5 };
+export function coldFactor(p, day) {
+  if (!p.led || inCamp(p.x, p.z, 0)) return 1;
+  return (day < 0.3 ? COLD.night : 1) * (seasonName === 'winter' ? COLD.winter : 1);
+}
+
+/* How much of their pace what they carry leaves them. The band's own foragers
+   keep the flat fifth off a walk they always had: they carry one trip's worth
+   and no more, and they have no way to put a load down, so a load that could
+   stop them would stop them for good. Somebody you are playing carries what
+   you give them, and it weighs what it weighs. */
+export function carryFactor(p) {
+  if (!p.led) return 0.8;
+  return loadPace(loadOf(p), carryCap(p, SKILL.basketHaul, p.camp.skill?.baskets || 0));
+}
+
+/** At or past what they can carry: they cannot walk — though what is in
+    reach they can still do, and G puts it down a handful at a time. */
+export function tooHeavy(p) {
+  return loadOf(p) >= carryCap(p, SKILL.basketHaul, p.camp.skill?.baskets || 0);
+}
+
+/* Everything they are carrying, into the camp: the food into the store, the
+   ore onto the pile. Where every walk home ends, and where E at the granary
+   ends — one unloading, so the two cannot come to disagree about what putting
+   it away means. */
+function bankLoad(p) {
+  /* Ore to the camp's pile rather than the store: nobody eats it. */
+  if (p.bag?.ore > 0) {
+    storeOre(p.camp, p.bag.oreKind || 'stone', p.bag.ore);
+    p.bag.ore = 0;
+    p.bag.oreKind = null;
+  }
+  // Wood onto the camp's stack, where a raft is built from it (wood.js).
+  if (p.bag?.wood > 0) { storeWood(p.camp, p.bag.wood); p.bag.wood = 0; }
+  /* Remembered for the moment they stand here after, which is the
+     bubble saying they are putting it away. */
+  p.stowed = p.haul > 0;
+  if (p.haul > 0) {
+    p.camp.food += p.haul;
+    /* Kept per person as well as added to the store. The store is what
+       the band has; this is what each of them put into it, which is a
+       different and more interesting number — it is the difference
+       between a good hunter and somebody who mostly tends the fire. */
+    p.brought = (p.brought || 0) + p.haul;
+    p.haul = 0;
+    emptyBag(p);
+  }
+  p.carry = 0;
+}
+
+export const ACT_TIME = { gather: 3.5, fish: 4.5, quarry: 5, tend: 3, hunt: 1, wood: 5 };
+
+function startAct(p) {
+  const a = p.act;
+  if (!a || !p.led || p.acting) return;
+  /* Putting it away is not an errand: it is done the moment they are told,
+     where they stand, and said the frame after. */
+  if (a.kind === 'store') {
+    if (hasLoad(p)) {
+      const said = bagWords(p.bag) || 'what they carried';
+      bankLoad(p);
+      p.actResult = 'put away ' + said;
+    }
+    return;
+  }
+  /* Put down, a handful at a time — or all of it — in front of where they
+     stand, as a pile that stays there and can be picked up again. */
+  if (a.kind === 'drop') {
+    let first = null;
+    for (;;) {
+      const out = takeOut(p);
+      if (!out) break;
+      putDown(p, out);
+      if (!first) first = out;
+      if (!a.all) break;
+    }
+    if (first) p.actResult = a.all ? 'put it all down' : 'put down ' + pileWords(first);
+    return;
+  }
+  // Something they brought down, onto the shoulder.
+  if (a.kind === 'carcass') { takeCarcass(p, a.carcass); return; }
+  // The band's raft, out from its dock and back to it (rafts.js).
+  if (a.kind === 'raft' || a.kind === 'moor') { p.actResult = a.kind === 'raft' ? boardRaft(p) : moorRaft(p); return; }
+  /* Picked back up, the whole pile, into the basket as it came out of it. */
+  if (a.kind === 'pickup') {
+    const pile = a.pile;
+    if (pile) {
+      putIn(p, pile);
+      removeDrop(pile);
+      p.actResult = 'picked up ' + pileWords(pile);
+    }
+    return;
+  }
+  /* Sitting down to rest, and up again: resting pays back energy faster than
+     standing about, and faster still at home (vitals.js). */
+  if (a.kind === 'rest') {
+    p.resting = !p.resting;
+    if (p.resting) { p.speed = 0; p.hiding = false; }
+    p.actResult = !p.resting ? 'up from resting' : atHome(p) ? 'resting at home' : 'resting — faster at home';
+    return;
+  }
+  // A meal: out of the store at home, out of the basket anywhere.
+  if (a.kind === 'eat') {
+    p.actResult = eat(p);
+    return;
+  }
+  /* Taking cover: up the tree they are at, or down where they stand — and
+     the same again to come down, or to stand. Allowed under any load: a tiger
+     does not wait for somebody to put their basket down. */
+  if (a.kind === 'cover') {
+    p.resting = false;
+    if (p.climbed) { p.climbed = null; p.lift = 0; p.actResult = 'down from the tree'; }
+    else if (p.hiding) { p.hiding = false; p.actResult = 'up from cover'; }
+    else if (a.tree && Math.hypot(a.tree.x - p.x, a.tree.z - p.z) < CLIMB_REACH + 0.5) {
+      p.climbed = a.tree;
+      p.lift = CLIMB_HEIGHT;
+      p.x = a.tree.x + 0.35;
+      p.z = a.tree.z;
+      p.leadX = p.x;
+      p.leadZ = p.z;
+      p.speed = 0;
+      p.actResult = 'up a tree';
+    } else {
+      p.hiding = true;
+      p.speed = 0;
+      p.actResult = 'hiding — keep still';
+    }
+    return;
+  }
+  /* Too heavy to walk is not too heavy to do anything: what is in reach can
+     still be done. Walking is what a load stops (carryFactor). */
+  let job = null;
+  if (a.kind === 'hunt') { job = 'hunt'; throwSpear(p, a.prey); }
+  else if (a.kind === 'dig') { if (a.deposit && a.deposit.left > 0) { job = 'quarry'; p.digging = a.deposit; } }
+  else if (a.kind === 'fish' || a.kind === 'tend' || a.kind === 'gather' || a.kind === 'wood') job = a.kind;
+  if (!job) return;
+  p.resting = false;
+  p.acting = true;
+  p.job = job;
+  p.state = 'work';
+  p.prey = null;
+  p.visiting = null;
+  p.hasSpear = job === 'hunt';
+  p.targetX = p.x;
+  p.targetZ = p.z;
+  p.timer = ACT_TIME[job] * (1 - SKILL.toolSpeed * (p.camp.skill?.tools || 0));
+}
+
+/* Done, and still yours: nobody walks them home with it, because you are
+   still holding their hand. They stand where they did it, led, until you
+   point them somewhere or let go. */
+function endAct(p) {
+  p.acting = false;
+  p.hasSpear = false;
+  p.job = 'led';
+  p.state = 'goto';
+  p.leadX = p.x;
+  p.leadZ = p.z;
+  p.timer = 0;
+}
+
 export function travelTimeout(p) {
   const dist = Math.hypot(p.targetX - p.x, p.targetZ - p.z);
   const pace = (p.job === 'hunt' || p.job === 'play') ? PERSON.jog * 0.8 : PERSON.walk;
@@ -277,13 +472,14 @@ export function pickWork(p) {
      does not move, and searching for it every time somebody feels like fishing
      is forty samples an errand for an answer that was the same yesterday. */
   if (p.job === 'fish') {
-    const at = pickFishing(camp, luck);
+    // Down to the band's dock: the raft is where the fishing starts (rafts.js).
+    const at = camp.raft ? dockOf(camp) : null;
     if (at) {
-      p.targetX = at.x + (luck() - 0.5) * 6;
-      p.targetZ = at.z + (luck() - 0.5) * 6;
+      p.targetX = at.x;
+      p.targetZ = at.z;
       return true;
     }
-    p.job = 'gather';                     // landlocked: the hillside then
+    p.job = 'gather';                     // landlocked, or no raft yet: the hillside then
   }
   /* Somebody else's fire. The same walk a visit is, and deliberately so: it is
      the same hill, the same daylight and the same distance, and the only thing
@@ -298,14 +494,27 @@ export function pickWork(p) {
     }
     p.job = 'gather';                     // nobody worth it: eat instead
   }
-  /* An outcrop. Read off the rocks that are actually scattered in the world
-     rather than a spot invented for the purpose — a quarry somebody walks to is
-     a rock you can see them standing at, and the ones near camp go first
-     because they are the ones worth walking to. */
+  /* A deposit, chosen: any with something left in it that is worth this
+     band's walk, weighed by what it is and how far. Rolled rather than the
+     nearest, so a band works the stone by its door and, now and then, walks to
+     the iron over the ridge — and bands sharing a hillside do not all dig one
+     hole. They stand at the edge of the heap, not inside it. */
   if (p.job === 'quarry') {
-    const at = nearestRock(camp.x, camp.z, QUARRY_TRIP.reach);
-    if (at) { p.targetX = at.x; p.targetZ = at.z; return true; }
-    p.job = 'craft';                      // no rock within reach: something else
+    const d = pickDeposit(camp, luck, (camp.stone || 0) >= SKILL.stoneMax);
+    if (d) {
+      const a = luck() * Math.PI * 2, r = depositRadius(d) + 0.8;
+      p.digging = d;
+      p.targetX = d.x + Math.cos(a) * r;
+      p.targetZ = d.z + Math.sin(a) * r;
+      return true;
+    }
+    p.job = 'craft';                      // nothing within reach: something else
+  }
+  // A tree, for wood (wood.js): to the foot of it.
+  if (p.job === 'wood') {
+    const t = pickTree(camp, luck);
+    if (t) { p.targetX = t.x + 1.1; p.targetZ = t.z; return true; }
+    p.job = 'gather';
   }
   /* The stones, and a step short of them: standing among the graves rather than
      at the edge of them is the difference between visiting and trampling. */
@@ -432,9 +641,14 @@ export function chooseJob(p, day) {
       /* Going to the rocks. Not while hungry — stone does not feed anybody
          today — and not while the pile is already high, because a band with
          forty stones does not need a forty-first. It is the errand a comfortable
-         band sends people on, which is what it should be. */
-      ['quarry', !p.child && (p.camp.stone || 0) < SKILL.stoneMax
+         band sends people on, which is what it should be. The metals are the
+         exception: nothing uses them up, so a band with a seam in reach goes on
+         digging it after the stone pile is full, until the seam is worked out. */
+      ['quarry', !p.child && quarryInReach(p.camp, (p.camp.stone || 0) >= SKILL.stoneMax)
         ? QUARRY_TRIP.chance * (1 - hunger) * rested : 0],
+      /* Out for wood: with a raft to build, or the stack by the granaries low.
+         Not while hungry, like the rocks — a log does not feed anybody today. */
+      ['wood', !p.child ? woodWant(p.camp) * (1 - 0.7 * hunger) * rested : 0],
       /* Going to take it. Only past the hunger at which a band would rather
          walk over and ask, only if there is somebody near enough holding
          enough, and only if this band has not just tried — see RAID. A warrior
@@ -442,7 +656,7 @@ export function chooseJob(p, day) {
       /* Standing in the water. Worth it when the ground is poor, which is
          most of what a coast is for: a band whose hillside is picked over or
          under snow still has the sea. */
-      ['fish', p.camp.shore ? FISH.chance * (0.4 + 0.9 * hunger) * rested : 0],
+      ['fish', p.camp.raft && !raftBusy(p.camp) ? FISH.chance * (0.4 + 0.9 * hunger) * rested : 0],
       ['raid', !p.child && hunger > RAID.hungry && rested > 0.4
         && simDay - (p.camp.lastRaid ?? -99) > RAID.every && raidTarget(p.camp)
         ? RAID.chance * hunger * rested * (p.role === 'warrior' ? 2.5 : 1) : 0],
@@ -533,7 +747,7 @@ export const MOURN = { chance: 0.10 };
    anybody will go for a stone. */
 export const QUARRY_TRIP = { chance: 0.12, reach: 220 };
 
-const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish']);
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood']);
 
 /* Where somebody at the fire actually sits: inside the ring of tents and
    outside the ring of stones. The huts stand 6.5-9.1m out and are a couple of
@@ -620,7 +834,11 @@ export function updatePeople(dt, day) {
        Not skipped: the rest of being alive. They tire, they get hungry, their
        nourishment ceiling falls if the store is empty, and a tiger can still
        catch them. Led is a hand on the shoulder, not a shield. */
-    if (p.led) {
+    // Something you told them to do with E: this turn starts it.
+    if (p.act) { startAct(p); p.act = null; }
+    // Out on the raft and back, for the band's own fishers (rafts.js).
+    if (p.raftTrip || (p.job === 'fish' && p.state === 'work')) raftTrip(p);
+    if (p.led && !p.acting) {
       p.job = 'led';
       p.prey = null;
       p.visiting = null;
@@ -628,6 +846,30 @@ export function updatePeople(dt, day) {
       p.state = 'goto';
       p.targetX = p.leadX;
       p.targetZ = p.leadZ;
+    }
+
+    /* Sent home. Not a state of its own: it is the walk back that ends every
+       errand, started early. They carry home whatever is in their arms, the
+       store takes it when they arrive, and afterwards they are idle and
+       choosing for themselves again, which is the whole of what going home
+       means.
+
+       Spent here rather than in the click that set it, because the timeout
+       comes off the distance and arriving is what banks the haul. Both are the
+       step's business, the same way an order is. */
+    if (p.goingHome) {
+      p.goingHome = false;
+      p.prey = null;
+      p.visiting = null;
+      p.asleep = false;
+      /* Nobody is pointing any more, and "going where you point" is what the
+         caption would otherwise say for the whole walk back. */
+      if (p.job === 'led') p.job = 'tend';
+      p.state = 'return';
+      const to = homeward(p, 0);
+      p.targetX = to.x;
+      p.targetZ = to.z;
+      p.timer = travelTimeout(p);
     }
 
     p.panic = Math.max(0, (p.panic || 0) - slice);
@@ -649,13 +891,14 @@ export function updatePeople(dt, day) {
     }
 
     p.timer -= slice;
-    if (p.timer <= 0 && !p.led) {
+    if (p.timer <= 0 && (!p.led || p.acting)) {
       switch (p.state) {
         case 'idle':
           /* Told to do something, rather than choosing. One order, taken up
              once: after this they are back to choosing for themselves, which is
              the difference between telling somebody to go hunting and holding
              them there. */
+          p.stowed = false;               // whatever they put away, it is put away
           if (p.orders) {
             p.job = p.orders;
             p.orders = null;
@@ -673,10 +916,17 @@ export function updatePeople(dt, day) {
                finished under a bearing tree, what they stripped off it too.
                Baskets are the difference between carrying it and dropping it. */
             const baskets = 1 + SKILL.basketHaul * p.camp.skill.baskets;
-            const got = (FOOD.gather * forageRichness(p.x, p.z) + pickFruit(p.x, p.z))
-              * baskets * (p.child ? FORAGE.childHaul : 1);
+            /* The two halves kept apart long enough to be counted — what the
+               ground gave, as berries, and what came off the tree, as fruit —
+               so the caption can say which. The food is the same sum it was. */
+            const ground = FOOD.gather * forageRichness(p.x, p.z);
+            const fruit = pickFruit(p.x, p.z);
+            const got = (ground + fruit) * baskets * (p.child ? FORAGE.childHaul : 1);
             p.haul += got;
             p.carry = 1;
+            const hands = baskets * (p.child ? FORAGE.childHaul : 1);
+            bagAdd(p, 'berries', Math.max(1, Math.round(ground * hands / BAG.berry)));
+            bagAdd(p, 'fruit', Math.round(fruit / ORCHARD.worth));
             /* And the ground is that much barer. Taken where the trip actually
                ended rather than where it was aimed, which is the same place the
                yield was read from — a patch somebody gave up halfway to is not
@@ -734,21 +984,35 @@ export function updatePeople(dt, day) {
              same ground that runs down. Baskets carry fish as well as berries;
              a band good at weaving brings more of both home. */
           if (p.job === 'fish') {
+            // Where the raft was out on the water, or where they sit on it.
+            const spot = p.raftTrip ? p.raftTrip.spot : p;
             const baskets = 1 + SKILL.basketHaul * p.camp.skill.baskets;
-            const got = fishRichness(p.x, p.z, p.camp) * baskets
+            const got = fishRichness(spot.x, spot.z, p.camp) * baskets
               * (1 + p.camp.skill.fishing) * (p.child ? FORAGE.childHaul : 1);
             p.haul += got;
             p.carry = 1;
-            takeForage(p.x, p.z);
+            if (got > 0) bagAdd(p, 'fish', Math.max(1, Math.round(got / BAG.fish)));
+            takeForage(spot.x, spot.z);
+            if (p.raftTrip) landRaft(p);
             practise(p.camp, 'fishing', SKILL.perCatch);
             p.knows.fishing = Math.max(p.knows.fishing || 0, p.camp.skill.fishing);
           }
           if (p.job === 'quarry') {
-            p.camp.stone = Math.min(SKILL.stoneMax,
-              (p.camp.stone || 0) + SKILL.stonePerTrip * (1 + p.camp.skill.mining));
+            /* Dug from the deposit they actually stood at, and carried home
+               rather than put on the pile where they stand: stone and ore both
+               come in over the shoulder, and somebody who gave up on the way
+               out brings nothing. */
+            const d = p.digging;
+            p.digging = null;
+            if (d && Math.hypot(p.x - d.x, p.z - d.z) < depositRadius(d) + DIG_REACH) {
+              const took = mineDeposit(d, ORES[d.kind].per * (1 + p.camp.skill.mining));
+              if (took > 0) { bagAdd(p, 'ore', took, d.kind); p.carry = 1; }
+            }
             practise(p.camp, 'mining', SKILL.perQuarry);
             p.knows.mining = Math.max(p.knows.mining || 0, p.camp.skill.mining);
           }
+          // Logs off a tree, onto the shoulder (wood.js).
+          if (p.job === 'wood') chopDone(p);
           if (p.job === 'mourn') {
             practise(p.camp, 'rites', SKILL.perVisit);
             p.knows.rites = Math.max(p.knows.rites || 0, p.camp.skill.rites);
@@ -774,9 +1038,9 @@ export function updatePeople(dt, day) {
               arriveAtCamp(p, host);
             }
           }
+          if (p.acting) { endAct(p); break; }
           p.state = 'return';
-          p.targetX = homeFire(p).x + (luck() - 0.5) * 6;
-          p.targetZ = homeFire(p).z + (luck() - 0.5) * 6;
+          aimHome(p, 6);
           // The walk back from the next band is the same walk, in reverse.
           p.timer = travelTimeout(p);
           break;
@@ -803,8 +1067,7 @@ export function updatePeople(dt, day) {
     if (!p.led && day < 0.25 && p.job !== 'sleep' && p.job !== 'tend' && p.state !== 'return') {
       if (Math.hypot(p.x - homeFire(p).x, p.z - homeFire(p).z) > 12) {
         p.state = 'return';
-        p.targetX = homeFire(p).x + (luck() - 0.5) * 5;
-        p.targetZ = homeFire(p).z + (luck() - 0.5) * 5;
+        aimHome(p, 5);
         p.timer = travelTimeout(p);
       } else {
         p.state = 'idle';                    // already home: pick a night job now
@@ -817,8 +1080,7 @@ export function updatePeople(dt, day) {
     if (p.prey && p.state === 'goto') {
       if (tryKill(p, slice) || !p.prey) {
         p.state = 'return';
-        p.targetX = homeFire(p).x + (luck() - 0.5) * 6;
-        p.targetZ = homeFire(p).z + (luck() - 0.5) * 6;
+        aimHome(p, 6);
         p.timer = travelTimeout(p);
       } else if (Math.hypot(p.prey.animal.x - p.x, p.prey.animal.z - p.z) > huntReach(p.camp)) {
         p.prey = null;                     // it outran us
@@ -849,15 +1111,7 @@ export function updatePeople(dt, day) {
                   : p.job === 'sleep' ? 600
                   : (10 + luck() * 20) * quick;
         } else {
-          if (p.haul > 0) {
-            p.camp.food += p.haul;
-            /* Kept per person as well as added to the store. The store is what
-               the band has; this is what each of them put into it, which is a
-               different and more interesting number — it is the difference
-               between a good hunter and somebody who mostly tends the fire. */
-            p.brought = (p.brought || 0) + p.haul;
-            p.haul = 0;
-          }
+          bankLoad(p);
           p.state = 'idle';
           p.carry = 0;
           p.timer = 2 + luck() * 6;
@@ -870,7 +1124,16 @@ export function updatePeople(dt, day) {
            short when there is none left, and it slows with a full basket. A run
            you can hold forever for nothing would make walking pointless. */
         if (p.led && leadRunning()) want = PERSON.jog * (p.child ? 0.75 : 1);
-        if (p.carry) want *= 0.8;
+        /* The one you are playing is weighed by what is in the basket, whatever
+           the carry flag says: dusk at home and idling both lower the flag
+           without emptying anything. */
+        if (p.carry || p.led) want *= carryFactor(p);
+        // Worn down, they slow — and near the end cannot run (vitals.js).
+        want = lifeWant(p, want);
+        // Up a tree, or sat resting: they stay where they are.
+        if (p.climbed || p.resting) want = 0;
+        // Down low (Z) they crawl: slowly, and nothing grazing notices them.
+        else if (p.hiding) want = Math.min(want, PERSON.walk * CRAWL);
         /* Spent, they walk. The jog is what energy buys, and it is the first
            thing to go — which is why a long hunt ends in a trudge home. */
         if (want > PERSON.walk) {
@@ -891,13 +1154,24 @@ export function updatePeople(dt, day) {
     const effort = p.speed / PERSON.jog;
     const fed = 1 - 0.55 * p.camp.hunger;
     const rate = energyRate(effort, PERSON_STAMINA, p.asleep ? SLEEP_SECONDS : RECOVERY_SECONDS);
-    // Rest does a sick person much less good than it does a well one.
-    const heal = p.sick ? PLAGUE.drag : 1;
+    /* Rest does a sick person much less good than it does a well one — and
+       sitting down on purpose does more than standing about, most at home. */
+    const heal = (p.sick ? PLAGUE.drag : 1) * restBoost(p);
     /* And a camp with hides, bedding and somewhere dry to keep them is a camp
        people rest in properly. Only on the way up: home goods make a night
        worth more, they do not make a chase cost less. */
     const comfort = 1 + SKILL.wareRest * (p.camp.skill?.wares || 0);
     p.energy = clamp(p.energy + (rate > 0 ? rate * fed * heal * comfort : rate) * slice, 0, 1);
+    // And the cold takes some of the rest back, for the person you are playing.
+    p.cold = coldFactor(p, day);
+    /* The life bar, for the person you are playing: spent walking, running,
+       working, under a load and in the cold; won back resting and eating. */
+    if (p.led || p.life != null) {
+      const loadFrac = p.led && hasLoad(p)
+        ? loadOf(p) / carryCap(p, SKILL.basketHaul, p.camp.skill?.baskets || 0) : 0;
+      spendLife(p, slice, loadFrac);
+    }
+    if (p.cold < 1 && rate > 0) p.energy = clamp(p.energy - rate * fed * heal * comfort * (1 - p.cold) * slice, 0, 1);
 
     /* Starvation is a ceiling coming down, not a drain.
 
@@ -916,6 +1190,8 @@ export function updatePeople(dt, day) {
       ? -(p.camp.hunger - STARVE_FROM) / (1 - STARVE_FROM) * STARVE_DRAIN
       : REFEED) * days, 0, 1);
     if (p.energy > p.nourish) p.energy = p.nourish;
+    // For the person you are playing, the life bar is their energy (vitals.js).
+    if (p.led && p.life != null) p.energy = Math.max(0.05, p.life);
 
     if (!arrived && want > 0) {
       let diff = Math.atan2(tdx, tdz) - p.yaw;
@@ -924,13 +1200,13 @@ export function updatePeople(dt, day) {
     }
 
     const step = p.speed * slice;
-    if (step > 0 && !stepPerson(p, step)) {
+    if (step > 0 && !(p.onRaft ? raftStep(p, step) : stepPerson(p, step))) {
       /* Nothing worked, not even the relaxed try — which means they are stood
          somewhere there is genuinely no way out of. Only then is the errand
          given up, and a visit is never given up this way: being sent home by a
          hillside is how nobody ever reached the next band. */
       p.speed = 0;
-      if (p.job !== 'visit') pickWork(p);
+      if (p.job !== 'visit' && !p.onRaft) pickWork(p);
     }
 
     // Posture. Foraging bends at the waist, knapping hunches over a lap, sitting
@@ -940,6 +1216,16 @@ export function updatePeople(dt, day) {
     if (working && p.job === 'gather') { wantCrouch = 0.55; wantBend = 0.85; }
     else if (working && p.job === 'craft') { wantCrouch = 0.95; wantBend = 0.45; }
     else if (working && p.job === 'tend') { wantCrouch = 0.9; wantBend = 0.18; }
+    // Bent to the rock, and stooped over the water.
+    else if (working && p.job === 'quarry') { wantCrouch = 0.5; wantBend = 0.9; }
+    else if (working && p.job === 'wood') { wantCrouch = 0.2; wantBend = 0.55; }
+    else if (working && p.job === 'fish') { wantCrouch = 0.3; wantBend = 0.45; }
+    // Kneeling on the raft.
+    else if (p.onRaft) { wantCrouch = 0.6; wantBend = 0.2; }
+    // Down in cover: as low as a person goes.
+    else if (p.hiding) { wantCrouch = 1; wantBend = 0.55; }
+    // Sat down to rest.
+    else if (p.resting) { wantCrouch = 0.9; wantBend = 0.12; }
     else if (p.job === 'sleep' && p.state !== 'goto') { wantCrouch = 1; wantBend = 0.1; }
     p.crouch += (wantCrouch - p.crouch) * Math.min(1, slice * 3);
     p.bend += (wantBend - p.bend) * Math.min(1, slice * 3);
@@ -1005,7 +1291,7 @@ export function writePerson(p, i) {
 
   _eAnim.set(pitch, p.yaw, 0, 'YXZ');
   _qAnim.setFromEuler(_eAnim);
-  _pAnim.set(p.x, sampleHeight(p.x, p.z) + S.legLen * p.scale - drop + bounce, p.z);
+  _pAnim.set(p.x, sampleHeight(p.x, p.z) + S.legLen * p.scale - drop + bounce + (p.lift || 0), p.z);
   _sAnim.setScalar(p.scale);
   _mBody.compose(_pAnim, _qAnim, _sAnim);
 
@@ -1052,6 +1338,12 @@ export function writePerson(p, i) {
     let elbow = 0.22 + Math.max(0, Math.sin(phase + 0.9)) * swing * 0.9;
     if (p.carry) elbow = 1.30;
     else if (p.hasSpear && side === 0) elbow = 0.75;
+    // Throwing (hunt.js): the spear arm back over the shoulder, then through.
+    if (side === 0 && p.throwPose > 0) {
+      const k = p.throwPose;
+      arm = k < 0.55 ? -3.4 * (k / 0.55) : -3.4 + 2.2 * Math.min(1, (k - 0.55) / 0.25);
+      elbow = k < 0.55 ? 1.4 : 0.2;
+    }
 
     _mLocal.makeRotationX(arm);
     _mLocal.setPosition(dir * S.armX * p.shoulder, S.shoulderY, 0);
@@ -1166,48 +1458,77 @@ export function writePerson(p, i) {
   }
 
   if (p.carry) {
-    /* What they are carrying, in the shape of the thing.
+    /* What they are carrying, in the thing they would carry it in.
 
-       It was one box whatever it was: berries, a joint of meat and a morning's
-       fish all came home as the same brown block, which is the one moment of a
-       forager's day you can actually watch pay off and it said nothing about
-       what they had been doing. One geometry still — a person is seventeen
-       instanced pieces and a fourth load mesh is another two thousand slots —
-       so the shape is in the scale and the kind is in the colour.
-
-       A basket is round and reddish, a joint is blocky and dark, and a catch is
-       long, flat and pale. At thirty metres the silhouette is the difference
-       between somebody coming back from the hill and somebody coming up from
-       the water. */
-    const kind = LOADS[p.job] || LOADS.gather;
-    _mLocal.makeTranslation(0, S.shoulderY - 0.24, 0.30);
-    _mChain.multiplyMatrices(_mTorso, _mLocal);
-    _mChain.scale(kind.scale);
+       It was one box whatever it was, and then one box in three shapes. Now
+       berries, fruit and fish come home in a basket held in front, heaped with
+       whatever the trip gave — dark berries, red fruit, a pale catch — and
+       heaped higher the more there is. An animal goes over the shoulders,
+       because nobody puts a deer in a basket. Two meshes, the basket and what
+       is in it, so the basket can be wicker while its contents are the colour
+       of the food. */
+    const key = bagKind(p.bag) || LOAD_FOR_JOB[p.job] || 'berries';
+    const kind = LOADS[key];
+    if (kind.basket) {
+      _mLocal.makeTranslation(0, S.shoulderY + BASKET_AT.y, BASKET_AT.z);
+      _mChain.multiplyMatrices(_mTorso, _mLocal);
+      personParts.basket.setMatrixAt(i, _mChain);
+      // Heaped to how full it is, and never so low it sinks below the rim.
+      const full = clamp(p.haul / BASKET_FULL, 0.45, 1.15);
+      _mLocal.makeTranslation(0, S.shoulderY + BASKET_AT.y + BASKET_AT.rim, BASKET_AT.z);
+      _mChain.multiplyMatrices(_mTorso, _mLocal);
+      _sLoad.set(kind.scale.x, kind.scale.y * full, kind.scale.z);
+      _mChain.scale(_sLoad);
+    } else {
+      personParts.basket.setMatrixAt(i, HIDDEN);
+      _mLocal.makeTranslation(0, S.shoulderY + 0.04, -0.10);
+      _mChain.multiplyMatrices(_mTorso, _mLocal);
+      _mChain.scale(kind.scale);
+    }
     personParts.load.setMatrixAt(i, _mChain);
     /* Only when it changes hands. The colour of a load is a fact about the
        errand, not about the frame, and writing it every frame is an upload of
        the whole instance colour buffer for every carrier in the world. */
-    if (p.loadKind !== p.job) {
-      p.loadKind = p.job;
+    if (p.loadKind !== key) {
+      p.loadKind = key;
       personParts.load.setColorAt(i, _cLoad.setHex(kind.hex));
       if (personParts.load.instanceColor) personParts.load.instanceColor.needsUpdate = true;
     }
   } else {
+    personParts.basket.setMatrixAt(i, HIDDEN);
     personParts.load.setMatrixAt(i, HIDDEN);
     p.loadKind = null;
   }
 }
 
-/* Berries, meat and fish, in the only two channels an instanced mesh has left:
-   how big it is and what colour. `quarry` is here because stone comes home the
-   same way — grey, heavy and squared off. */
+/* What is in the basket, in the two channels an instanced mesh has: how it is
+   stretched and what colour. Berries dark, fruit red, a catch long and pale;
+   an animal is a big dark bundle and does not go in a basket, and nor does
+   stone, which comes home over the shoulder the same way. */
 export const LOADS = {
-  gather: { scale: new THREE.Vector3(1.0, 0.95, 1.0), hex: 0x7b4a3c },
-  hunt:   { scale: new THREE.Vector3(0.85, 1.15, 0.85), hex: 0x6e3630 },
-  fish:   { scale: new THREE.Vector3(1.5, 0.45, 0.7), hex: 0x8fa2ac },
-  quarry: { scale: new THREE.Vector3(0.8, 0.8, 0.8), hex: 0x7a746a },
+  berries: { scale: new THREE.Vector3(1.0, 1.0, 1.0), hex: 0x5c2742, basket: true },
+  fruit:   { scale: new THREE.Vector3(1.05, 1.15, 1.05), hex: 0xc7462c, basket: true },
+  fish:    { scale: new THREE.Vector3(1.25, 0.75, 0.9), hex: 0x9fb0b8, basket: true },
+  game:    { scale: new THREE.Vector3(1.7, 1.4, 1.2), hex: 0x6e3630, basket: false },
+  stone:   { scale: new THREE.Vector3(1.0, 0.9, 1.0), hex: 0x7a746a, basket: false },
+  /* Ore, the colour of the rock it came out of — the same numbers as ORES in
+     quarries.js, written out because this table is read as the module loads. */
+  iron:    { scale: new THREE.Vector3(1.0, 0.85, 1.0), hex: 0x7e4630, basket: false },
+  bronze:  { scale: new THREE.Vector3(1.0, 0.85, 1.0), hex: 0x9c6a3c, basket: false },
+  silver:  { scale: new THREE.Vector3(0.8, 0.7, 0.8), hex: 0xaab4ba, basket: false },
+  gold:    { scale: new THREE.Vector3(0.7, 0.6, 0.7), hex: 0xcfa233, basket: false },
+  // Logs, over the shoulder: long and low, the colour of the woodpile.
+  wood:    { scale: new THREE.Vector3(1.8, 0.6, 0.7), hex: 0x7a5a3a, basket: false },
 };
+/* What somebody carrying with nothing counted in their bag has, by errand: a
+   session saved before baskets were counted, or stone from the rocks. */
+export const LOAD_FOR_JOB = { gather: 'berries', fish: 'fish', hunt: 'game', quarry: 'stone' };
+/* Where the basket is held, in the torso's own space: low and in front, the
+   heap sitting on its rim. And how much food is a full one. */
+export const BASKET_AT = { y: -0.36, z: 0.28, rim: 0.07 };
+export const BASKET_FULL = 0.8;
 export const _cLoad = new THREE.Color();
+const _sLoad = new THREE.Vector3();
 
 /* A closed hand: shorter, thicker, squarer. The box is the same box. */
 export const FIST = new THREE.Vector3(1.25, 0.72, 1.45);
@@ -1493,6 +1814,8 @@ export function buildWorld() {
   chooseCampSites(P.counts.camps | 0);
   buildTrees(P.counts.trees | 0);
   buildRocks(P.counts.rocks | 0);
+  buildDeposits();
+  buildThickets();
   buildCamps();
   buildGraves();
   buildPeople(P.counts.people | 0);

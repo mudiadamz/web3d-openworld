@@ -529,6 +529,11 @@ function check(label, ok, detail = '') {
 }
 
 let followReport = 'F not driven';
+let actReport = 'E not pressed';
+/* Only failures print, so a check that never runs looks exactly like a check
+   that passed — and the two buttons on the end of the order row are behind a
+   world having somebody worth following in it. This says which happened. */
+let rowReport = 'not reached';
 
 /* Asked of the DOM, not of the cache of what the page has touched. The cache is
    empty until the page asks for an element, so a page that fails to boot left
@@ -557,11 +562,11 @@ check('the keyboard reaches the page', (windowListeners.keydown || []).length > 
     following && /class="wcode" style="background:hsl\(/.test(following.innerHTML),
     following ? following.innerHTML.slice(0, 80) : '');
 
-  /* The energy meter. It is the reason the caption is worth reading while you
-     follow somebody: it is what decides whether they can take on a hunt, how
-     fast they get anywhere, and when they turn round and go home. */
-  check('the caption carries an energy meter, out of ten',
-    following && /[▮▯]{5} ([0-9]|10)\/10/.test(following.innerHTML),
+  /* The energy meter was here. How much they have left is the life bar on the
+     basket at the bottom of the screen now, which is showing whenever this is
+     on a screen wide enough for it — and saying it twice crowded the line. */
+  check('the caption leaves how much they have left to the life bar on the basket',
+    following && !/[▮▯]{5}/.test(following.innerHTML),
     following ? JSON.stringify(following.innerHTML) : '');
   /* Where they are, so that a figure which appears stuck on a hillside can be
      told apart from a simulation which has actually stopped. Read off the
@@ -595,9 +600,10 @@ check('the keyboard reaches the page', (windowListeners.keydown || []).length > 
   check('and the coordinates move as the world runs', xs.size > 1,
     `${xs.size} distinct readings: ${[...xs].slice(0, 4).join(' ')}`);
 
-  check('and the meter has five blocks, no more and no fewer',
-    following && (following.innerHTML.match(/[▮▯]/g) || []).length === 5,
-    following ? String((following.innerHTML.match(/[▮▯]/g) || []).length) : '-');
+  // And what they carry, which the basket says too.
+  check('and leaves what they carry to the basket as well',
+    following && !/ · with /.test(following.textContent),
+    following ? JSON.stringify(following.textContent) : '-');
 
   /* F is now the whole of it: into Follow from anywhere, and again for somebody
      else. It used to take C three times and then N, which is four keys to do
@@ -1767,7 +1773,8 @@ let aheadReport = 'not run';
     JSON.stringify(document.getElementById('toast').textContent));
   check('the chronicle is emptied',
     /nothing has happened yet/.test(document.getElementById('chronicle').innerHTML),
-    document.getElementById('chronicle').innerHTML.slice(0, 60));
+    // The words, not the markup: sixty characters of tags said only that a band chip was there.
+    document.getElementById('chronicle').innerHTML.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200));
   /* There is always a world — deleting everything cannot be the one thing that
      leaves you nowhere. */
   check('and there is still a world to be in',
@@ -2094,6 +2101,16 @@ if (measuring('survive')) {
   const CH = await import(pathToFileURL(join(stubDir, 'chronicle.js')).href);
   const PM = await import(pathToFileURL(join(stubDir, 'params.js')).href);
   const NZ = await import(pathToFileURL(join(stubDir, 'noise.js')).href);
+  const PP = await import(pathToFileURL(join(stubDir, 'people.js')).href);
+  const TH = await import(pathToFileURL(join(stubDir, 'thickets.js')).href);
+  const DG = await import(pathToFileURL(join(stubDir, 'danger.js')).href);
+  const WL = await import(pathToFileURL(join(stubDir, 'wildlife.js')).href);
+  const WD = await import(pathToFileURL(join(stubDir, 'world.js')).href);
+  const DR = await import(pathToFileURL(join(stubDir, 'drops.js')).href);
+  const VT = await import(pathToFileURL(join(stubDir, 'vitals.js')).href);
+  const SP = await import(pathToFileURL(join(stubDir, 'spear.js')).href);
+  const LD = await import(pathToFileURL(join(stubDir, 'larder.js')).href);
+  const WO = await import(pathToFileURL(join(stubDir, 'wood.js')).href);
 
   // Behind somebody first; R left the camera in Orbit.
   pressKey('KeyF');
@@ -2125,21 +2142,21 @@ if (measuring('survive')) {
         `${was.toFixed(0)}m -> ${now.toFixed(0)}m`);
       check('and they are still being led', p.led === true);
 
-      /* Held W is a run. Measured against the same person on the same ground
-         rather than against a number: point them somewhere far, walk for a
-         while, then run for the same while, and compare the ground covered. */
+      /* Held shift is a run. Measured against the same person on the same
+         ground rather than against a number: point them somewhere far, walk for
+         a while, then run for the same while, and compare the ground covered. */
       {
         const far = { x: p.x + (spot.x - p.x) * 12, z: p.z + (spot.z - p.z) * 12 };
         CH.leadTo(far.x, far.z);
         const walkFrom = [p.x, p.z];
         for (let i = 0; i < 120; i++) stepFrame(16);
         const walked = Math.hypot(p.x - walkFrom[0], p.z - walkFrom[1]);
-        keyDown('KeyW');
+        keyDown('ShiftLeft');
         const runFrom = [p.x, p.z];
         for (let i = 0; i < 120; i++) stepFrame(16);
         const ran = Math.hypot(p.x - runFrom[0], p.z - runFrom[1]);
-        keyUp('KeyW');
-        check('holding W makes them run', ran > walked * 1.3,
+        keyUp('ShiftLeft');
+        check('holding shift makes them run', ran > walked * 1.3,
           `walked ${walked.toFixed(1)}m, ran ${ran.toFixed(1)}m in the same frames`);
         CH.leadTo(spot.x, spot.z);
       }
@@ -2221,15 +2238,482 @@ if (measuring('survive')) {
           `visible=${mark.visible} at ${mark.position.x.toFixed(0)},${mark.position.z.toFixed(0)}`);
       }
 
-      /* And shift+W hands them back to their own life. */
-      pressKey('KeyW', true);
+      /* WASD: the same walking, pointed with keys. W is away from the camera,
+         and letting go of it stops them where they are, still led. */
+      {
+        const from = [p.x, p.z];
+        const f = [Math.sin(CH.cam.yaw), Math.cos(CH.cam.yaw)];
+        keyDown('KeyW');
+        for (let i = 0; i < 90; i++) stepFrame(16);
+        keyUp('KeyW');
+        const along = (p.x - from[0]) * f[0] + (p.z - from[1]) * f[1];
+        check('W walks them the way the camera looks', along > 1,
+          `${along.toFixed(1)}m along it, led=${p.led}`);
+        for (let i = 0; i < 60; i++) stepFrame(16);
+        check('and letting go of it stops them where they are, still yours',
+          p.speed < 0.3 && p.led === true, `speed ${p.speed.toFixed(2)} led=${p.led}`);
+      }
+
+      /* E: whatever is in front of them, left on them by the key and done by
+         the step — and afterwards they are still led, standing where they did
+         it, rather than walked home with it like an errand. */
+      {
+        /* Onto a foraging ground the map marks first: E forages only there now,
+           and wherever the walk above happened to leave them is as likely as
+           not bare ground where there is nothing for E to do. */
+        const g0 = TH.thickets[0];
+        if (g0) { p.x = g0.x; p.z = g0.z; p.leadX = p.x; p.leadZ = p.z; stepFrame(16); }
+        const t = CH.whatHere(p);
+        // And the ring under what E would act on, green, the frame after.
+        stepFrame(16);
+        if (t) {
+          check('a ring on the ground marks what E would act on, in green',
+            (CH.actionRings?.count || 0) >= 1 && CH.ringHexes().includes(CH.RING_ON),
+            `${CH.actionRings?.count || 0} rings: ${CH.ringHexes().map((h) => h.toString(16)).join(' ')}`);
+        }
+        const haul = p.haul, kills = p.kills;
+        pressKey('KeyE');
+        check('E leaves something to do on them, if there is something here',
+          Boolean(p.act) === Boolean(t), t ? t.kind : 'nothing here');
+        let started = false;
+        for (let i = 0; i < 600 && !(started && !p.acting); i++) {
+          stepFrame(16);
+          if (p.acting) started = true;
+        }
+        if (t) {
+          check('and the next turn does it', started, `${t.kind} never started`);
+          check('and afterwards they are still yours, not walking home',
+            !p.acting && p.led === true && p.state !== 'return',
+            `acting=${p.acting} led=${p.led} state=${p.state}`);
+          actReport = `${t.kind}: haul ${haul.toFixed(2)} -> ${p.haul.toFixed(2)}, kills ${kills} -> ${p.kills}`;
+        }
+      }
+
+      /* And putting it away: at the granary with something in the basket, E,
+         and it is in the store — the same unloading a walk home ends in. Put
+         at the front of their first granary rather than walked there, because
+         this is a test of the putting away and not of the walk. */
+      {
+        if (!(p.haul > 0)) {
+          p.haul = 0.4;
+          p.carry = 1;
+          p.bag = { fruit: 0, berries: 20, fish: 0, game: 0, animal: null, ore: 0, oreKind: null };
+        }
+        const s = p.camp.storeSpots?.[0];
+        if (s) {
+          p.x = s.fx; p.z = s.fz; p.leadX = p.x; p.leadZ = p.z;
+          stepFrame(16);
+          check('a ring round the granaries says they are in the storage area',
+            Boolean(CH.storeRing?.visible) && CH.storeRing.material.color.getHex() === CH.STORE_RING_IN,
+            CH.storeRing ? `visible=${CH.storeRing.visible} colour=${CH.storeRing.material.color.getHexString()}` : 'no ring');
+          const brought = p.brought || 0, carried = p.haul;
+          const t = CH.whatHere(p);
+          pressKey('KeyE');
+          for (let i = 0; i < 6; i++) stepFrame(16);
+          check('at the granary with something in the basket, E puts it away',
+            t?.kind === 'store', t ? t.kind : 'nothing');
+          check('and it goes into the store',
+            p.haul === 0 && (p.brought || 0) >= brought + carried - 1e-9,
+            `haul ${p.haul}, brought ${brought} -> ${p.brought}`);
+          check('and they are still yours', p.led === true, String(p.led));
+          const hud = document.getElementById('bagHud').innerHTML || '';
+          check('and the basket on screen says what it is for', /store [\d.]+ days/.test(hud), hud.slice(0, 90));
+
+          /* Too heavy: thirty fish is three basketfuls. Past what they can
+             carry they cannot walk — but what is in reach they can still do. */
+          p.bag = { fruit: 0, berries: 0, fish: 30, game: 0, animal: null, ore: 0, oreKind: null };
+          p.haul = 3;
+          p.carry = 1;
+          const heavyFrom = [p.x, p.z];
+          keyDown('KeyW');
+          for (let i = 0; i < 60; i++) stepFrame(16);
+          keyUp('KeyW');
+          const went = Math.hypot(p.x - heavyFrom[0], p.z - heavyFrom[1]);
+          check('more than they can carry is more than they can walk with', went < 0.3, `went ${went.toFixed(2)}m`);
+          /* And sent anywhere, they would walk off with it: an order, the walk
+             home and letting go are all refused until something comes out. */
+          const orderedOk = CH.orderJob('gather'), homeOk = CH.sendHome(), freeOk = CH.handBack();
+          check('too heavy to walk is too heavy to be sent anywhere',
+            !orderedOk && !homeOk && !freeOk && p.led === true && !p.orders && !p.goingHome,
+            `order=${orderedOk} home=${homeOk} free=${freeOk} led=${p.led}`);
+          // And with the carry flag down, the basket still weighs what it weighs.
+          p.carry = 0;
+          keyDown('KeyW');
+          for (let i = 0; i < 30; i++) stepFrame(16);
+          keyUp('KeyW');
+          const went2 = Math.hypot(p.x - heavyFrom[0], p.z - heavyFrom[1]);
+          check('and a full basket stops them whatever the carry flag says', went2 < 0.3, `went ${went2.toFixed(2)}m`);
+          p.carry = 1;
+          check('but at the granaries it can still be put away', CH.whatHere(p)?.kind === 'store',
+            CH.whatHere(p)?.kind || 'nothing');
+          p.act = { kind: 'gather' };
+          for (let i = 0; i < 3; i++) stepFrame(16);
+          check('and they can still do what is in reach, though they cannot walk', p.acting === true,
+            `acting=${p.acting}`);
+          // Done with it, the way endAct leaves them: not waited out.
+          p.acting = false; p.hasSpear = false; p.job = 'led'; p.state = 'goto'; p.timer = 0;
+          p.leadX = p.x; p.leadZ = p.z;
+
+          /* Shift+G: all of it down, on the ground rather than lost, and they walk. */
+          const before = DR.drops.length;
+          pressKey('KeyG', true);
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          check('shift+G puts it all down, on the ground rather than lost',
+            !(p.haul > 0) && DR.drops.length > before, `haul ${p.haul}, piles ${before} -> ${DR.drops.length}`);
+          const lighter = [p.x, p.z];
+          keyDown('KeyW');
+          for (let i = 0; i < 60; i++) stepFrame(16);
+          keyUp('KeyW');
+          const walked = Math.hypot(p.x - lighter[0], p.z - lighter[1]);
+          check('and with it all put down they walk again', walked > 0.5, `walked ${walked.toFixed(2)}m`);
+
+          /* G: one handful at a time, and E picks it back up — away from the
+             granaries, where E would put it away instead. */
+          const area = PP.storeAreaOf(p);
+          p.x = area.x + area.r + 8; p.z = area.z; p.leadX = p.x; p.leadZ = p.z;
+          p.bag = { fruit: 0, berries: 15, fish: 0, game: 0, animal: null, ore: 0, oreKind: null };
+          p.haul = 0.3;
+          p.carry = 1;
+          const broughtBefore = p.brought || 0;
+          pressKey('KeyG');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          const pile = DR.drops.find((d) => d.kind === 'berries' && Math.hypot(d.x - p.x, d.z - p.z) < 3);
+          check('G puts one handful down, not the whole basket, and not into the store',
+            p.bag.berries === 5 && Boolean(pile) && pile.n === 10 && (p.brought || 0) === broughtBefore,
+            `berries ${p.bag.berries}, pile ${pile ? pile.n : 'none'}`);
+          const t2 = CH.whatHere(p);
+          pressKey('KeyE');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          check('and E picks it up again', t2?.kind === 'pickup' && p.bag.berries === 15 && !DR.drops.includes(pile),
+            `${t2?.kind || 'nothing'}, berries ${p.bag.berries}`);
+          // A handful here, a step on, a handful there: two piles, not one.
+          pressKey('KeyG');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          p.x += 4; p.leadX = p.x;
+          pressKey('KeyG');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          const mine = DR.drops.filter((d) => d.kind === 'berries' && Math.hypot(d.x - p.x, d.z - p.z) < 8);
+          check('and put down somewhere else, it is a pile somewhere else',
+            mine.length >= 2 && Math.hypot(mine[0].x - mine[1].x, mine[0].z - mine[1].z) > 1.5, `${mine.length} piles`);
+
+          /* X and N, at the granaries: resting, faster at home than away, and a
+             meal out of the basket or out of the store. */
+          p.x = area.x; p.z = area.z; p.leadX = p.x; p.leadZ = p.z;
+          const home = VT.atHome(p);
+          p.resting = true;
+          const hereBoost = VT.restBoost(p);
+          p.x = p.camp.x + 300; const awayBoost = VT.restBoost(p);
+          p.x = area.x;
+          p.resting = false;
+          check('resting at home pays back faster than anywhere else',
+            home && hereBoost > awayBoost && awayBoost > 1, `home=${home} ${hereBoost} vs ${awayBoost}`);
+          /* The life bar: walking wears it down faster than standing does. */
+          p.life = 0.7;
+          const standFrom = p.life;
+          for (let i = 0; i < 40; i++) stepFrame(16);
+          const stood = standFrom - p.life;
+          const walkFrom = p.life;
+          keyDown('KeyW');
+          for (let i = 0; i < 40; i++) stepFrame(16);
+          keyUp('KeyW');
+          const walkedOff = walkFrom - p.life;
+          check('standing wears the life bar down a little, and walking more',
+            stood > 0 && walkedOff > stood, `stood -${stood.toFixed(5)}, walked -${walkedOff.toFixed(5)}`);
+          p.x = area.x; p.z = area.z; p.leadX = p.x; p.leadZ = p.z;
+          for (let i = 0; i < 4; i++) stepFrame(16);
+
+          /* X: resting wins some back, and never more than rest can. */
+          p.life = 0.3; p.nourish = 1;
+          pressKey('KeyX');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          const r0 = p.life;
+          for (let i = 0; i < 30; i++) stepFrame(16);
+          check('X sits them down, and resting wins life back',
+            p.resting === true && p.life > r0, `resting=${p.resting} ${r0.toFixed(4)} -> ${p.life.toFixed(4)}`);
+          p.life = VT.LIFEBAR.restCap.home - 0.0005;
+          for (let i = 0; i < 30; i++) stepFrame(16);
+          check('but resting alone never fills it', p.life <= VT.LIFEBAR.restCap.home + 1e-9, p.life.toFixed(4));
+          check('and for the person you are playing, it is their energy', Math.abs(p.energy - Math.max(0.05, p.life)) < 1e-9,
+            `energy ${p.energy.toFixed(4)}, life ${p.life.toFixed(4)}`);
+          pressKey('KeyX');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          check('and X again gets them up', p.resting === false, String(p.resting));
+
+          /* N: a meal, out of the basket or out of the store, worth more than rest. */
+          const storeWas = p.camp.food;
+          p.camp.food = 0;
+          p.life = 0.4; p.nourish = 0.5; p.energy = 0.3;
+          p.bag = { fruit: 0, berries: 15, fish: 0, game: 0, animal: null, ore: 0, oreKind: null };
+          p.haul = 0.3; p.carry = 1;
+          pressKey('KeyN');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          check('N eats out of the basket when there is nothing in the store',
+            p.bag.berries === 0 && p.life > 0.65 && p.nourish > 0.8,
+            `berries ${p.bag.berries}, life ${p.life.toFixed(2)}, fed ${p.nourish.toFixed(2)}`);
+          p.camp.food = 5; p.life = 0.4; p.nourish = 0.5;
+          pressKey('KeyN');
+          for (let i = 0; i < 4; i++) stepFrame(16);
+          check('and at home, out of the band\'s store', p.camp.food < 4.8 && p.life > 0.65,
+            `store ${p.camp.food.toFixed(2)}, life ${p.life.toFixed(2)}`);
+          p.camp.food = storeWas;
+
+          /* Down low, up to a deer, a spear: it falls where it stood, stays
+             there, and E picks it up. On a foraging ground, clear of the piles
+             and the granaries, and with the throw made certain — it is rolled,
+             and this is a check of what a hit does, not of the odds. */
+          const g1 = TH.thickets[0];
+          const quarry = WL.packs.filter((k) => k.spec.key === 'deer' || k.spec.key === 'boar')
+            .flatMap((k) => k.list.map((a) => ({ a, pack: k }))).find((o) => !o.a.dead);
+          if (g1 && quarry) {
+            const a = quarry.a;
+            p.x = g1.x; p.z = g1.z; p.leadX = p.x; p.leadZ = p.z;
+            p.hiding = true;
+            a.x = p.x + 6; a.z = p.z; a.state = 'graze'; a.speed = 0; a.timer = 99;
+            for (let i = 0; i < 6; i++) stepFrame(16);
+            check('down low, a grazing animal six metres off does not notice them', a.state !== 'flee', a.state);
+            const aim = CH.whatHere(p);
+            const pointWas = SP.THROW.point;
+            SP.THROW.point = 100;
+            pressKey('KeyE');
+            for (let i = 0; i < 6; i++) stepFrame(16);
+            SP.THROW.point = pointWas;
+            check('E throws, and a hit brings it down where it stood rather than into the basket',
+              aim?.kind === 'hunt' && a.dead === true && Boolean(a.carcass) && p.threw?.hit === true && !(p.bag?.game > 0),
+              `${aim?.kind} dead=${a.dead} carcass=${Boolean(a.carcass)} game=${p.bag?.game}`);
+            const lay = [a.x, a.z];
+            for (let i = 0; i < 30; i++) stepFrame(16);
+            check('and it lies there, not moving', a.x === lay[0] && a.z === lay[1] && a.carcass?.fall > 0,
+              `fall ${a.carcass?.fall}, moved ${Math.hypot(a.x - lay[0], a.z - lay[1]).toFixed(2)}`);
+            for (let i = 0; i < 600 && p.acting; i++) stepFrame(16);
+            p.hiding = false;
+            p.x = a.x - 1; p.z = a.z; p.leadX = p.x; p.leadZ = p.z;
+            p.bag = { fruit: 0, berries: 0, fish: 0, game: 0, animal: null, ore: 0, oreKind: null };
+            p.haul = 0; p.carry = 0;
+            const t3 = CH.whatHere(p);
+            pressKey('KeyE');
+            for (let i = 0; i < 4; i++) stepFrame(16);
+            check('and E picks it up, onto the shoulder, as meat',
+              t3?.kind === 'carcass' && !a.carcass && p.bag.game === 1 && p.haul > 0,
+              `${t3?.kind || 'nothing'}, game ${p.bag.game}, haul ${p.haul.toFixed(1)}`);
+            p.bag.game = 0; p.bag.animal = null; p.haul = 0; p.carry = 0;
+          }
+
+          /* The raft: none, and there is no fishing from the bank; one, and E at
+             the landing takes it out, E out on deep water fishes, and E back at
+             the dock ties it up and puts them ashore. */
+          const coast = p.camp;
+          const dk = coast.shore ? LD.dockOf(coast) : null;
+          if (dk) {
+            const rafted = coast.raft;
+            coast.raft = false;
+            p.x = dk.x; p.z = dk.z; p.leadX = p.x; p.leadZ = p.z;
+            stepFrame(16);
+            check('without a raft there is no fishing from the bank', CH.whatHere(p)?.kind !== 'fish',
+              CH.whatHere(p)?.kind || 'nothing');
+            coast.raft = true;
+            const t4 = CH.whatHere(p);
+            pressKey('KeyE');
+            for (let i = 0; i < 4; i++) stepFrame(16);
+            check('with one, E at the landing takes it out', t4?.kind === 'raft' && p.onRaft === coast && p.lift > 0,
+              `${t4?.kind || 'nothing'} onRaft=${Boolean(p.onRaft)} lift=${p.lift}`);
+            let deepAt = null;
+            for (let r = 20; r < 160 && !deepAt; r += 5) {
+              const x = dk.mx + Math.sin(dk.a) * r, z = dk.mz + Math.cos(dk.a) * r;
+              if (NZ.sampleHeight(x, z) < PM.SEA - 8) deepAt = { x, z };
+            }
+            if (deepAt && p.onRaft) {
+              p.x = deepAt.x; p.z = deepAt.z; p.leadX = p.x; p.leadZ = p.z;
+              p.bag = { fruit: 0, berries: 0, fish: 0, game: 0, animal: null, ore: 0, oreKind: null };
+              p.haul = 0; p.carry = 0;
+              stepFrame(16);
+              const t5 = CH.whatHere(p);
+              pressKey('KeyE');
+              let began = false;
+              for (let i = 0; i < 600 && !(began && !p.acting); i++) { stepFrame(16); if (p.acting) began = true; }
+              check('out on deep water, E fishes from it', t5?.kind === 'fish' && p.bag.fish > 0 && p.haul > 0,
+                `${t5?.kind || 'nothing'}, fish ${p.bag.fish}, haul ${p.haul.toFixed(2)}`);
+            }
+            p.x = dk.mx; p.z = dk.mz; p.leadX = p.x; p.leadZ = p.z;
+            stepFrame(16);
+            const t6 = CH.whatHere(p);
+            pressKey('KeyE');
+            for (let i = 0; i < 4; i++) stepFrame(16);
+            check('and back at the dock, E ties it up and puts them ashore',
+              t6?.kind === 'moor' && !p.onRaft && p.lift === 0 && !coast.raftOut,
+              `${t6?.kind || 'nothing'} onRaft=${Boolean(p.onRaft)}`);
+            if (p.onRaft) { p.onRaft = null; coast.raftOut = null; p.lift = 0; p.x = dk.x; p.z = dk.z; }
+            coast.raft = rafted;
+            if (p.bag) p.bag.fish = 0;
+            p.haul = 0; p.carry = 0;
+          }
+
+          /* Wood: at a tree, cutting puts logs on the shoulder; put away at the
+             granaries they go on the camp's stack — and on a coast, a stack one
+             load short of a raft becomes one. */
+          const tree = DG.treeNear(p.x, p.z, 1e6);
+          if (tree) {
+            p.x = tree.x + 1.2; p.z = tree.z; p.leadX = p.x; p.leadZ = p.z;
+            p.bag = { fruit: 0, berries: 0, fish: 0, game: 0, animal: null, ore: 0, oreKind: null };
+            p.haul = 0; p.carry = 0;
+            stepFrame(16);
+            const t7 = CH.whatHere(p);
+            p.act = { kind: 'wood', x: tree.x, z: tree.z };
+            let cut = false;
+            for (let i = 0; i < 600 && !(cut && !p.acting); i++) { stepFrame(16); if (p.acting) cut = true; }
+            check('at a tree, cutting puts logs on the shoulder', cut && p.bag.wood > 0,
+              `acting ${cut}, logs ${p.bag.wood || 0}, E would ${t7?.kind || 'nothing'}`);
+            const home = p.camp, logs = p.bag.wood || 0, hadRaft = home.raft;
+            if (home.shore) { home.raft = false; home.wood = WO.WOOD.raft - logs; }
+            const stackWas = home.wood || 0;
+            p.x = area.x; p.z = area.z; p.leadX = p.x; p.leadZ = p.z;
+            stepFrame(16);
+            pressKey('KeyE');
+            for (let i = 0; i < 4; i++) stepFrame(16);
+            check('and put away, they go on the camp\'s stack',
+              logs > 0 && !(p.bag.wood > 0) && (home.shore ? home.raft === true : home.wood === stackWas + logs),
+              `logs ${logs}, still carrying ${p.bag.wood || 0}, stack ${stackWas} -> ${home.wood}`);
+            if (home.shore) {
+              check('and on a coast, enough of it is a raft', home.raft === true && home.wood < WO.WOOD.raft,
+                `raft ${home.raft}, stack ${home.wood}`);
+            }
+            home.raft = hadRaft;
+          }
+          const vit = document.getElementById('bagHud').innerHTML || '';
+          check('and how they are is one bar under the basket, life out of a hundred',
+            (vit.match(/class="vit/g) || []).length === 1 && /<u>life<\/u>[\s\S]*<strong>\d+<\/strong>/.test(vit), vit.slice(-200));
+        }
+
+        /* Foraging only where the map marks food: on one of the grounds, and
+           not twelve metres clear of every one of them. */
+        check('the island has berry thickets, with berries on them',
+          TH.thickets.length > 0 && Boolean(TH.berryMesh), `${TH.thickets.length} thickets`);
+        const grounds = TH.thickets;
+        if (grounds.length) {
+          const g = grounds[0];
+          check('a berry thicket is somewhere E forages', Boolean(CH.thicketNear(g.x, g.z)));
+          let bare = null;
+          for (let k = 0; k < 16 && !bare; k++) {
+            const a = (k / 16) * Math.PI * 2;
+            const x = g.x + Math.cos(a) * 60, z = g.z + Math.sin(a) * 60;
+            if (grounds.every((q) => Math.hypot(q.x - x, q.z - z) > 13)) bare = { x, z };
+          }
+          if (bare) check('and bare ground away from them is not', !CH.thicketNear(bare.x, bare.z));
+        }
+      }
+
+      /* Let go of with room in the basket, they go on filling it; full, they
+         take it home. Put back afterwards to what the checks below expect. */
+      {
+        p.bag = { fruit: 0, berries: 10, fish: 0, game: 0, animal: null, ore: 0, oreKind: null };
+        p.haul = 0.2; p.carry = 1; p.led = true; p.orders = null; p.goingHome = false;
+        CH.releaseLead(false);
+        check('let go with room left, they go on foraging', p.orders === 'gather' && !p.goingHome,
+          `orders=${p.orders} home=${p.goingHome}`);
+        p.bag = { fruit: 0, berries: 0, fish: 30, game: 0, animal: null, ore: 0, oreKind: null };
+        p.haul = 3; p.carry = 1; p.led = true; p.orders = null; p.goingHome = false;
+        CH.releaseLead(false);
+        check('and full, they take it home', p.goingHome === true, `home=${p.goingHome}`);
+        p.bag = null; p.haul = 0; p.carry = 0; p.orders = null; p.goingHome = false;
+        CH.leadTo(p.x, p.z);
+      }
+
+      /* A tiger: seen, then after them — then a tree, and a spear. The tiger is
+         put back where it was afterwards if it lived, so nothing below meets a
+         tiger nobody expected. */
+      {
+        const pack = WL.packs.find((pk) => pk.spec.predator);
+        const a = pack?.list.find((q) => !q.dead);
+        const el = document.getElementById('danger');
+        if (a && el) {
+          const was = { x: a.x, z: a.z, prey: a.prey, fed: a.fed, rest: a.rest, chase: a.chase, sulk: a.sulk };
+          a.x = p.x + 18; a.z = p.z; a.prey = null;
+          DG.updateDanger(true);
+          check('a tiger in sight is on screen, with how far', el.hidden === false && / · \d+ m/.test(el.innerHTML),
+            el.innerHTML.slice(0, 90));
+          a.prey = { kind: 'person', person: p };
+          DG.updateDanger(true);
+          check('and it says when it is coming for them', /coming for you/.test(el.innerHTML), el.innerHTML.slice(0, 90));
+
+          /* A tree well away from every camp: a tiger will not come onto a
+             camp's ground, and a check made there passes for the wrong reason. */
+          const tr = WD.treeSpots.find((t) => PP.camps.every((c) => Math.hypot(c.x - t.x, c.z - t.z) > 60));
+          if (tr) {
+            p.x = tr.x + 1; p.z = tr.z; p.leadX = p.x; p.leadZ = p.z;
+            pressKey('KeyZ');
+            for (let i = 0; i < 3; i++) stepFrame(16);
+            check('Z at a tree climbs it', Boolean(p.climbed) && p.lift > 0,
+              `climbed=${Boolean(p.climbed)} lift=${p.lift}`);
+            a.x = p.x + 10; a.z = p.z; a.prey = { kind: 'person', person: p }; a.fed = 0; a.rest = 0; a.sulk = 0;
+            for (let i = 0; i < 10; i++) stepFrame(16);
+            check('and a tiger after them gives up on somebody up a tree', !DG.hunting(a, p), String(DG.hunting(a, p)));
+            pressKey('KeyZ');
+            for (let i = 0; i < 3; i++) stepFrame(16);
+            check('and Z again brings them down', !p.climbed && !p.lift, `climbed=${Boolean(p.climbed)}`);
+          }
+
+          // A spear at it, from six metres: it dies, or it comes for them.
+          a.x = p.x + 6; a.z = p.z; a.prey = null;
+          pressKey('KeyE');
+          for (let i = 0; i < 6; i++) stepFrame(16);
+          check('E throws at a tiger in reach: it dies, or it comes for them', a.dead || DG.hunting(a, p),
+            `dead=${a.dead} hunting=${DG.hunting(a, p)}`);
+          const hud = document.getElementById('bagHud').innerHTML || '';
+          check('and what they have left is on screen: the life bar, out of a hundred',
+            /<u>life<\/u>/.test(hud) && /<strong>\d+<\/strong>/.test(hud), hud.slice(-160));
+          if (!a.dead) Object.assign(a, was);
+          CH.leadTo(p.x, p.z);
+        }
+      }
+
+      /* And Q hands them back to their own life. */
+      pressKey('KeyQ');
       for (let i = 0; i < 4; i++) stepFrame(16);
-      check('shift+W lets go of them', p.led === false || p.led === undefined,
+      check('Q lets go of them', p.led === false || p.led === undefined,
         String(p.led));
       check('and they pick an errand of their own',
         p.job !== 'led', String(p.job));
       check('and the marker goes with the leading',
         CH.leadMarker().visible === false, String(CH.leadMarker().visible));
+
+      /* The two on the end of the row, driven through the listener rather than
+         by calling the functions behind it — the wiring is the half that has
+         been wrong before. The mock's elements have no tree, so the event
+         carries its own `closest`, which is the only thing the handler asks
+         of the target. */
+      {
+        const row = document.getElementById('orders');
+        const clickAct = (act) => row.fire('click', {
+          target: { closest: (sel) => (sel === 'button[data-act]' ? { dataset: { act } } : null) },
+        });
+
+        CH.orderJob('craft');
+        check('there is an order on them to undo', p.orders === 'craft', String(p.orders));
+        clickAct('free');
+        check('and the row takes it off them again',
+          p.orders === null && !p.led, `orders=${p.orders} led=${p.led}`);
+        /* Still behind them: handing somebody back is not turning away. */
+        check('and leaves you still following', PM.P.view === 'follow', PM.P.view);
+
+        /* And home, from wherever they happen to be — led out first, so that
+           what is being checked is a journey and not where they already
+           stood. */
+        CH.leadTo(spot.x, spot.z);
+        for (let i = 0; i < 3; i++) stepFrame(16);
+        clickAct('home');
+        check('the row sends them home', p.goingHome === true, String(p.goingHome));
+        check('and lets go of them on the way', p.led === false, String(p.led));
+        for (let i = 0; i < 3; i++) stepFrame(16);
+        const fire = p.hearth || p.camp;
+        const out = Math.hypot(p.x - fire.x, p.z - fire.z);
+        const homes = [fire, ...(p.camp.storeSpots || []).map((s) => ({ x: s.fx, z: s.fz }))];
+        const aimed = homes.some((h) => Math.hypot(p.targetX - h.x, p.targetZ - h.z) < 0.5);
+        check('and the next turn spends it',
+          p.goingHome === false
+          && (out < 1.4 || (p.state === 'return' && aimed)),
+          `goingHome=${p.goingHome} state=${p.state} ${out.toFixed(0)}m from the fire`);
+        rowReport = `free -> orders=${p.orders} led=${p.led}`
+          + `, home -> ${p.state} ${out.toFixed(0)}m from the fire`;
+      }
     }
   }
 }
@@ -2306,12 +2790,14 @@ if (measuring('survive')) {
    module to reach into. */
 let liveCamps = [], livePeople = [];
 let mapModule = null, pathsModule = null, moveModule = null, cameraRef = null, lifeModule = null;
-let peopleModule = null, chronicleModule = null;
+let peopleModule = null, chronicleModule = null, bubblesModule = null, quarriesModule = null;
 if (srcFiles.length) {
   try {
     ({ camps: liveCamps, people: livePeople } = await import(pathToFileURL(join(stubDir, 'people.js')).href));
     lifeModule = await import(pathToFileURL(join(stubDir, 'life.js')).href);
     peopleModule = await import(pathToFileURL(join(stubDir, 'people.js')).href);
+    bubblesModule = await import(pathToFileURL(join(stubDir, 'bubbles.js')).href);
+    quarriesModule = await import(pathToFileURL(join(stubDir, 'quarries.js')).href);
     chronicleModule = await import(pathToFileURL(join(stubDir, 'chronicle.js')).href);
     mapModule = await import(pathToFileURL(join(stubDir, 'map.js')).href);
     pathsModule = await import(pathToFileURL(join(stubDir, 'paths.js')).href);
@@ -2433,6 +2919,209 @@ if (mapModule && liveCamps.length) {
   context2d.recording = false;
   check('and the corner map does not', context2d.texts.length === 0,
     `${context2d.texts.length} labels on a ${mapModule.MAP_DISPLAY}px map`);
+  /* And a click on the corner map opens the full one, and travels nowhere. */
+  mapModule.setMapSize(mapModule.SMALL_MAP);
+  const corner = document.getElementById('mapCanvas');
+  const t0 = { x: CONTROLS_TARGET().x, z: CONTROLS_TARGET().z };
+  corner.fire('pointerdown', { clientX: 20, clientY: 20 });
+  corner.fire('pointerup', { clientX: 20, clientY: 20 });
+  check('a click on the corner map opens the full map, and goes nowhere',
+    mapModule.mapIsFull() && Object.is(CONTROLS_TARGET().x, t0.x) && Object.is(CONTROLS_TARGET().z, t0.z),
+    `full=${mapModule.mapIsFull()} ${t0.x},${t0.z} -> ${CONTROLS_TARGET().x},${CONTROLS_TARGET().z}`);
+  mapModule.setMapSize(was);
+}
+
+/* -------------------------------------------------------------------------
+   Quarries
+
+   How many of each kind this island was given and how much is left in them,
+   reported; and one of them dug, to see the heap on the hillside get smaller.
+   Put back as it was afterwards.
+   ------------------------------------------------------------------------- */
+let quarryReport = 'module not loaded';
+if (quarriesModule?.deposits) {
+  const Q = quarriesModule;
+  const of = (k) => Q.deposits.filter((d) => d.kind === k);
+  quarryReport = Q.ORE_KINDS.map((k) =>
+    `${k} ${of(k).length} (${of(k).reduce((n, d) => n + d.left, 0)} left)`).join(' · ');
+  check('the island has quarries to dig', Q.deposits.length > 0, quarryReport);
+  const d = Q.deposits.find((q) => q.left > 5);
+  if (d && Q.depositMesh) {
+    const b = d.i * Q.PER_DEPOSIT * 16;
+    const size = () => Math.hypot(...Q.depositMesh.instanceMatrix.array.slice(b, b + 3));
+    const before = size(), was = d.left;
+    Q.mineDeposit(d, 5);
+    const after = size();
+    d.left = was;
+    Q.dressDeposit(d);
+    check('and digging one makes it smaller', after < before, `${before.toFixed(2)} -> ${after.toFixed(2)}`);
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Who you were watching, across a reload
+
+   This harness has no localStorage, which is a case the page has to survive
+   and the rest of the run already shows it does. For this one check it is given
+   one — kept, switched away, restored — and then it is taken away again.
+   ------------------------------------------------------------------------- */
+if (chronicleModule?.keepFocus && chronicleModule.restoreFocus && livePeople.length > 1) {
+  const C = chronicleModule;
+  const box = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (box.has(k) ? box.get(k) : null),
+    setItem: (k, v) => { box.set(k, String(v)); },
+  };
+  try {
+    const target = livePeople[livePeople.length - 1];
+    C.followPersonById(target.id);
+    C.keepFocus();
+    // Somebody else, the way a fresh page picks somebody on the way in.
+    C.followPersonById(livePeople[0].id);
+    const back = C.restoreFocus();
+    check('a refresh puts you back behind whoever you were watching',
+      back && C.followedPerson() === target,
+      `wanted ${target.name}, got ${C.followedPerson()?.name || 'nobody'}`);
+  } finally {
+    delete globalThis.localStorage;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Room past the island
+
+   The bands are made more room when they fill it rather than being refused a
+   birth. Driven here on the real meshes: grow past what was allocated, and the
+   room doubles, every piece is the new size, and what was already drawn is
+   still where it was.
+   ------------------------------------------------------------------------- */
+if (peopleModule?.growPeople && lifeModule && peopleModule.personParts?.torso) {
+  const PP = peopleModule.personParts;
+  const was = lifeModule.peopleCapacity;
+  const before = Array.from(PP.torso.instanceMatrix.array.slice(0, 16));
+  const drawn = PP.torso.count;
+  peopleModule.growPeople(was + 1);
+  const now = lifeModule.peopleCapacity;
+  check('a band that fills its room is given twice as much', now === was * 2, `${was} -> ${now}`);
+  check('and every piece of a person is the new size',
+    Object.entries(PP).every(([k, m]) => m.instanceMatrix.count === now * (k === 'upperArm' || k === 'foreArm'
+      || k === 'hand' || k === 'thigh' || k === 'shin' || k === 'foot' ? 2 : 1)),
+    Object.entries(PP).map(([k, m]) => `${k} ${m.instanceMatrix.count}`).join(' '));
+  check('and what was drawn is still where it was, and still drawn',
+    PP.torso.count === drawn
+    && before.every((v, i) => Math.abs(v - PP.torso.instanceMatrix.array[i]) < 1e-6),
+    `count ${drawn} -> ${PP.torso.count}`);
+}
+
+/* -------------------------------------------------------------------------
+   The basket
+
+   Source can say the carry is drawn; only the mesh can say a basket went up in
+   somebody's hands and stayed down when what they were carrying was a deer.
+   The same person twice, drawn directly, and put back as they were after.
+   ------------------------------------------------------------------------- */
+if (peopleModule?.personParts?.basket && moveModule?.writePerson && livePeople.length) {
+  const PP = peopleModule.personParts;
+  const p = livePeople[0];
+  const scaleOf = (mesh) => {
+    const e = mesh.instanceMatrix.array;
+    return Math.hypot(e[0], e[1], e[2]);
+  };
+  const was = { carry: p.carry, bag: p.bag, haul: p.haul, loadKind: p.loadKind };
+  Object.assign(p, { carry: 1, haul: 0.6, bag: { fruit: 10, berries: 0, fish: 0, game: 0, animal: null } });
+  moveModule.writePerson(p, 0);
+  const withFruit = scaleOf(PP.basket), heap = scaleOf(PP.load);
+  Object.assign(p, { haul: 20, bag: { fruit: 0, berries: 0, fish: 0, game: 1, animal: 'deer' } });
+  moveModule.writePerson(p, 0);
+  const withDeer = scaleOf(PP.basket), carcass = scaleOf(PP.load);
+  Object.assign(p, was);
+  check('somebody bringing fruit home has a basket in their hands, with the fruit in it',
+    withFruit > 0.01 && heap > 0.01, `basket ${withFruit.toFixed(3)} heap ${heap.toFixed(3)}`);
+  check('and somebody bringing a deer home carries it without one',
+    withDeer < 1e-6 && carcass > 0.01, `basket ${withDeer.toFixed(3)} load ${carcass.toFixed(3)}`);
+}
+
+/* -------------------------------------------------------------------------
+   Where the food is, and what the map shows
+
+   Drawn, not read. The marks come off live state — fruit on the trees, the
+   ground a band remembers, its shore, its granaries — so only a real world can
+   say whether any go down, and only the real hit test can say the pointer
+   finds one. Nothing here travels: the drag checks below are the ones that
+   move the camera, and they are last for that reason.
+   ------------------------------------------------------------------------- */
+let marksReport = 'map module not loaded';
+if (mapModule?.mapMarks && mapModule.setMapLayer) {
+  const M = mapModule;
+  const was = M.mapSize;
+  M.setMapSize(M.MAP_SIZES.findIndex((m) => m.fills));
+  M.updateMapView();
+  M.drawMap(2e9);
+  const count = (k) => M.mapMarks.filter((m) => m.kind === k).length;
+  const kinds = Object.keys(M.MARK_KINDS);
+  marksReport = kinds.map((k) => `${k} ${count(k)}`).join(' · ');
+  check('the full map marks where the food is', M.mapMarks.length > 0, marksReport);
+  /* A band with anything put by has a granary standing, so a living band with
+     food and no mark has lost it somewhere between the two. */
+  const stocked = liveCamps.filter((c) => !c.gone && c.storesUp > 0).length;
+  check('including the granaries of every band with food put by',
+    count('stores') === stocked, `${count('stores')} marked of ${stocked}`);
+
+  /* The pointer on a mark's middle finds it. The conversion from map units to
+     screen pixels is the half of a hit test that can be silently backwards. */
+  const m0 = M.mapMarks[0];
+  if (m0) {
+    const r = document.getElementById('mapCanvas').getBoundingClientRect();
+    const got = M.markUnder(r.left + m0.mx / M.MAP_N * r.width, r.top + m0.my / M.MAP_N * r.height);
+    check('and the mark under the pointer is the one drawn there', Boolean(got) && got.d < 0.5,
+      got ? `${got.d.toFixed(1)}px off` : 'found nothing');
+  }
+
+  /* Putting a layer away takes it off. One of the food kinds, whichever this
+     world has, and then the people, whose dots are the only arcs filled in
+     their colours. */
+  const k = kinds.find((q) => count(q) > 0);
+  if (k) {
+    M.setMapLayer(k, false);
+    M.drawMap(2e9 + 1);
+    check(`hiding ${k} takes its marks off`, count(k) === 0, `${count(k)} still marked`);
+    M.setMapLayer(k, true);
+  }
+  const PEOPLE = ['#ffcc74', '#ffe9a8', 'rgba(255, 214, 150, 0.5)'];
+  context2d.arcs.length = 0;
+  context2d.recording = true;
+  M.setMapLayer('people', false);
+  M.drawMap(2e9 + 2);
+  context2d.recording = false;
+  const dots = context2d.arcs.filter((a) => PEOPLE.includes(a.fill)).length;
+  check('and hiding the people takes the people off', dots === 0, `${dots} still drawn`);
+  M.setMapLayer('people', true);
+
+  /* Through the list's own listener, which is the wiring that has gone missing
+     before. The mock's elements have no tree, so the event brings its own
+     closest(). */
+  const panel = document.getElementById('mapLayers');
+  document.getElementById('mapFilter').fire('click');
+  check('the filter button opens the list', panel.hidden === false, `hidden=${panel.hidden}`);
+  const line = (layer) => ({ target: { closest: (sel) => (sel === 'button[data-layer]' ? { dataset: { layer } } : null) } });
+  panel.fire('click', line('animals'));
+  check('and a line in it puts that layer away', M.mapShows.animals === false, String(M.mapShows.animals));
+  panel.fire('click', line('animals'));
+  check('and brings it back', M.mapShows.animals === true, String(M.mapShows.animals));
+  /* And all of them at once, through the same listener. Everything is showing,
+     so the first press puts the lot away; one brought back by hand makes the
+     list mixed, and the next press brings everything back rather than taking
+     the last one away. */
+  const everything = { target: { closest: (sel) => (sel === 'button[data-all]' ? {} : null) } };
+  const showing = () => M.MAP_LAYERS.filter((k) => M.mapShows[k]).length;
+  panel.fire('click', everything);
+  check('"All" puts every layer away', showing() === 0, `${showing()} of ${M.MAP_LAYERS.length} still showing`);
+  panel.fire('click', line('people'));
+  panel.fire('click', everything);
+  check('and with some of them showing, brings every one back', showing() === M.MAP_LAYERS.length,
+    `${showing()} of ${M.MAP_LAYERS.length} showing`);
+  M.setMapSize(was);
+  check('and the list goes away with the full map', panel.hidden === true, `hidden=${panel.hidden}`);
 }
 
 /* -------------------------------------------------------------------------
@@ -2517,7 +3206,11 @@ if (mapModule && cameraRef) {
        line can legitimately name two: somebody arriving from the next camp, a
        band breaking away from its parent. What is being checked is that the
        filter kept the right ones, not that bands never meet. */
-    const lines = log.split('<div>').slice(2);
+    /* The list is `<div id="tribeLogList"><div>line</div>…</div>`: the first
+       piece is the list's own opening tag, and every piece after it a line.
+       It was slice(2), which skipped the first line — and failed "0 of 0" on
+       a band with exactly one. */
+    const lines = log.split('<div>').slice(1);
     check('every line it shows is one of this band\'s',
       lines.length > 0 && lines.every((l) => l.includes(`>${target.code}<`)),
       `${lines.filter((l) => !l.includes(`>${target.code}<`)).length} of ${lines.length} were not`);
@@ -2617,6 +3310,45 @@ if (liveCamps.length && livePeople.length) {
     hearthReport = `no band grew past one hearth (largest ${
       Math.max(...liveCamps.map((c) => c.families || 0))} households)`;
   }
+}
+
+/* The granaries. Source can say the count is worked out; only the mesh can
+   say the ones standing are the ones it worked out — the tents once kept a
+   different matrix from the one they were drawn with, and looked right until
+   the band changed. So this reads the slots back. Each standing granary has to
+   be exactly where the camp laid it, walls and thatch both, and each one that
+   is not standing has to be anywhere else. */
+let storeReport = 'no camps';
+if (liveCamps.length && peopleModule?.campParts?.stores && lifeModule?.daysOfFood) {
+  const { campParts, STORES } = peopleModule;
+  const live = liveCamps.filter((c) => !c.gone && c.storeAt);
+  const at = (mesh, slot) => mesh.instanceMatrix.array.subarray(slot * 16, slot * 16 + 16);
+  const same = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-4);
+  let wrong = 0, standing = 0;
+  for (const c of live) {
+    for (let k = 0; k < STORES; k++) {
+      const slot = c.index * STORES + k;
+      const up = k < (c.storesUp || 0);
+      /* A band whose free side runs into the sea has fewer places for one,
+         and a slot with nowhere to stand must never be shown. */
+      const laid = c.storeAt[k]?.elements;
+      const walls = !!laid && same(at(campParts.stores, slot), laid);
+      const thatch = !!laid && same(at(campParts.storeRoofs, slot), laid);
+      if (up) standing++;
+      if (walls !== up || thatch !== up) wrong++;
+    }
+  }
+  check('the granaries standing are the ones the store says', wrong === 0,
+    `${wrong} of ${live.length * STORES} slots disagree`);
+  /* And somewhere to stand at each, on the camp side of it: the spot anybody
+     bringing food in walks to. */
+  const fronts = live.filter((c) => (c.storeSpots || [])
+    .every((s) => Math.hypot(s.fx - c.x, s.fz - c.z) < Math.hypot(s.x - c.x, s.z - c.z)));
+  check('and a place in front of each to put food away', fronts.length === live.length,
+    `${live.length - fronts.length} of ${live.length} bands without`);
+  storeReport = `${standing} standing across ${live.length} bands · `
+    + live.slice(0, 6).map((c) =>
+      `${c.code} ${lifeModule.daysOfFood(c).toFixed(1)}d→${c.storesUp || 0}/${c.storeAt.length}`).join(' ');
 }
 
 /* -------------------------------------------------------------------------
@@ -2819,9 +3551,49 @@ console.log(`  tribe: ${tribeReport}`);
 console.log(`  paths: ${pathReport}`);
 console.log(`  full map: ${fullMapReport}`);
 console.log(`  hearths: ${hearthReport}`);
+console.log(`  granaries: ${storeReport}`);
+console.log(`  map marks: ${marksReport}`);
+console.log(`  quarries: ${quarryReport}`);
+{
+  /* Whether anybody was stopped doing something near the camera on the last
+     frame drawn is a fact about the run, so that is reported, not required.
+
+     What is required comes after it. A world of four can easily have nobody
+     stopped within sight, and "0 up" then says nothing about whether a bubble
+     would have gone up — so one person is put in a berry patch in front of the
+     camera and another knapping in a tent beside it, and there has to be a
+     bubble over each. Last of everything, because it moves people about and
+     nothing after it looks at them. */
+  const B = bubblesModule;
+  const st = B?.bubbleStats;
+  const said = (s) => Object.keys(B.BUBBLE).filter((k) => s.byIcon[B.BUBBLE[k]])
+    .map((k) => `${k} ${s.byIcon[B.BUBBLE[k]]}`).join(' ');
+  console.log(`  bubbles: ${st ? `${st.shown} up, ${st.worded} with words${said(st) ? ` · ${said(st)}` : ''}` : 'module not loaded'}`);
+  const [a, b] = livePeople.filter((p) => p.hut);
+  if (B && a && b && cameraRef) {
+    cameraRef.position.set(b.hut.x + 5, cameraRef.position.y, b.hut.z);
+    Object.assign(a, { x: b.hut.x + 9, z: b.hut.z, state: 'work', job: 'gather', speed: 0,
+      hidden: false, led: false, panic: 0 });
+    Object.assign(b, { state: 'work', job: 'craft', hidden: true, led: false, panic: 0, asleep: false });
+    B.updateBubbles();
+    check('a bubble goes up over somebody stopped foraging',
+      st.byIcon[B.BUBBLE.gather] >= 1, said(st) || 'none');
+    check('and one over the tent somebody is knapping in',
+      st.byIcon[B.BUBBLE.craft] >= 1, said(st) || 'none');
+    /* Both are a few metres from the camera, well inside the range a bubble
+       carries its word at. */
+    check('and near enough to read, each carries its word', st.worded >= 2,
+      `${st.worded} of ${st.shown} worded`);
+  } else {
+    check('there were two people with tents to put bubbles over', false,
+      `module=${!!B} camera=${!!cameraRef}`);
+  }
+}
 console.log(`  forage: ${forageReport}`);
 console.log(`  face: ${faceReport}`);
 console.log(`  F picks: ${followReport}`);
+console.log(`  E: ${actReport}`);
+console.log(`  order row: ${rowReport}`);
 for (const f of failures) console.log(`  FAILED — ${f}`);
 if (missing.length) {
   console.log(`  FAILED — asked for elements that do not exist: ${missing.join(', ')}`);
