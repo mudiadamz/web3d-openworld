@@ -5878,6 +5878,26 @@ check('and rendering it is a branch like the other two',
   /if \(tribeTab === 'log'\) \{ \$\('tribeList'\)\.innerHTML = campHistory\(camp\); return; \}/.test(cardSrc));
 /* Important only, which is the same filter the panel and the fast-forward log
    use — a band's forty years is thousands of lines and eight of them matter. */
+/* The skills are a tab of their own rather than a table wedged into the head
+   of the card, and every person on either list opens their family. */
+check('the skills have a tab of their own', html.includes('id="tribeSkills"')
+  && /\$\('tribeSkills'\)\.addEventListener\('click', \(\) => \{ setTribeTab\('skills'\); renderTribeCard\(\); \}\)/.test(html)
+  && /if \(tribeTab === 'skills'\) \{/.test(cardSrc));
+check('and are no longer crowded into the head of the card', (() => {
+  const i = cardSrc.indexOf("$('tribeHead').innerHTML"), j = cardSrc.indexOf("$('tribeNow').className");
+  return i > 0 && j > i && !cardSrc.slice(i, j).includes('class="skills"');
+})());
+check('every person on both lists has a lineage button',
+  /\$\{linButton\(p\.id, p\.name\)\}/.test(cardSrc) && /\$\{linButton\(r\.i, r\.n\)\}/.test(cardSrc));
+check('which opens their lineage rather than following them', (() => {
+  const a = cardSrc.indexOf("closest?.('[data-lin]')"), b = cardSrc.indexOf("closest?.('tr[data-p]')");
+  return a > 0 && b > a;
+})());
+const kinSrc = moduleSource('kin.js');
+check('reading parents, grandparents and children off the record, and the line back',
+  /function lineageView\(id\)/.test(kinSrc) && /'grandparents'/.test(kinSrc)
+  && /grandchildren/.test(kinSrc) && /ancestry\(\{ father: me\.f \}\)/.test(kinSrc));
+check('and a new card never opens on somebody else\'s family', /lineageShown = 0;\n  \$\('tribe'\)\.hidden = false;/.test(cardSrc));
 check('it shows what is worth telling, not everything',
   /chronicle\.filter\(\(e\) => isMilestone\(e\)/.test(cardSrc));
 check('and only this world\'s', /e\.seed === P\.seed/.test(cardSrc));

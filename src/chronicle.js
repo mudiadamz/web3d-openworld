@@ -5,6 +5,7 @@ import { clamp, flatnessAt, sampleHeight } from './noise.js';
 import { seasonName, camera, canvas, controls, renderer, scene, sky, sunDir, sunLight } from './scene.js';
 import { fauna, grassGroup, rockGroup, world } from './world.js';
 import { lineage, pick } from './wildlife.js';
+import { linButton, lineageView } from './kin.js';
 import { PERSON, rateIndex, worldClock } from './clock.js';
 import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from './people.js';
 import {
@@ -134,6 +135,7 @@ export function openTribe(i) {
      card on reads as the page being wrong. Unless there are no living, in
      which case the only thing there is to see is who there was. */
   tribeTab = people.some((p) => p.camp === camp) ? 'now' : 'was';
+  lineageShown = 0;
   $('tribe').hidden = false;
   renderTribeCard();
 }
@@ -179,17 +181,23 @@ export function formerTable(camp) {
   const gone = formerOf(camp);
   if (!gone.length) return '<div>nobody has left and nobody has died</div>';
   return `<table><thead><tr><th>who</th><th>age</th><th>what became of them</th>`
-    + `<th>day</th></tr></thead><tbody>`
+    + `<th>day</th><th></th></tr></thead><tbody>`
     + gone.map(({ r, when, gone: how, how: why }) => {
       const years = Math.max(0, (when - r.b) / P.yearLength);
       return `<tr class="${how === 'left' ? '' : 'gone'}">`
         + `<td class="n">${r.n}</td>`
         + `<td>${Math.floor(years)}${sexMarks(r.s === 'f' ? '♀' : '♂')}</td>`
         + `<td class="n">${why}</td>`
-        + `<td>${Math.floor(when)}</td></tr>`;
+        + `<td>${Math.floor(when)}</td>`
+        + `<td>${linButton(r.i, r.n)}</td></tr>`;
     }).join('')
     + '</tbody></table>';
 }
+
+/* Which person's family the card is showing in the list's place, if any, and
+   the tab it was opened from. The view itself is in kin.js. */
+export let lineageShown = 0;
+let lineageTab = 'now';
 
 export function renderTribeCard() {
   const camp = camps[tribeShown];
@@ -250,8 +258,6 @@ export function renderTribeCard() {
        pile is the only thing here that keeps. */
     + `<div><span>worth taking</span> ${wealthOf(camp).toFixed(0)}`
     + ` <em>(${heldWords(camp)})</em></div>`
-    + `<table class="skills"><thead><tr><th>skill</th><th>acquired</th><th>level</th></tr></thead>`
-    + `<tbody>${skills}</tbody></table>`
     + `<div><span>founded day ${Math.floor(camp.founded)} · ${camp.born} born · `
     + `most they were was ${camp.peak}${toll.length
         ? ` · lost ${toll.reduce((n, [, k]) => n + k, 0)}: `
@@ -260,6 +266,15 @@ export function renderTribeCard() {
   $('tribeNow').className = tribeTab === 'now' ? 'on' : '';
   $('tribeWas').className = tribeTab === 'was' ? 'on' : '';
   $('tribeLog').className = tribeTab === 'log' ? 'on' : '';
+  $('tribeSkills').className = tribeTab === 'skills' ? 'on' : '';
+  // Another tab closes a lineage; back, or the tab it was opened from, returns.
+  if (lineageShown && tribeTab !== lineageTab) lineageShown = 0;
+  if (lineageShown) { $('tribeList').innerHTML = lineageView(lineageShown); return; }
+  if (tribeTab === 'skills') {
+    $('tribeList').innerHTML = `<table class="skills"><thead><tr><th>skill</th><th>acquired</th><th>level</th></tr></thead>`
+      + `<tbody>${skills}</tbody></table>`;
+    return;
+  }
   if (tribeTab === 'was') { $('tribeList').innerHTML = formerTable(camp); return; }
   if (tribeTab === 'log') { $('tribeList').innerHTML = campHistory(camp); return; }
 
@@ -267,7 +282,7 @@ export function renderTribeCard() {
      who remember how things are done, then the ones doing them, then the
      children who will. */
   $('tribeList').innerHTML = folk.length
-    ? `<table><thead><tr><th>who</th><th>age</th><th>is</th><th>children</th><th>carried</th><th>doing</th></tr></thead><tbody>`
+    ? `<table><thead><tr><th>who</th><th>age</th><th>is</th><th>children</th><th>carried</th><th>doing</th><th></th></tr></thead><tbody>`
       + folk.map((p) => {
         const kids = childrenOf(p);
         return `<tr class="${p === chief ? 'chief' : ''}${p.sick ? ' gone' : ''}"`
@@ -280,7 +295,8 @@ export function renderTribeCard() {
           + `<td class="n">${p.role && p.role !== 'forager' ? (ROLE_WORDS[p.role] || p.role) : ''}</td>`
           + `<td>${kids || (p.child ? '' : '—')}</td>`
           + `<td class="got">${(p.brought || 0).toFixed(0)}</td>`
-          + `<td class="n">${p.sick ? 'ill' : doingWords(p)}</td></tr>`;
+          + `<td class="n">${p.sick ? 'ill' : doingWords(p)}</td>`
+          + `<td>${linButton(p.id, p.name)}</td></tr>`;
       }).join('')
       + '</tbody></table>'
     : '<div>nobody is left</div>';
@@ -1630,6 +1646,15 @@ export function wireInput() {
      is born, dies, falls ill or changes job. Only the living carry `data-p` —
      the "who is gone" tab is a list of people there is nothing to follow. */
   $('tribeList')?.addEventListener('click', (ev) => {
+    /* A lineage button, a name inside a lineage, or back. Before the row's own
+       click, because the button sits on a row that would otherwise follow them. */
+    const lin = ev.target?.closest?.('[data-lin]');
+    if (lin) {
+      lineageShown = Number(lin.dataset.lin) || 0;
+      lineageTab = tribeTab;
+      renderTribeCard();
+      return;
+    }
     const row = ev.target?.closest?.('tr[data-p]');
     if (!row) return;
     if (followPersonById(Number(row.dataset.p))) closeTribe();

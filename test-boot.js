@@ -1428,7 +1428,8 @@ let tribeReport = 'not opened';
       !/undefined|<td class="n"><\/td>/.test(was));
   }
   if (goneRows > 1) {
-    const days = [...was.matchAll(/<td>(\d+)<\/td>\s*<\/tr>/g)].map((m) => Number(m[1]));
+    // The day is the cell before each row's lineage button.
+    const days = [...was.matchAll(/<td>(\d+)<\/td>\s*<td><button class="lin"/g)].map((m) => Number(m[1]));
     check('most recently gone at the top',
       days.length > 1 && days.every((d, i) => i === 0 || days[i - 1] >= d),
       days.join(','));

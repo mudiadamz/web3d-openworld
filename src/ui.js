@@ -383,6 +383,7 @@ $('tribes').addEventListener('click', (ev) => {
 });
 $('tribeNow').addEventListener('click', () => { setTribeTab('now'); renderTribeCard(); });
 $('tribeWas').addEventListener('click', () => { setTribeTab('was'); renderTribeCard(); });
+$('tribeSkills').addEventListener('click', () => { setTribeTab('skills'); renderTribeCard(); });
 $('tribeLog').addEventListener('click', () => { setTribeTab('log'); renderTribeCard(); });
 /* Go and stand there — and get out of the way, which is the whole gesture.
 

@@ -303,6 +303,17 @@
   #tribeList tr.gone td { opacity: 0.45; }
   #tribeList tr[data-p] { cursor: pointer; }
   #tribeList tr[data-p]:hover td { background: rgba(255,255,255,0.07); }
+  /* The lineage button on each row, and the view it opens in the list's place. */
+  #tribeList button.lin {
+    background: none; border: 0; padding: 0 2px; color: var(--muted); cursor: pointer; line-height: 0;
+  }
+  #tribeList button.lin:hover { color: var(--accent); }
+  #tribeList button.lin svg { width: 11px; height: 11px; fill: currentColor; }
+  #lineage .top { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+  #lineage table th { text-align: left; white-space: nowrap; vertical-align: top; }
+  #lineage a[data-lin] { color: var(--text); cursor: pointer; text-decoration: underline dotted; }
+  #lineage a[data-lin]:hover { color: var(--accent); }
+  #lineage .unk { color: var(--muted); font-style: italic; }
   #tribes > div { cursor: pointer; }
   #chronCard {
     width: min(680px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
@@ -724,6 +735,7 @@
     <div id="tribeTabs">
       <button id="tribeNow" class="on">who is here</button>
       <button id="tribeWas">who is gone</button>
+      <button id="tribeSkills">skills</button>
       <button id="tribeLog">what happened</button>
     </div>
     <div id="tribeList"></div>

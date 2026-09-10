@@ -2436,6 +2436,7 @@ src/
   move.js       getting there, jobs, the camera rig
   creeks.js     creeks: traced downhill, carved, and filled with water
   chronicle.js  events, the chronicle window, the band card, bisect
+  kin.js        a person's family, read off the record: the lineage view
   save.js       snapshot and restore
   audio.js      nature sound
   map.js        the minimap
