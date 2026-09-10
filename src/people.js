@@ -594,9 +594,11 @@ export const CAMP_PIECES = {
   /* A band's field and its pen (farming.js): ridges of turned earth, what is
      growing on them, the posts round the pen and the animals in it. Numbers
      rather than FARM's names, because farming.js imports this module back and
-     nothing may cross that while either is loading. `sheep` is FARM.stockMax. */
-  rows: 8,
-  crops: 56,
+     nothing may cross that while either is loading. `sheep` is FARM.stockMax;
+     rows and crops are room for the largest field (FIELD, in farming.js): twenty
+     rows, eighteen plants to a row of twenty-six metres. */
+  rows: 20,
+  crops: 360,
   pen: 10,
   sheep: 12,
   /* No `fires` here, and the crash that put this comment in is the reason:

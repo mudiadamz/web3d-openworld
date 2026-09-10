@@ -7175,6 +7175,30 @@ check('a taken village comes back under its new name and flag',
 check('and keeps the dead it had under its old name', /const mine = \(code\) => code === camp\.code \|\| \(camp\.pastCodes \|\| \[\]\)\.includes\(code\);/.test(html));
 check('a conquest is worth telling', /'conquest',   \/\/ a band took another's village/.test(html));
 
+/* A field grows with the band that works it, wider and longer both, and is
+   never planted in the creek or on the camp's trampled ground. */
+check('a field grows wider and longer with the band and its farming', (() => {
+  const src = moduleSource('farming.js');
+  const at = src.indexOf('function fieldSize(camp)');
+  const size = new Function('FARM', 'FIELD', 'CAMP_PIECES',
+    src.slice(at, src.indexOf('\n}\n', at) + 2) + '\nreturn fieldSize;')(
+    { fullBand: 30 }, { spacing: 1.6, minLen: 9.5, maxLen: 26, step: 1.4 }, { rows: 20, crops: 360 });
+  const patch = size({ pop: 6, skill: { irrigation: 0.5, farming: 0.1 } });
+  const field = size({ pop: 40, skill: { irrigation: 1, farming: 1 } });
+  const none = size({ pop: 40, skill: { irrigation: 0, farming: 0 } });
+  return field.rows > patch.rows && field.len > patch.len && none.rows === 0 && field.rows === 20
+    && field.perRow <= 18 ? true : JSON.stringify({ patch, field, none });
+})() === true);
+check('and is never planted in the creek or on the camp\'s trampled ground',
+  /sampleHeight\(x, z\) > SEA \+ 0\.6 && Math\.hypot\(x - camp\.x, z - camp\.z\) > CAMP_CLEARING/.test(moduleSource('farming.js')));
+check('and the meshes have room for the largest one', (() => {
+  const rows = Number((html.match(/^\s*rows: (\d+),/m) || [, 0])[1]);
+  const crops = Number((html.match(/^\s*crops: (\d+),/m) || [, 0])[1]);
+  const maxLen = Number((html.match(/maxLen: ([\d.]+),/) || [, 0])[1]);
+  const step = Number((html.match(/^\s*step: ([\d.]+),\s*\/\/ metres between plants/m) || [, 0])[1]);
+  return crops / rows >= Math.floor(maxLen / step) ? true : `${crops / rows} places a row for ${Math.floor(maxLen / step)} plants`;
+})() === true);
+
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);

@@ -2465,11 +2465,18 @@ if (measuring('survive')) {
           check('N eats out of the basket when there is nothing in the store',
             p.bag.berries === 0 && p.life > 0.65 && p.nourish > 0.8,
             `berries ${p.bag.berries}, life ${p.life.toFixed(2)}, fed ${p.nourish.toFixed(2)}`);
+          /* Nobody else may bank a load while this is measured. The store is
+             what it tests, and a forager coming home in these four frames once
+             put a quarter of a day into it — 5.25 after a meal, which only a
+             deposit can do. Held for the meal, and given back after. */
+          const held = PP.people.filter((q) => q !== p).map((q) => [q, q.haul]);
+          for (const [q] of held) q.haul = 0;
           p.camp.food = 5; p.life = 0.4; p.nourish = 0.5;
           pressKey('KeyN');
           for (let i = 0; i < 4; i++) stepFrame(16);
           check('and at home, out of the band\'s store', p.camp.food < 4.8 && p.life > 0.65,
             `store ${p.camp.food.toFixed(2)}, life ${p.life.toFixed(2)}`);
+          for (const [q, h] of held) q.haul = h;
           p.camp.food = storeWas;
 
           /* Down low, up to a deer, a spear: it falls where it stood, stays

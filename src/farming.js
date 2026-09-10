@@ -44,6 +44,17 @@ export const FARM = {
   stockMax: 12,        // head a band at mastery keeps; the pen has room for this many
   stockGrow: 0.08,     // share a flock grows by in a sim-day, while there is room
   milk: 0.2,           // food one head gives the store in a sim-day
+  fullBand: 30,        // a band this big works the whole field its farming allows
+};
+
+/* The field's shape. It grows both ways — more rows across, and longer rows —
+   so a band of five that has just learned works a patch, and a village of
+   thirty at mastery works a field some thirty metres by twenty-five. */
+export const FIELD = {
+  spacing: 1.6,        // metres between rows
+  minLen: 9.5,         // a row when the field is new: the length of the ridge geometry
+  maxLen: 26,          // and at its longest
+  step: 1.4,           // metres between plants along a row
 };
 
 /** A band's field: found once, off the camp's own stream, and kept. */
@@ -86,10 +97,25 @@ export function farmWeight(p, hunger, rested) {
   return FARM.chance * pull * rested;
 }
 
-/** Somewhere along the rows. */
+/* How big a band's field is now: wider and longer with how well it farms and
+   how many mouths it has to feed. Nothing until it has dug. */
+export function fieldSize(camp) {
+  const irrigation = camp.skill?.irrigation || 0, farming = camp.skill?.farming || 0;
+  if (irrigation < 0.1) return { rows: 0, len: 0, perRow: 0, grown: 0 };
+  const band = Math.min(1, Math.max(0.35, (camp.pop || 0) / FARM.fullBand));
+  const size = Math.min(1, Math.max(0.1, Math.max(irrigation * 0.25, farming) * band));
+  const most = CAMP_PIECES.crops / CAMP_PIECES.rows;
+  const rows = Math.max(2, Math.round(CAMP_PIECES.rows * size));
+  const len = FIELD.minLen + (FIELD.maxLen - FIELD.minLen) * size;
+  const perRow = Math.min(most, Math.max(1, Math.floor(len / FIELD.step)));
+  return { rows, len, perRow, grown: Math.min(1, farming * 1.25) };
+}
+
+/** Somewhere along the rows, as far as the field reaches. */
 export function farmSite(p) {
-  const f = fieldOf(p.camp);
-  const along = (luck() - 0.5) * 9, across = (luck() - 0.5) * CAMP_PIECES.rows * 1.6;
+  const f = fieldOf(p.camp), size = fieldSize(p.camp);
+  const along = (luck() - 0.5) * Math.max(size.len, 9);
+  const across = (luck() - 0.5) * Math.max(size.rows, 2) * FIELD.spacing;
   const ca = Math.cos(f.a), sa = Math.sin(f.a);
   p.targetX = f.x + ca * along - sa * across;
   p.targetZ = f.z + sa * along + ca * across;
@@ -101,7 +127,9 @@ export function farmSite(p) {
    the island's ABUNDANCE like every other food. */
 export function farmDone(p) {
   const camp = p.camp, f = fieldOf(camp);
-  if (Math.hypot(p.x - f.x, p.z - f.z) > 14) return;        // gave up on the way
+  const size = fieldSize(camp);
+  const reach = Math.max(14, size.len / 2 + (size.rows * FIELD.spacing) / 2 + 4);
+  if (Math.hypot(p.x - f.x, p.z - f.z) > reach) return;     // gave up on the way
   const learning = (camp.skill.irrigation || 0) < FARM.irrigateFirst;
   practise(camp, 'irrigation', learning ? FARM.perDitch : FARM.perDitch * 0.25);
   p.knows.irrigation = Math.max(p.knows.irrigation || 0, camp.skill.irrigation);
@@ -160,50 +188,61 @@ export function farmGeometries() {
   };
 }
 
-/* As far as the band has got: ridges once it has dug, more of them and green
-   on them as it learns to farm, and a pen with as many head as it keeps. */
+/* As far as the band has got: ridges once it has dug, a field growing wider
+   and longer as the band learns and grows, green on the rows as it farms, and
+   a pen with as many head as it keeps. Nothing is planted in the creek or on
+   the camp's trampled ground, whatever size the field has reached. */
 export function dressField(camp, parts, index) {
   if (!parts.rows) return;
-  const n = CAMP_PIECES, f = fieldOf(camp);
-  const irrigation = camp.skill?.irrigation || 0, farming = camp.skill?.farming || 0;
-  const rows = irrigation < 0.1 ? 0 : Math.max(2, Math.round(n.rows * Math.max(irrigation, farming)));
-  const crops = Math.round(n.crops * farming), perRow = n.crops / n.rows;
+  const n = CAMP_PIECES, f = fieldOf(camp), size = fieldSize(camp), most = n.crops / n.rows;
   const ca = Math.cos(f.a), sa = Math.sin(f.a);
-  const put = (mesh, slot, along, across, yaw, scale, hex) => {
-    const x = f.x + ca * along - sa * across, z = f.z + sa * along + ca * across;
+  const spot = (along, across) => [f.x + ca * along - sa * across, f.z + sa * along + ca * across];
+  const growable = (x, z) => sampleHeight(x, z) > SEA + 0.6 && Math.hypot(x - camp.x, z - camp.z) > CAMP_CLEARING;
+  const put = (mesh, slot, x, z, yaw, sx, sy, sz, hex) => {
     _v.set(x, sampleHeight(x, z), z);
     _e.set(0, yaw, 0);
     _q.setFromEuler(_e);
-    _s.setScalar(scale);
+    _s.set(sx, sy, sz);
     mesh.setMatrixAt(slot, _m.compose(_v, _q, _s));
     mesh.setColorAt(slot, _c.setHex(hex));
   };
+  const shoots = Math.round(size.perRow * size.grown);
   for (let r = 0; r < n.rows; r++) {
-    const across = (r - (n.rows - 1) / 2) * 1.6;
-    if (r < rows) put(parts.rows, index * n.rows + r, 0, across, -f.a, 1, EARTH);
+    const across = (r - (size.rows - 1) / 2) * FIELD.spacing;
+    const [rx, rz] = spot(0, across);
+    const on = r < size.rows && growable(rx, rz);
+    // The ridge is the geometry's length at its shortest, stretched along the row.
+    if (on) put(parts.rows, index * n.rows + r, rx, rz, -f.a, size.len / FIELD.minLen, 1, 1, EARTH);
     else parts.rows.setMatrixAt(index * n.rows + r, HIDDEN);
-    for (let k = 0; k < perRow; k++) {
-      const i = r * perRow + k, slot = index * n.crops + i;
-      if (r < rows && i < crops) {
-        put(parts.crops, slot, (k - (perRow - 1) / 2) * 1.35, across, k * 1.3, 0.8 + ((i * 37) % 10) / 25, SHOOT);
+    for (let k = 0; k < most; k++) {
+      const slot = index * n.crops + r * most + k;
+      const [cx, cz] = spot((k - (size.perRow - 1) / 2) * FIELD.step, across);
+      if (on && k < shoots && growable(cx, cz)) {
+        const sc = 0.8 + (((r * most + k) * 37) % 10) / 25;
+        put(parts.crops, slot, cx, cz, k * 1.3, sc, sc, sc, SHOOT);
       } else parts.crops.setMatrixAt(slot, HIDDEN);
     }
   }
   const stock = Math.round(camp.stock || 0);
-  const beside = (n.rows / 2) * 1.6 + 5.5;
+  const beside = (size.rows / 2) * FIELD.spacing + 5.5;
   for (let i = 0; i < n.pen; i++) {
     const a = (i / n.pen) * Math.PI * 2;
-    if (stock > 0) put(parts.pen, index * n.pen + i, Math.cos(a) * 3.4, beside + Math.sin(a) * 3.4, 0, 1, POST);
+    const [x, z] = spot(Math.cos(a) * 3.4, beside + Math.sin(a) * 3.4);
+    if (stock > 0) put(parts.pen, index * n.pen + i, x, z, 0, 1, 1, 1, POST);
     else parts.pen.setMatrixAt(index * n.pen + i, HIDDEN);
   }
   for (let i = 0; i < n.sheep; i++) {
     // Spread round the pen, and the same place each time it is dressed.
     const a = i * 2.39996, r = Math.min(2.6, 0.7 + ((i * 53) % 17) / 10);
-    if (i < stock) put(parts.sheep, index * n.sheep + i, Math.cos(a) * r, beside + Math.sin(a) * r, a * 2, 1, FLEECE);
+    const [x, z] = spot(Math.cos(a) * r, beside + Math.sin(a) * r);
+    if (i < stock) put(parts.sheep, index * n.sheep + i, x, z, a * 2, 1, 1, 1, FLEECE);
     else parts.sheep.setMatrixAt(index * n.sheep + i, HIDDEN);
   }
   for (const key of ['rows', 'crops', 'pen', 'sheep']) {
-    parts[key].instanceMatrix.needsUpdate = true;
-    if (parts[key].instanceColor) parts[key].instanceColor.needsUpdate = true;
+    const m = parts[key];
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    // Only as far as the bands there are: the rest of the room is for bands not yet founded.
+    m.count = Math.min(m.instanceMatrix.count, camps.length * n[key]);
   }
 }
