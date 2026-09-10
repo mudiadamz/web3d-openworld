@@ -1242,6 +1242,7 @@ export const JOB_WORDS = {
   fish: 'fishing',
   wood: 'cutting wood',
   farm: 'working the fields',
+  market: 'trading at the market',
   visit: 'walking to the next band',
   led: 'going where you point',
 };
@@ -1259,6 +1260,7 @@ export const CAME_WORDS = {
   quarry: ', back from the rocks',
   wood: ', back with wood',
   farm: ', back from the fields',
+  market: ', back from the market',
   mourn: ', back from the stones',
   visit: ', back from the next band',
 };
@@ -1277,6 +1279,7 @@ export const GOING_WORDS = {
   fish: 'walking down to the water',
   wood: 'walking out for wood',
   farm: 'walking out to the fields',
+  market: 'off to the market',
   craft: 'off to sit and knap',
   tend: 'walking to the fire',
   nurse: 'going to sit with the ill',

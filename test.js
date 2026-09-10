@@ -1177,7 +1177,7 @@ check('and nothing else clones the scratch matrix before filling it', (() => {
 })() === true);
 
 check('an errand either takes you out or it does not',
-  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
+  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
 /* Standing at the stones happens outdoors, and it is the one job that has
    nowhere indoors to be mistaken for. */
 check('and going to the stones or the rocks takes you out too',
@@ -7402,9 +7402,10 @@ check('the village\'s ground reaches as far as it does, for everything that asks
 check('and the grass goes out to it', /refillTilesNear\(camp\.x, camp\.z, reach\);/.test(html)
   && /function refillTilesNear\(x, z, r\)/.test(html));
 check('drawn packed, once for all the camps, and grown when full',
-  /for \(const c of camps\) dressCamp\(c, false\);\s*dressOutskirts\(\);/.test(html) && /function roomFor\(key, want\)/.test(html));
-check('and not made at all until a camp needs them', /if \(!campParts\.outHuts\) makeOutskirts\(\);/.test(html)
-  && !/outOf\(campParts\[core\]/.test(html));
+  /for \(const c of camps\) dressCamp\(c, false\);\s*dressOutskirts\(\);/.test(html) && /function packed\(key, want, make\)/.test(html));
+check('and not made at all until a camp needs them',
+  /function packed\(key, want, make\) \{\s*let m = campParts\[key\];\s*if \(!m\) \{\s*if \(!want\) return null;/.test(html)
+  && !/makeOutskirts\(\)/.test(html));
 check('with granaries in the yards as the store fills, as in the core',
   /spots\.slice\(0, camp\.storesUp \|\| 0\)/.test(html));
 check('a camp laid out again loses its outskirts with it',
@@ -7440,6 +7441,40 @@ group('raids you can see');
   check('F goes to a raid first, when there is one',
     /people\[i\]\.job === 'raid'\) raiders\.push\(i\);/.test(moduleSource('chronicle.js'))
     && /const pool = raiders;\s*if \(!raiders\.length\)/.test(moduleSource('chronicle.js')));
+}
+
+/* -------------------------------------------------------------------------
+   Cities
+
+   A settlement that climbs looks it: houses in a village, brick in a city, a
+   hall for a chiefdom, and a market and a wall for a city — and a city's
+   people go to market.
+   ------------------------------------------------------------------------- */
+group('cities');
+
+{
+  const vs = moduleSource('village.js');
+  check('a village builds houses and a city brick, past the tents',
+    /if \(stage >= 4\) return 'townhouse';\s*if \(stage >= 3\) return 'house';/.test(vs));
+  check('each made the first time any band builds one, on the tents\' spots',
+    /const mesh = campParts\[key\] \|\| makeHouses\(key\);/.test(html)
+    && /key === style && i < want && camp\.hutAt\?\.\[i\] \? camp\.hutAt\[i\] : HIDDEN/.test(html));
+  check('a chiefdom has a hall, a city a market and a wall',
+    /CIVIC = \{ hallAt: 2, marketAt: 4, wallAt: 4,/.test(html)
+    && /stage >= CIVIC\.hallAt/.test(html) && /stage >= CIVIC\.marketAt/.test(html) && /stage >= CIVIC\.wallAt/.test(html));
+  check('on ground the outskirts would take, so never on a tent, the dead or the field',
+    /if \(!outerGround\(camp, spot\.x, spot\.z\)\) continue;\s*o\.civic\[kind\] = /.test(html));
+  check('the wall follows the edge of the place, with a gate on each quarter and none in the water',
+    /const R = campReach\(camp\) \+ CIVIC\.wallOut;/.test(html) && /gates\.some\(\(g\) => off\(a, g\) < half\)/.test(html)
+    && /if \(sampleHeight\(x, z\) < SEA \+ 0\.4\) continue;/.test(html));
+  check('a new rung is dressed the moment it is reached', /dressCamp\(c\);/.test(moduleSource('society.js')));
+  const mv = moduleSource('move.js');
+  check('a city\'s people go to market', /\['market', p\.camp\.outer\?\.civic\?\.market \?/.test(mv)
+    && /if \(p\.job === 'market'\) \{\s*const m = camp\.outer\?\.civic\?\.market;/.test(mv));
+  check('and deal there, which is how a city gets better at it',
+    /if \(p\.job === 'market'\) \{\s*practise\(p\.camp, 'trade', SKILL\.perCall\);/.test(mv));
+  check('and its children play in the square', /p\.job === 'play' && camp\.outer\?\.civic\?\.market && luck\(\) < 0\.5/.test(mv));
+  check('the caption knows the market', /market: 'trading at the market'/.test(html) && /market: 'off to the market'/.test(html));
 }
 
 /* ---- report ---- */

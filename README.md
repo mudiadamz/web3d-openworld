@@ -1615,6 +1615,22 @@ have, and one standing in the water.
 water, in `src/larder.js`. It is handed positions and asked what they are worth,
 and knows nothing about people, camps or days.
 
+## From band to city, and what it looks like
+
+A settlement climbs a ladder — band, tribe, chiefdom, village, city — by what
+it has become (`src/society.js`), and **each rung shows on the ground**. A
+chiefdom raises a hall for its chief. A village stops living in tents: timber
+houses under hipped thatch go up on the spots the tents stood on. A city builds
+in brick, two storeys under flat roofs, and has a **market** — stalls round a
+well — and a **wall** round the whole of it with a gate on each quarter,
+following the edge of the place as it grows and leaving gaps where the ground is
+water. The hall and the market take the next good spot out from the middle, in
+the same rings the outskirts grow in, so they never stand on a tent, the dead or
+the field.
+
+And a city lives differently: its people spend mornings at the market, which is
+how a city gets better at dealing, and its children play in the square.
+
 ## Clothing, the twenty-first
 
 Hides were always worn. **`clothing` is sewing them into clothes, and you can

@@ -13,7 +13,11 @@ import {
 } from './life.js';
 import { codeColor, takeTribeCode } from './ui.js';
 import { FIELD, dressField, farmGeometries } from './farming.js';
-import { TENT_KEYS, tentGeometries, tentMaterial, tentStyle } from './village.js';
+import { HOUSE_KEYS, TENT_KEYS, tentGeometries, tentMaterial, tentStyle } from './village.js';
+import { campReach, CIVIC, claimCivic, dressCivic, dressOutskirts, extendOutskirts, makeHouses, OUTSKIRTS } from './settlement.js';
+export { CIVIC, OUTSKIRTS, campReach, claimCivic, dressCivic, dressOutskirts, extendOutskirts } from './settlement.js';
+/* The outskirts and what a larger place builds were lifted out into settlement.js
+   when this file passed the length of the page it came from; see there. */
 
 /* -------------------------------------------------------------------------
    Bodies
@@ -246,7 +250,7 @@ export const GRAVE_ROOM = 400;       // room the graves start with; it doubles w
 export let graveRoom = GRAVE_ROOM;
 export const GRAVE_STONES = 3;       // stones per cairn
 export const GRAVE_SPACING = 1.6;    // metres between graves, both ways
-const PALE = new THREE.Color(0xffffff);
+export const PALE = new THREE.Color(0xffffff);
 export const PYRAMID_COURSES = 5;    // steps in the pyramid a band at mastery of masonry has raised
 export let graves = [];              // { x, z, y, day, sex }
 export let graveMesh = null;
@@ -569,7 +573,7 @@ export const TENT_REACH = 6.5 + 2.6 + 1.95 * 1.25;
 export const STORE_ROOF = 1.2;       // the thatch's radius, as built in buildCamps
 /* Where the fallbacks go: out past every ring of tents, between two fires. */
 export const STORE_FAR = 22;
-const STORE_WALL = 0x8f7350, STORE_THATCH = 0xb59d62;
+export const STORE_WALL = 0x8f7350, STORE_THATCH = 0xb59d62;
 
 export const CAMP_PIECES = {
   huts: HEARTHS * HUTS_PER_HEARTH,
@@ -626,286 +630,6 @@ export function hearthAt(camp, i) {
 export const HEARTH_SPACING = 13;
 export let campCapacity = 0;
 
-/* -------------------------------------------------------------------------
-   The outskirts: a village that keeps growing
-
-   The core of a camp is five fires and fifty tents, laid out once when the
-   camp is founded — and a band of fourteen hundred lived in those fifty,
-   everybody past the fiftieth household sharing the last one. So past the
-   core a village grows outskirts: more hearths, ten tents round each, in rings
-   out from the middle, as many as there are households to fill them, and a
-   yard of granaries after every few.
-
-   Laid out as they are needed and never off the camp's own random stream: that
-   stream laid out the core and moves on with every draw. A hearth's place comes
-   from its ring and its seat instead, the same every time, so a village that
-   shrinks and grows again puts its tents back where they stood, and a
-   reloaded world rebuilds the same outskirts without any of it being saved.
-
-   A spot is skipped rather than moved: in the water, on a hillside, on the
-   graveyard or the field, crowding another village, or too far into the woods
-   to pitch in. A band that runs out of good ground packs its last households
-   into the tents it has, which is what the core always did.
-   ------------------------------------------------------------------------- */
-export const OUTSKIRTS = {
-  first: 37,        // the first ring out: the core's tents reach 24.5 m, these begin at 25.4
-  ring: 24,         // metres between rings: two tents' reach from their fires, and a little
-  apart: 23.5,      // and between neighbouring fires on one ring, for the same reason
-  seats: 10,        // tents round an outskirts fire, as round a core one
-  minSeats: 6,      // fewer good spots round it than this and a fire is not lit there
-  storeEvery: 5,    // a yard of granaries after every five outskirts fires
-  rings: 12,        // how far out it will look: the twelfth ring is three hundred metres
-};
-
-/** How far a camp's trampled ground reaches: its clearing, or its outskirts. */
-export const campReach = (c) => Math.max(CAMP_CLEARING, c?.reach || 0);
-
-const outerSeed = (camp, slot) => ((Math.round(camp.x * 8) * 73856093) ^ (Math.round(camp.z * 8) * 19349663)
-  ^ Math.imul(slot + 1, 83492791) ^ P.seed) >>> 0;
-
-/* Where the s-th spot out from a camp is: ring by ring, and round each ring. */
-function outerSlot(camp, s) {
-  let rest = s;
-  for (let k = 0; k < OUTSKIRTS.rings; k++) {
-    const R = OUTSKIRTS.first + k * OUTSKIRTS.ring;
-    const n = Math.max(6, Math.floor((2 * Math.PI * R) / OUTSKIRTS.apart));
-    if (rest < n) {
-      const a = (rest / n) * Math.PI * 2 + (camp.hearthTurn || 0) + k * 0.618;
-      return { x: camp.x + Math.cos(a) * R, z: camp.z + Math.sin(a) * R };
-    }
-    rest -= n;
-  }
-  return null;
-}
-
-/* Whether a village may spread onto a spot: dry and level, clear of the dead
-   and of the largest graveyard it could come to, clear of the largest field
-   (FIELD, farming.js), and clear of every other village's ground. */
-function outerGround(camp, x, z) {
-  if (sampleHeight(x, z) < SEA + 1.5 || flatnessAt(x, z) < 0.8) return false;
-  if (camp.barrow) {
-    const ring = Math.ceil((Math.sqrt(Math.max(1, (camp.buried || 0) + 100)) - 1) / 2);
-    const half = (ring + 0.5) * GRAVE_SPACING + 0.3;
-    if (Math.hypot(x - camp.barrow.x, z - camp.barrow.z) < half * 1.6 + 6 + TENT_REACH) return false;
-  }
-  if (camp.field) {
-    const most = FIELD.maxLen / 2 + (CAMP_PIECES.rows * FIELD.spacing) / 2 + 4;
-    if (Math.hypot(x - camp.field.x, z - camp.field.z) < most + TENT_REACH) return false;
-  }
-  for (const c of camps) {
-    if (c === camp || c.gone) continue;
-    if (Math.hypot(x - c.x, z - c.z) < campReach(c) + TENT_REACH + 4) return false;
-  }
-  return true;
-}
-
-function spread(camp, x, z, edge) {
-  const reach = Math.hypot(x - camp.x, z - camp.z) + edge;
-  if (reach > (camp.reach || 0)) {
-    camp.reach = reach;
-    refillTilesNear(camp.x, camp.z, reach);     // the grass goes, out to the new edge
-  }
-}
-
-/* A fire and the ring of tents round it, laid out the way the core's are. The
-   stream is drawn in full for every tent, kept or not, so skipping one never
-   moves the next. */
-function addOuterHearth(camp, o, spot, slot) {
-  const jitter = mulberry32(outerSeed(camp, slot));
-  const trees = treeSpots.filter((t) => Math.abs(t.x - spot.x) < 12 && Math.abs(t.z - spot.z) < 12);
-  const fire = { x: spot.x, y: sampleHeight(spot.x, spot.z), z: spot.z };
-  const huts = [];
-  for (let k = 0; k < OUTSKIRTS.seats; k++) {
-    const a = (k / OUTSKIRTS.seats) * Math.PI * 2 + jitter() * 0.5;
-    const r = 6.5 + jitter() * 2.6;
-    const sc = 0.85 + jitter() * 0.4, tall = 0.9 + jitter() * 0.3;
-    const hide = 0x6d5740 + ((jitter() * 0x101010) | 0);
-    const x = fire.x + Math.cos(a) * r, z = fire.z + Math.sin(a) * r;
-    if (sampleHeight(x, z) < SEA + 1 || trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.6)) continue;
-    _e.set(0, -a, 0); _q.setFromEuler(_e);
-    _v.set(x, sampleHeight(x, z) - 0.15, z);
-    _s.set(sc, sc * tall, sc);
-    huts.push({ hut: { x, z }, at: _m4.compose(_v, _q, _s).clone(), hide });
-  }
-  if (huts.length < OUTSKIRTS.minSeats) return;
-  const stones = [], logs = [];
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    const x = fire.x + Math.cos(a) * 1.15, z = fire.z + Math.sin(a) * 1.15;
-    const sc = 0.7 + jitter() * 0.7;
-    _e.set(jitter() * 3, jitter() * 3, jitter() * 3); _q.setFromEuler(_e);
-    _v.set(x, sampleHeight(x, z) + 0.06, z);
-    _s.set(sc, sc * 0.8, sc);
-    stones.push(_m4.compose(_v, _q, _s).clone());
-  }
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + 0.4 + jitter() * 0.3;
-    const x = fire.x + Math.cos(a) * 2.6, z = fire.z + Math.sin(a) * 2.6;
-    _e.set(0, -a + Math.PI / 2, 0); _q.setFromEuler(_e);
-    _v.set(x, sampleHeight(x, z) + 0.17, z);
-    _s.setScalar(0.9 + jitter() * 0.3);
-    logs.push(_m4.compose(_v, _q, _s).clone());
-  }
-  o.hearths.push({ fire, huts, stones, logs });
-  // One of the camp's own fires, after the core's five: see assignHuts.
-  camp.fireAt[HEARTHS + o.hearths.length - 1] = fire;
-  for (const t of huts) o.seats.push({ hut: t.hut, fire });
-  spread(camp, fire.x, fire.z, TENT_REACH);
-}
-
-/* A yard of granaries, four of them in the core's pattern, turned to face the
-   middle of the village so the ground to fill them from is on the near side. */
-function addYard(camp, o, spot) {
-  const b = Math.atan2(spot.z - camp.z, spot.x - camp.x);
-  const ox = Math.cos(b), oz = Math.sin(b), ax = -Math.sin(b), az = Math.cos(b);
-  const spots = [];
-  STORE_SPOTS.forEach(([out, along], k) => {
-    const x = spot.x + ox * out + ax * along, z = spot.z + oz * out + az * along;
-    const fx = x - ox * STORE_STAND, fz = z - oz * STORE_STAND;
-    if (sampleHeight(x, z) < SEA + 1.5 || sampleHeight(fx, fz) < SEA + 1.5 || flatnessAt(x, z) < STORE_FLAT) return;
-    _e.set(0, -b + k * 0.7, 0); _q.setFromEuler(_e);
-    _v.set(x, sampleHeight(x, z) - 0.05, z);
-    _s.setScalar(STORE_SCALE);
-    spots.push({ x, z, fx, fz, at: _m4.compose(_v, _q, _s).clone() });
-  });
-  o.yards.push({ spots });
-  spread(camp, spot.x, spot.z, 5);
-}
-
-/** Lays out as much of the outskirts as there are households for, and keeps it. */
-export function extendOutskirts(camp, seats) {
-  if (!camp.outer || camp.outer.x !== camp.x || camp.outer.z !== camp.z) {
-    camp.outer = { x: camp.x, z: camp.z, hearths: [], yards: [], seats: [], next: 0, done: false };
-  }
-  const o = camp.outer;
-  while (o.seats.length < seats && !o.done) {
-    const slot = o.next++;
-    const spot = outerSlot(camp, slot);
-    if (!spot) { o.done = true; break; }
-    if (!outerGround(camp, spot.x, spot.z)) continue;
-    if (o.yards.length < Math.floor(o.hearths.length / OUTSKIRTS.storeEvery)) addYard(camp, o, spot);
-    else addOuterHearth(camp, o, spot, slot);
-  }
-  return o;
-}
-
-/* Drawn packed, not slotted per camp: the core gives every camp fifty tents
-   whether it has them or not, and the outskirts of one city can be a thousand.
-   So every camp's outskirts go one after another into shared meshes, rewritten
-   whenever any band changes, and the meshes grow when they fill. */
-const OUT_TENTS = { huts: 'outHuts', tentHide: 'outTentHide', tentPainted: 'outTentPainted', lodge: 'outLodge' };
-function roomFor(key, want) {
-  const old = campParts[key];
-  if (old.instanceMatrix.count >= want) return;
-  let room = old.instanceMatrix.count;
-  while (room < want) room *= 2;
-  const m = new THREE.InstancedMesh(old.geometry, old.material, room);
-  m.name = old.name;
-  m.castShadow = old.castShadow;
-  m.receiveShadow = old.receiveShadow;
-  m.frustumCulled = false;
-  m.count = 0;
-  tribeGroup.remove(old);
-  old.dispose();
-  tribeGroup.add(m);
-  campParts[key] = m;
-}
-
-/* Made the first time any camp needs them, not at world build. Nothing is lost
-   by waiting — until a band passes fifty households there is nothing to draw —
-   and a world where none has not allocated them at all. Which matters for more
-   than the memory: three draws Math.random for every object it makes, so nine
-   meshes made at build moved every random number after them and put the boot
-   check on a different island. */
-const OUT_PARTS = [['outHuts', 'huts', 64], ['outTentHide', 'tentHide', 64], ['outTentPainted', 'tentPainted', 64],
-  ['outLodge', 'lodge', 64], ['outFire', 'fire', 8], ['outStones', 'stones', 72], ['outLogs', 'logs', 32],
-  ['outStores', 'stores', 8], ['outStoreRoofs', 'storeRoofs', 8]];
-function makeOutskirts() {
-  for (const [key, core, room] of OUT_PARTS) {
-    const from = campParts[core];
-    const m = new THREE.InstancedMesh(from.geometry, from.material, room);
-    m.name = 'outskirts-' + core;
-    m.castShadow = from.castShadow;
-    m.receiveShadow = from.receiveShadow;
-    m.frustumCulled = false;
-    m.count = 0;
-    tribeGroup.add(m);
-    campParts[key] = m;
-  }
-}
-
-export function dressOutskirts() {
-  if (!campParts?.huts) return;
-  if (!campParts.outHuts && !camps.some((c) => (c.outerShown || 0) > 0)) return;
-  if (!campParts.outHuts) makeOutskirts();
-  const n = { outHuts: 0, outTentHide: 0, outTentPainted: 0, outLodge: 0, outFire: 0, outStones: 0, outLogs: 0, outStores: 0 };
-  const need = { ...n };
-  const lit = (camp) => {
-    let left = camp.outerShown || 0, fires = 0;
-    for (const h of camp.outer.hearths) { if (left <= 0) break; fires++; left -= h.huts.length; }
-    return fires;
-  };
-  const yardsOf = (camp) => Math.min(camp.outer.yards.length, Math.floor((camp.outerLit || 0) / OUTSKIRTS.storeEvery));
-  for (const camp of camps) {
-    camp.outerLit = camp.outer && !camp.gone ? lit(camp) : 0;
-    if (!camp.outerLit) continue;
-    need[OUT_TENTS[tentStyle(camp)]] += Math.min(camp.outerShown, camp.outer.seats.length);
-    need.outFire += camp.outerLit;
-    need.outStones += camp.outerLit * 9;
-    need.outLogs += camp.outerLit * 4;
-    for (let y = 0; y < yardsOf(camp); y++) need.outStores += Math.min(camp.storesUp || 0, camp.outer.yards[y].spots.length);
-  }
-  for (const key in need) roomFor(key, need[key]);
-  roomFor('outStoreRoofs', need.outStores);
-  for (const camp of camps) {
-    camp.outerFires = [];
-    camp.outerStores = [];
-    if (!camp.outerLit) continue;
-    const key = OUT_TENTS[tentStyle(camp)], mesh = campParts[key];
-    let left = camp.outerShown;
-    for (let f = 0; f < camp.outerLit; f++) {
-      const h = camp.outer.hearths[f];
-      for (const t of h.huts) {
-        if (left <= 0) break;
-        left--;
-        const i = n[key]++;
-        mesh.setMatrixAt(i, t.at);
-        mesh.setColorAt(i, key === 'outHuts' ? _c.setHex(t.hide) : _c.setHex(t.hide).lerp(PALE, 0.72));
-      }
-      const fi = n.outFire++;
-      _v.set(h.fire.x, h.fire.y + 0.05, h.fire.z); _q.identity(); _s.setScalar(1);
-      campParts.outFire.setMatrixAt(fi, _m4.compose(_v, _q, _s));
-      camp.outerFires.push({ slot: fi, fire: h.fire, f: HEARTHS + f });
-      for (const m of h.stones) {
-        const i = n.outStones++;
-        campParts.outStones.setMatrixAt(i, m);
-        campParts.outStones.setColorAt(i, _c.setHex(0x6e6862));
-      }
-      for (const m of h.logs) {
-        const i = n.outLogs++;
-        campParts.outLogs.setMatrixAt(i, m);
-        campParts.outLogs.setColorAt(i, _c.setHex(0x5b4630));
-      }
-    }
-    // As many granaries in each yard as stand in the core: the store decides both.
-    for (let y = 0; y < yardsOf(camp); y++) {
-      for (const s of camp.outer.yards[y].spots.slice(0, camp.storesUp || 0)) {
-        const i = n.outStores++;
-        campParts.outStores.setMatrixAt(i, s.at);
-        campParts.outStoreRoofs.setMatrixAt(i, s.at);
-        campParts.outStores.setColorAt(i, _c.setHex(STORE_WALL));
-        campParts.outStoreRoofs.setColorAt(i, _c.setHex(STORE_THATCH));
-        camp.outerStores.push(s);
-      }
-    }
-  }
-  for (const key of [...Object.keys(n), 'outStoreRoofs']) {
-    const m = campParts[key];
-    m.count = key === 'outStoreRoofs' ? n.outStores : n[key];
-    m.instanceMatrix.needsUpdate = true;
-    if (m.instanceColor) m.instanceColor.needsUpdate = true;
-  }
-}
 
 /* Everything a camp is made of, written into its own slots. Called once per
    camp at world build, and again for each one that breaks away later. */
@@ -1094,6 +818,18 @@ export function dressCamp(camp, pack = true) {
     }
     mesh.instanceMatrix.needsUpdate = true;
     // Only as far as the bands there are: the rest of the room is for bands not yet founded.
+    mesh.count = Math.min(mesh.instanceMatrix.count, camps.length * P0.huts);
+  }
+  /* And a village's houses, a city's townhouses (village.js), on the spots the
+     tents stood on — each kind made the first time any band builds it. */
+  for (const key of HOUSE_KEYS) {
+    if (key !== style && !campParts[key]) continue;
+    const mesh = campParts[key] || makeHouses(key);
+    for (let i = 0; i < P0.huts; i++) {
+      const slot = index * P0.huts + i;
+      mesh.setMatrixAt(slot, key === style && i < want && camp.hutAt?.[i] ? camp.hutAt[i] : HIDDEN);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
     mesh.count = Math.min(mesh.instanceMatrix.count, camps.length * P0.huts);
   }
 

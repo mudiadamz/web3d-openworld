@@ -21,7 +21,7 @@ import {
 } from './wildlife.js';
 import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
 import {
-  CAMP_CLEARING, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
+  CAMP_CLEARING, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
 import { buildPaths, tread } from './paths.js';
 import {
@@ -560,6 +560,24 @@ export function pickWork(p) {
   }
   // Along the rows of the band's field (farming.js).
   if (p.job === 'farm') return farmSite(p);
+  /* To a stall at the market (a city's), in front of it rather than in it. */
+  if (p.job === 'market') {
+    const m = camp.outer?.civic?.market;
+    if (m) {
+      const a = (((luck() * CIVIC.stalls) | 0) / CIVIC.stalls) * Math.PI * 2 + m.face;
+      p.targetX = m.x + Math.sin(a) * (CIVIC.stallOut - 1.3);
+      p.targetZ = m.z + Math.cos(a) * (CIVIC.stallOut - 1.3);
+      return true;
+    }
+    p.job = 'tend';
+  }
+  // A city's children play in its square as often as round their fire.
+  if (p.job === 'play' && camp.outer?.civic?.market && luck() < 0.5) {
+    const m = camp.outer.civic.market, a = luck() * Math.PI * 2, r = 1.2 + luck() * 2;
+    p.targetX = m.x + Math.cos(a) * r;
+    p.targetZ = m.z + Math.sin(a) * r;
+    return true;
+  }
   /* The stones, and a step short of them: standing among the graves rather than
      at the edge of them is the difference between visiting and trampling. */
   if (p.job === 'mourn' && camp.barrow) {
@@ -581,6 +599,9 @@ export function pickWork(p) {
   p.targetX = camp.x; p.targetZ = camp.z;
   return false;
 }
+
+/* Going to market: how much of a city's day is spent at its stalls. */
+export const MARKET = { chance: 0.22 };
 
 export function chooseJob(p, day) {
   /* What they were at before this one. Kept for the caption and nothing else:
@@ -679,6 +700,8 @@ export function chooseJob(p, day) {
         ? (0.35 + 0.40 * Math.min(ill / 3, 1)) * (1 - hunger) * rested
           * (p.traits?.sociable ?? 1) : 0],
       ['visit', canVisit ? VISIT.chance * rested * (p.traits?.sociable ?? 1) : 0],
+      /* The market, in a city that has one (people.js): a morning at the stalls. */
+      ['market', p.camp.outer?.civic?.market ? MARKET.chance * rested * (p.traits?.sociable ?? 1) : 0],
       /* Going back to the stones. Only where there are any — a band that has
          buried nobody has nowhere to go — and never on an empty store: this is
          the first thing a hungry band stops doing, and the fact that it is the
@@ -836,7 +859,7 @@ export const MOURN = { chance: 0.10 };
    anybody will go for a stone. */
 export const QUARRY_TRIP = { chance: 0.12, reach: 220 };
 
-const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood']);
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood']);
 
 /* Where somebody at the fire actually sits: inside the ring of tents and
    outside the ring of stones. The huts stand 6.5-9.1m out and are a couple of
@@ -1118,6 +1141,11 @@ export function updatePeople(dt, day) {
           if (p.job === 'wood') chopDone(p);
           // A field: ditches until the band can water it, then a crop (farming.js).
           if (p.job === 'farm') farmDone(p);
+          // A morning at the market: the band a little better at dealing.
+          if (p.job === 'market') {
+            practise(p.camp, 'trade', SKILL.perCall);
+            p.knows.trade = Math.max(p.knows.trade || 0, p.camp.skill.trade);
+          }
           if (p.job === 'mourn') {
             practise(p.camp, 'rites', SKILL.perVisit);
             p.knows.rites = Math.max(p.knows.rites || 0, p.camp.skill.rites);

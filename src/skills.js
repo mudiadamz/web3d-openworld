@@ -388,7 +388,7 @@ export const SKILL_HOW = {
   rites: 'burying the dead, and going back to the graves',
   art: 'going back to the graves, once there is a graveyard',
   wares: 'at the fire, when the band is fed',
-  trade: 'visiting other bands, and more when food or stone changes hands',
+  trade: 'visiting other bands, and more when food or stone changes hands; in a city, at the market',
   mining: 'trips to an outcrop',
   tools: 'at the fire, with quarried stone in the pile',
   war: 'raiding, or being raided',

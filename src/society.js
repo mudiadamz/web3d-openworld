@@ -1,5 +1,5 @@
 import { P } from './params.js';
-import { camps } from './people.js';
+import { camps, dressCamp } from './people.js';
 import { logEvent, simDay } from './life.js';
 import { SKILLS } from './skills.js';
 
@@ -109,6 +109,8 @@ function setStage(c, to) {
     ? `[${c.code}] ${c.name} has become ${aOr(STAGES[to].name)}`
     : `[${c.code}] ${c.name} is no longer ${aOr(STAGES[from].name)} — ${aOr(STAGES[to].name)} again`,
   c.x, c.z);
+  // And it looks it at once: houses, a hall, a market and a wall (people.js).
+  dressCamp(c);
 }
 
 /** On the books: a step up when the next rung has held, a step down when this one has failed. */

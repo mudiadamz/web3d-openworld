@@ -3621,13 +3621,48 @@ if (peopleModule?.extendOutskirts && peopleModule?.dressOutskirts && liveCamps.l
   camp.outerShown = Math.min(60, o.seats.length);
   PPm.dressOutskirts();
   const parts = PPm.campParts;
-  const tents = ['outHuts', 'outTentHide', 'outTentPainted', 'outLodge'].reduce((n, k) => n + (parts[k]?.count || 0), 0);
+  const tents = ['outHuts', 'outTentHide', 'outTentPainted', 'outLodge', 'outHouse', 'outTownhouse'].reduce((n, k) => n + (parts[k]?.count || 0), 0);
   check('and they are drawn, a tent a household', tents === camp.outerShown, `${tents} drawn for ${camp.outerShown}`);
   check('with a fire for every ring of tents that has anybody in it', (parts.outFire?.count || 0) === camp.outerLit,
     `${parts.outFire?.count} fires for ${camp.outerLit}`);
   camp.outerShown = 0;
   PPm.dressOutskirts();
   camp.reach = reachWas;
+}
+
+/* A city, by hand, at the very end for the same reason the outskirts are: the
+   first camp made one for a moment, dressed, looked at, and put back. */
+let cityReport = 'not tried';
+if (peopleModule?.dressCamp && liveCamps.length) {
+  const PPm = peopleModule;
+  const camp = liveCamps[0];
+  const stageWas = camp.stage || 0;
+  const per = PPm.CAMP_PIECES.huts;
+  const standing = (mesh) => {
+    if (!mesh) return 0;
+    const a = mesh.instanceMatrix.array;
+    let n = 0;
+    for (let k = 0; k < per; k++) {
+      const b = (camp.index * per + k) * 16;
+      if (Math.hypot(a[b], a[b + 1], a[b + 2]) > 0) n++;
+    }
+    return n;
+  };
+  camp.stage = 4;
+  PPm.dressCamp(camp);
+  const parts = PPm.campParts;
+  const houses = standing(parts.townhouse), tents = standing(parts.huts);
+  cityReport = `${houses} townhouses (${tents} tents left), ${parts.civHall?.count || 0} hall, `
+    + `${parts.civStall?.count || 0} stalls, ${parts.civWell?.count || 0} well, ${parts.civWall?.count || 0} lengths of wall, `
+    + `${parts.civTower?.count || 0} gate towers`;
+  check('a city builds in brick where its tents stood', houses > 0 && tents === 0, cityReport);
+  check('and has a hall, a market round a well, and a wall with gates',
+    (parts.civHall?.count || 0) >= 1 && (parts.civStall?.count || 0) >= 1 && (parts.civWell?.count || 0) >= 1
+    && (parts.civWall?.count || 0) > 0 && (parts.civTower?.count || 0) > 0, cityReport);
+  camp.stage = stageWas;
+  PPm.dressCamp(camp);
+  check('and a band that is not a city goes back to its tents', standing(PPm.campParts.townhouse) === 0,
+    `${standing(PPm.campParts.townhouse)} townhouses still standing`);
 }
 
 const ms = Date.now() - t0;
@@ -3651,6 +3686,7 @@ console.log(`  paths: ${pathReport}`);
 console.log(`  full map: ${fullMapReport}`);
 console.log(`  hearths: ${hearthReport}`);
 console.log(`  outskirts: ${outskirtsReport}`);
+console.log(`  city: ${cityReport}`);
 console.log(`  granaries: ${storeReport}`);
 console.log(`  map marks: ${marksReport}`);
 console.log(`  quarries: ${quarryReport}`);
