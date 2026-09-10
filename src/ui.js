@@ -16,7 +16,7 @@ import {
 import { camps } from './people.js';
 import { travelTo } from './map.js';
 import { $, STATE_STORE, clearSavedState, ui } from './save.js';
-import { elapsed, seeAhead, stopAhead, updateHud } from './main.js';
+import { elapsed, seeAhead, setAheadOnly, stopAhead, updateHud } from './main.js';
 
 /* -------------------------------------------------------------------------
    Panel
@@ -286,6 +286,7 @@ export function setRate(i) {
 
 $('runAhead').addEventListener('click', () => seeAhead(Number($('years').value) || 5));
 $('aheadStop').addEventListener('click', stopAhead);
+$('aheadTribe')?.addEventListener('change', (ev) => setAheadOnly(ev.target.value));
 
 $('slower').addEventListener('click', () => setRate(rateIndex - 1));
 $('faster').addEventListener('click', () => setRate(rateIndex + 1));

@@ -214,21 +214,7 @@ export function showAheadProgress() {
   const now = Date.now();
   if (now - (ahead.drawn || 0) > AHEAD_DRAW_EVERY || ahead.left <= 0) {
     ahead.drawn = now;
-    drawTribeChart($('aheadChart'));
-    /* The chronicle as it is written. A run of years is not a progress bar with
-       nothing behind it — it is births, deaths, a band learning to cure meat,
-       another one breaking away — and all of that is happening whether or not
-       anybody is shown it.
-
-       Milestones only, which is the same filter the panel has had all along and
-       for the same reason: eight lines is what fits, a year is hundreds of
-       them, and unfiltered those eight were whichever kills and hungry nights
-       happened to be most recent. A band breaking away would appear for a
-       fraction of a second and be gone. */
-    const worth = chronicle.filter(isMilestone).slice(0, 8);
-    $('aheadLog').innerHTML = worth.map((e) =>
-      `<div>${codeChip(e.seed)}<span>d${e.day}</span>${tribeChips(e.text)}</div>`).join('')
-      || '<div>nothing worth telling yet</div>';
+    drawAhead();
   }
   const spent = (Date.now() - ahead.started) / 1000;
   const elapsedYears = (simDay - ahead.from) / P.yearLength;
@@ -254,6 +240,59 @@ export function showAheadProgress() {
   $('aheadNote').textContent =
     `${alive} · year ${elapsedYears.toFixed(1)} of ${ahead.years}`
     + ` · day ${Math.floor(simDay)} · ${ago(spent)}${left}`;
+}
+
+/* One tribe, or all of them. The run is about everybody, but what became of
+   the tribe you were watching is the question most runs are started to answer
+   — so the window can be narrowed to one: its line on the chart, and only the
+   lines of the chronicle that name it. A tribe is its code, so a village it has
+   taken, flying its flag, comes with it. */
+export let aheadOnly = '';
+export function setAheadOnly(code) {
+  aheadOnly = code || '';
+  if (ahead) drawAhead();
+}
+
+/* The list is refilled only when the tribes themselves change — one splits
+   off, one dies out — and it keeps the one you picked. A tribe that has died
+   out stays in it, marked, because its line on the chart is still there. */
+let aheadTribes = '';
+function fillAheadTribes() {
+  const sel = $('aheadTribe');
+  if (!sel) return;
+  const byCode = new Map();
+  for (const c of camps) {
+    const had = byCode.get(c.code);
+    if (!had || (had.gone && !c.gone)) byCode.set(c.code, c);
+  }
+  const key = [...byCode].map(([code, c]) => code + (c.gone ? '-' : '+')).join(',');
+  if (key === aheadTribes) return;
+  aheadTribes = key;
+  sel.innerHTML = '<option value="">every tribe</option>' + [...byCode.values()]
+    .sort((x, y) => x.code.localeCompare(y.code))
+    .map((c) => `<option value="${c.code}">${c.code} ${c.name}${c.gone ? ' (gone)' : ''}</option>`).join('');
+  sel.value = aheadOnly;
+}
+
+export function drawAhead() {
+  fillAheadTribes();
+  drawTribeChart($('aheadChart'), aheadOnly);
+  /* The chronicle as it is written. A run of years is not a progress bar with
+     nothing behind it — it is births, deaths, a band learning to cure meat,
+     another one breaking away — and all of that is happening whether or not
+     anybody is shown it.
+
+     Milestones only, which is the same filter the panel has had all along and
+     for the same reason: eight lines is what fits, a year is hundreds of
+     them, and unfiltered those eight were whichever kills and hungry nights
+     happened to be most recent. A band breaking away would appear for a
+     fraction of a second and be gone. And only the tribe's own, when one is
+     picked: a line names a band by its code, which is how it is found. */
+  const worth = chronicle.filter(isMilestone)
+    .filter((e) => !aheadOnly || e.text.includes(`[${aheadOnly}]`)).slice(0, 8);
+  $('aheadLog').innerHTML = worth.map((e) =>
+    `<div>${codeChip(e.seed)}<span>d${e.day}</span>${tribeChips(e.text)}</div>`).join('')
+    || `<div>nothing worth telling${aheadOnly ? ` about [${aheadOnly}]` : ''} yet</div>`;
 }
 
 export function runAhead() {

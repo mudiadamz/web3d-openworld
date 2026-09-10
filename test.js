@@ -4872,12 +4872,23 @@ check('the window has a chart and a log rather than an explanation',
   html.includes('id="aheadChart"') && html.includes('id="aheadLog"')
   && !/Nothing is drawn while this runs/.test(html));
 check('the chart is the same one the panel uses, pointed elsewhere',
-  /function drawTribeChart\(cv = \$\('tribeChart'\)\)/.test(html)
-  && /drawTribeChart\(\$\('aheadChart'\)\)/.test(html));
+  /function drawTribeChart\(cv = \$\('tribeChart'\), only = ''\)/.test(html)
+  && /drawTribeChart\(\$\('aheadChart'\), aheadOnly\)/.test(html));
 const aheadSrc = html.slice(html.indexOf('function showAheadProgress'),
   html.indexOf('function runAhead'));
 check('and the log is the chronicle itself, not a copy of it',
-  /chronicle\.filter\(isMilestone\)\.slice\(0, 8\)/.test(aheadSrc));
+  /chronicle\.filter\(isMilestone\)\s*\.filter\(\(e\) => !aheadOnly \|\| e\.text\.includes\(`\[\$\{aheadOnly\}\]`\)\)\.slice\(0, 8\)/.test(aheadSrc));
+/* What became of the tribe you were watching is what most runs are for. */
+check('it can be narrowed to one tribe',
+  html.includes('<select id="aheadTribe"') && /\$\('aheadTribe'\)\?\.addEventListener\('change', \(ev\) => setAheadOnly\(ev\.target\.value\)\);/.test(html));
+check('which narrows the chart to that tribe, scaled to it',
+  /const shown = only \? camps\.filter\(\(c\) => c\.code === only\) : camps;/.test(html)
+  && /for \(const c of shown\) \{/.test(html) && /shown\.forEach\(\(c\) => \{/.test(html));
+check('and changing it redraws at once, not at the next slice',
+  /function setAheadOnly\(code\) \{\s*aheadOnly = code \|\| '';\s*if \(ahead\) drawAhead\(\);/.test(html));
+check('and the list keeps up with tribes splitting off and dying out, and keeps the pick',
+  /if \(key === aheadTribes\) return;/.test(html) && /sel\.value = aheadOnly;/.test(html)
+  && /\$\{c\.gone \? ' \(gone\)' : ''\}/.test(html));
 /* Eight lines is what fits and a year is hundreds of them, so unfiltered those
    eight were whichever kills and hungry nights happened to be most recent — a
    band breaking away would show for a fraction of a second and be gone. Same

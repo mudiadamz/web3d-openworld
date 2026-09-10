@@ -179,6 +179,8 @@
   #aheadBar { display: block; height: 100%; width: 0%; background: #7fd08a; transition: width 0.1s linear; }
   #aheadNote { margin-top: 9px; font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
   #aheadStop { margin-top: 14px; width: 100%; }
+  /* Every tribe, or one: its line on the chart and only the lines that name it. */
+  #aheadTribe { margin-top: 10px; width: 100%; }
   /* The years are the only thing happening; watching them happen is better than
      reading a paragraph about how they are not being drawn. */
   #aheadChart {
@@ -710,6 +712,7 @@
   <h2>Running the world on</h2>
   <div id="aheadTrack"><i id="aheadBar"></i></div>
   <div id="aheadNote">…</div>
+  <select id="aheadTribe" title="whose years to watch"><option value="">every tribe</option></select>
   <canvas id="aheadChart" width="760" height="150"></canvas>
   <div id="aheadLog"></div>
   <button class="btn" id="aheadStop">Stop here</button>

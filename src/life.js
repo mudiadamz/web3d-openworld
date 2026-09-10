@@ -207,15 +207,19 @@ export function renderTribes(now = 0) {
 
 /* Population over the last hundred and twenty days, one line per tribe. The
    point of the whole simulation is that this line has a shape nobody drew. */
-export function drawTribeChart(cv = $('tribeChart')) {
+/* `only` narrows it to one tribe — every camp flying that code — and scales to
+   them, so a tribe of twelve fills the chart rather than lying along the floor
+   of one drawn for a tribe of eighty. */
+export function drawTribeChart(cv = $('tribeChart'), only = '') {
   if (!cv) return;
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   ctx.clearRect(0, 0, W, H);
   if (!camps.length) return;
 
+  const shown = only ? camps.filter((c) => c.code === only) : camps;
   let maxPop = 4, minDay = Infinity, maxDay = 0;
-  for (const c of camps) {
+  for (const c of shown) {
     for (const h of c.history) {
       maxPop = Math.max(maxPop, h.pop);
       minDay = Math.min(minDay, h.day);
@@ -226,7 +230,7 @@ export function drawTribeChart(cv = $('tribeChart')) {
 
   ctx.lineWidth = 3;
   ctx.lineJoin = 'round';
-  camps.forEach((c, i) => {
+  shown.forEach((c) => {
     if (c.history.length < 2) return;
     ctx.strokeStyle = c.color;          // the band's chip, as on the panel and the map
     ctx.beginPath();
