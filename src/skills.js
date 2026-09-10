@@ -1,4 +1,5 @@
 import { clamp } from './noise.js';
+import { seasonName } from './scene.js';
 import { luck } from './clock.js';
 import { MONUMENT_MAX, PYRAMID_COURSES, camps, dressCamp, drawGraves, people } from './people.js';
 import { FISH, logEvent } from './life.js';
@@ -149,6 +150,14 @@ export const SKILLS = {
      war, and by taking a village; what it moves is whether a won raid takes
      the village rather than a share of its store (CONQUEST, in life.js). */
   conquest: { label: 'conquest', of: 'ruling' },
+  /* Twenty-first: sewing. Hides were always worn; this is making them into
+     clothes — sleeves, then leggings, then cloth dyed in the band's own colour,
+     and at mastery a fur cloak for the winter, each put on the day the
+     chronicle says the band has got there (looks.js). Learned at the fire,
+     mostly as the cold comes on, and what it moves is what the cold does: a
+     band dressed for the winter catches less of what goes round in it
+     (SKILL.clothWarm). */
+  clothing: { label: 'clothing', of: 'sewing' },
 };
 
 /* Every skill at nothing. Built from SKILLS rather than written out, because it
@@ -268,6 +277,11 @@ export const SKILL = {
   perCourse: 0.022,
   stonePerCourse: 0.5,
   pyramidDraw: 1.6,
+  /* Sewing, and what clothes are worth against the cold: at mastery a band
+     keeps out this much of what winter (and autumn, a little) adds to a
+     sickness arriving and spreading — and the person you are playing loses
+     this much less resting out in the open at night. */
+  clothWarm: 0.6,
   /* Fire-keeping. A tiger will not come within PANIC.safe of a fire, and a
      better-kept fire pushes that out — see safeGround in wildlife.js, where the
      metres live next to the tiger that respects them. */
@@ -354,6 +368,8 @@ export const FORGET_WORDS = {
   /* The pyramid is still standing. Nobody can dress a stone to go on it. */
   masonry: 'dress a stone',
   ruling: 'hold a village it did not build',
+  /* The needles are still there. Nobody can make a sleeve that stays on. */
+  sewing: 'sew a hide into anything that fits',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be
@@ -440,6 +456,9 @@ export function craftChoice(camp) {
     /* And the tents: mended, re-poled, painted, rebuilt. A thing a fed band
        does with an afternoon, like carving. */
     ['building', 0.14 + 0.45 * (1 - h)],
+    /* And clothes, sewn as the cold comes on: a little all year, most in the
+       autumn before the winter they are for. */
+    ['clothing', 0.10 + (seasonName === 'autumn' ? 0.55 : seasonName === 'winter' ? 0.35 : 0)],
   ];
   /* Six weights for eight skills, and that is the shape of it: these are the
      things a band gets better at by sitting down and working at them. The other

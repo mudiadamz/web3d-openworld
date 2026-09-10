@@ -1016,7 +1016,7 @@ group('the chief, and the dead');
 
 check('whoever leads is wearing it: an ochre hide and a band round the brow',
   /const leads = \(p\) => Boolean\(p\.camp && p\.camp\.chief === p\.id\);/.test(looksSrc)
-  && /return leads\(p\) \? _col\.setHex\(CHIEF_CLOTH\)/.test(looksSrc)
+  && /if \(leads\(p\)\) return _col\.setHex\(CHIEF_CLOTH\);/.test(looksSrc)
   && /if \(group === 'band'\) return leads\(p\) \? 'band' : null;/.test(looksSrc)
   && /if \(group === 'band'\) return _col\.setHex\(CHIEF_BAND\);/.test(looksSrc));
 /* Colours go on as things are put on, so a new chief is only in ochre once they
@@ -3392,7 +3392,7 @@ check('the page takes every piece of a body from the model',
    from its shoulders, legs from its hips. The other torso is parked in the
    same frame, every frame, because the slot may have been somebody else's. */
 check('a grown woman wears the woman\'s hide, cut from the woman\'s torso',
-  /const woman = p\.sex === 'f' && !p\.child;[\s\S]{0,60}?const tunic = wear\(p, 'tunic', tunicKey\(p, woman\)\);/.test(moduleSource('move.js'))
+  /const woman = p\.sex === 'f' && !p\.child;[\s\S]{0,400}?const tunic = wear\(p, 'tunic', tunicKey\(p, woman\), dyed\);/.test(moduleSource('move.js'))
   && /tunicKey = \(p, woman\) => `tunic:\$\{woman \? 'f' : 'm'\}:\$\{lookOf\(p\)\.build\}`/.test(looksSrc));
 check('and her arms and legs hang from its joints',
   /const armX = \(woman \? S\.armXF : S\.armX\) \* p\.shoulder \* fit\.armX;/.test(moduleSource('move.js'))
@@ -4437,11 +4437,11 @@ check('and the save carries the mastery, not the announcement', (() => {
    the simulation already had, because a skill that only shows on a readout is a
    readout.
    ------------------------------------------------------------------------- */
-check('there are twenty of them', Object.keys(
+check('there are twenty-one of them', Object.keys(
   (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
     .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
     .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
-).length === 20);
+).length === 21);
 check('and every one of them does something', (() => {
   const want = [
     ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
@@ -4477,7 +4477,7 @@ const CRAFT_WEIGHTS = (() => {
   return m ? (m[1].match(/\['(\w+)',/g) || []).map((t) => t.slice(2, -2)) : [];
 })();
 check('and there is a weight for every skill worked at',
-  CRAFT_WEIGHTS.length === 9, `${CRAFT_WEIGHTS.length} weights: ${CRAFT_WEIGHTS.join(' ')}`);
+  CRAFT_WEIGHTS.length === 10, `${CRAFT_WEIGHTS.length} weights: ${CRAFT_WEIGHTS.join(' ')}`);
 /* Four of the twelve are not worked at the fire: the two learned at the
    graveyard, trading (learned by trading), and mining (learned at the rock). */
 /* Six of the fourteen are not worked at the fire: the two at the graveyard,
@@ -7236,6 +7236,51 @@ check('a settlement holds more before it splits as it climbs',
     return s.length === 5 && s.every((v, i) => i === 0 || v > s[i - 1]); })());
 check('every step is told, and saved', /'stage',      \/\/ a band became/.test(html)
   && /sg: c\.stage \|\| undefined/.test(html) && /camps\[i\]\.stage = c\.sg \| 0;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Clothing
+
+   Hides were always worn; sewing them into clothes is a skill, learned at the
+   fire, and it shows: sleeves, then leggings, then the band's own colour, then
+   a cloak in the winter. What it moves is what the cold does.
+   ------------------------------------------------------------------------- */
+group('clothing');
+
+check('clothing is a skill, learned at the fire',
+  /clothing: \{ label: 'clothing', of: 'sewing' \}/.test(html) && CRAFT_WEIGHTS.includes('clothing'));
+check('sewn mostly as the cold comes on',
+  /\['clothing', 0\.10 \+ \(seasonName === 'autumn' \? 0\.55 : seasonName === 'winter' \? 0\.35 : 0\)\]/.test(html));
+check('it keeps the season out of a sickness, arriving and spreading',
+  /const chill = 1 \+ \(season - 1\) \* \(1 - SKILL\.clothWarm \* \(camp\.skill\?\.clothing \|\| 0\)\);/.test(html)
+  && /PLAGUE\.arrival \* chill \* days/.test(html) && /crowd \* weak \* chill \* days/.test(html)
+  && !/\* season \* days/.test(moduleSource('life.js')));
+{
+  const warm = Number((html.match(/clothWarm: ([\d.]+),/) || [])[1]);
+  const chill = (season, sewing) => 1 + (season - 1) * (1 - warm * sewing);
+  check('a winter is still a winter, but a dressed band feels less of it',
+    chill(3.2, 0) === 3.2 && chill(3.2, 1) < 2 && chill(3.2, 1) > 1 && chill(1, 1) === 1,
+    `winter ${chill(3.2, 0)} undressed, ${chill(3.2, 1).toFixed(2)} at mastery; summer ${chill(1, 1)}`);
+}
+check('and the cold out of the person you are playing',
+  /return 1 - \(1 - raw\) \* \(1 - SKILL\.clothWarm \* \(p\.camp\?\.skill\?\.clothing \|\| 0\)\);/.test(html));
+check('you can see it: sleeves, then leggings, then the dye, then a cloak',
+  /const CLOTH = \{ sleeves: 1, legs: 2, dyed: 3, cloak: 4 \};/.test(looksSrc)
+  && /grade >= CLOTH\.sleeves \? 'sleeve:' \+ side : null/.test(moduleSource('move.js'))
+  && /grade >= CLOTH\.legs \? 'legs:' \+ side : null/.test(moduleSource('move.js'))
+  && /grade >= CLOTH\.legs \? 'shins:' \+ side : null/.test(moduleSource('move.js'))
+  && /const dyed = grade >= CLOTH\.dyed \? 1 : 0;/.test(moduleSource('move.js')));
+check('the cloak only in winter',
+  /grade >= CLOTH\.cloak && seasonName === 'winter' \? 'cloak' : null/.test(moduleSource('move.js')));
+check('on the rung the chronicle announced, so a mastered band\'s cloak does not flicker',
+  /clothingGrade = \(p\) => p\.camp\?\.told\?\.clothing \|\| 0/.test(looksSrc));
+check('the dye is the band\'s own colour',
+  /_col\.lerp\(_dye\.setHSL\(hue \/ 360, 0\.5, 0\.3\), 0\.7\)/.test(looksSrc)
+  && /\/hsl\\\(\(\\d\+\)\/\.exec\(p\.camp\?\.color/.test(looksSrc));
+check('and the day it is learned, what is already worn is recoloured where it is',
+  /if \(key && \(stamps\[group\] \?\? 0\) !== stamp\) \{/.test(looksSrc));
+check('sleeves and leggings hang from the limb\'s own matrix, so they bend with it',
+  /looks\[sleeve\]\.setMatrixAt\(p\.wornAt\[SLEEVES\[side\]\], _mFit\);/.test(moduleSource('move.js'))
+  && /looks\[legging\]\.setMatrixAt\(p\.wornAt\[THIGHS\[side\]\], _mFit\);/.test(moduleSource('move.js')));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);

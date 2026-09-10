@@ -42,7 +42,8 @@ import { dockOf } from './larder.js';
 import { buildThickets } from './thickets.js';
 import { CLIMB_HEIGHT, CLIMB_REACH, CRAWL } from './danger.js';
 import {
-  HEAD_GROUPS, animalSize, cargoKey, clearLooks, fitOf, flushLooks, headKey, looks, tunicKey, undress, wear
+  CLOTH, HEAD_GROUPS, SHINS, SLEEVES, THIGHS, animalSize, cargoKey, clearLooks, clothingGrade, fitOf, flushLooks,
+  headKey, looks, tunicKey, undress, wear
 } from './looks.js';
 import { atHome, eat, lifeWant, restBoost, spendLife } from './vitals.js';
 import { arm } from './ui.js';
@@ -185,7 +186,9 @@ function aimHome(p, spread) {
 export const COLD = { night: 0.6, winter: 0.5 };
 export function coldFactor(p, day) {
   if (!p.led || inCamp(p.x, p.z, 0)) return 1;
-  return (day < 0.3 ? COLD.night : 1) * (seasonName === 'winter' ? COLD.winter : 1);
+  const raw = (day < 0.3 ? COLD.night : 1) * (seasonName === 'winter' ? COLD.winter : 1);
+  // Clothes keep some of it out (SKILL.clothWarm): what the band can sew, they wear.
+  return 1 - (1 - raw) * (1 - SKILL.clothWarm * (p.camp?.skill?.clothing || 0));
 }
 
 /* How much of their pace what they carry leaves them. The band's own foragers
@@ -1385,8 +1388,14 @@ export function writePerson(p, i) {
      a broad or a full build carries them further out. */
   const woman = p.sex === 'f' && !p.child;
   const fit = fitOf(p);
-  const tunic = wear(p, 'tunic', tunicKey(p, woman));
+  /* What the band can sew, on the rung the chronicle last announced: sleeves,
+     then leggings, then the cloth dyed, then a cloak for the winter. */
+  const grade = clothingGrade(p);
+  const dyed = grade >= CLOTH.dyed ? 1 : 0;
+  const tunic = wear(p, 'tunic', tunicKey(p, woman), dyed);
   looks[tunic].setMatrixAt(p.wornAt.tunic, _mChain);
+  const cloak = wear(p, 'cloak', grade >= CLOTH.cloak && seasonName === 'winter' ? 'cloak' : null);
+  if (cloak) looks[cloak].setMatrixAt(p.wornAt.cloak, _mChain);
   const armX = (woman ? S.armXF : S.armX) * p.shoulder * fit.armX;
   const hipX = (woman ? S.hipXF : S.hipX) * p.hip * fit.hipX;
 
@@ -1449,6 +1458,9 @@ export function writePerson(p, i) {
     _mLocal.setPosition(dir * armX, S.shoulderY, 0);
     _mUpper.multiplyMatrices(_mTorso, _mLocal);
     personParts.upperArm.setMatrixAt(i * 2 + side, _mFit.copy(_mUpper).scale(fit.upperArm));
+    // Sleeves on the same matrix as the arm, so they bend with it.
+    const sleeve = wear(p, SLEEVES[side], grade >= CLOTH.sleeves ? 'sleeve:' + side : null, dyed);
+    if (sleeve) looks[sleeve].setMatrixAt(p.wornAt[SLEEVES[side]], _mFit);
 
     _mOff.makeRotationX(elbow);
     _mOff.setPosition(0, -S.upperArm[1], 0);
@@ -1521,11 +1533,15 @@ export function writePerson(p, i) {
     _mLocal.setPosition(dir * hipX, 0, 0);
     _mUpper.multiplyMatrices(_mBody, _mLocal);
     personParts.thigh.setMatrixAt(i * 2 + side, _mFit.copy(_mUpper).scale(fit.thigh));
+    const legging = wear(p, THIGHS[side], grade >= CLOTH.legs ? 'legs:' + side : null, dyed);
+    if (legging) looks[legging].setMatrixAt(p.wornAt[THIGHS[side]], _mFit);
 
     _mOff.makeRotationX(knee);
     _mOff.setPosition(0, -S.thigh[1], 0);
     _mLower.multiplyMatrices(_mUpper, _mOff);
     personParts.shin.setMatrixAt(i * 2 + side, _mFit.copy(_mLower).scale(fit.shin));
+    const shinwear = wear(p, SHINS[side], grade >= CLOTH.legs ? 'shins:' + side : null, dyed);
+    if (shinwear) looks[shinwear].setMatrixAt(p.wornAt[SHINS[side]], _mFit);
     nearJoint(nearParts?.knee?.[side], i, _mLower);
 
     // Undo both joints so the sole stays parallel to the ground it is on.

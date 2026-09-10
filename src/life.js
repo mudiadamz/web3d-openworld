@@ -1264,10 +1264,12 @@ export function updateSickness(days) {
     let here = 0, sick = 0;
     for (const p of people) if (p.camp === camp) { here++; if (p.sick) sick++; }
     if (here === 0) continue;
+    // Dressed for the cold, a band keeps some of the season out (SKILL.clothWarm).
+    const chill = 1 + (season - 1) * (1 - SKILL.clothWarm * (camp.skill?.clothing || 0));
 
     /* Arrival: one case out of nowhere, and only into a camp that has none.
        An outbreak already running does not need help starting. */
-    if (sick === 0 && luck() < PLAGUE.arrival * season * days) {
+    if (sick === 0 && luck() < PLAGUE.arrival * chill * days) {
       const well = people.filter((p) => p.camp === camp && !p.sick && !immune(p));
       if (well.length) {
         fallIll(well[(luck() * well.length) | 0]);
@@ -1281,7 +1283,7 @@ export function updateSickness(days) {
       // A well-built village is a less crowded one (SKILL.buildAir).
       const crowd = Math.min(here / PLAGUE.crowding, 1.5) * (1 - SKILL.buildAir * (camp.skill?.building || 0));
       const weak = 1 + camp.hunger;
-      const chance = PLAGUE.spread * sick * crowd * weak * season * days;
+      const chance = PLAGUE.spread * sick * crowd * weak * chill * days;
       for (const p of people) {
         if (p.camp !== camp || p.sick || immune(p)) continue;
         if (luck() < chance) fallIll(p);

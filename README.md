@@ -1615,6 +1615,20 @@ have, and one standing in the water.
 water, in `src/larder.js`. It is handed positions and asked what they are worth,
 and knows nothing about people, camps or days.
 
+## Clothing, the twenty-first
+
+Hides were always worn. **`clothing` is sewing them into clothes, and you can
+watch a band learn it:** sleeves at the beginnings, leggings at a fair hand,
+cloth dyed in the band's own colour — the one on its chip and its dots on the
+map — at real skill, and at mastery a fur cloak over the shoulders in winter.
+Each goes on the day the chronicle says the band has got there, and comes off
+the day it says they have forgotten.
+
+It is worked at the fire, a little all year and most in the autumn before the
+winter it is for. What it moves is what the cold does: at mastery a band keeps
+out sixty percent of what winter adds to a sickness arriving and spreading, and
+the person you play loses that much less resting out in the open at night.
+
 ## Stones, which is the eighth
 
 `rites` is going back to the graveyard. **`art` is what a band does once going

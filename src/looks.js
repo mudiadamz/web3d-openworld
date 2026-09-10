@@ -113,6 +113,15 @@ export const fitOf = (p) => BUILD_FIT[lookOf(p).build];
 export const tunicKey = (p, woman) => `tunic:${woman ? 'f' : 'm'}:${lookOf(p).build}`;
 const leads = (p) => Boolean(p.camp && p.camp.chief === p.id);
 
+/* Clothing, by the band's rung at sewing (skills.js). The rung the chronicle
+   last announced rather than the number itself: a mastered skill sits on 1.0
+   and slips a hair under it every day, and a cloak that came and went with
+   that would be a cloak nobody could keep on. */
+export const CLOTH = { sleeves: 1, legs: 2, dyed: 3, cloak: 4 };
+export const clothingGrade = (p) => p.camp?.told?.clothing || 0;
+export const SLEEVES = ['sleeve0', 'sleeve1'], THIGHS = ['legs0', 'legs1'], SHINS = ['shins0', 'shins1'];
+const CLOTH_GROUPS = new Set(['tunic', ...SLEEVES, ...THIGHS, ...SHINS]);
+
 /* What hangs off the head, and what is on it today. Nobody is bald as a
    child; the band round the brow is the chief's. */
 export const HEAD_GROUPS = ['hair', 'face', 'band'];
@@ -151,10 +160,23 @@ function hairColour(p) {
   return _col.setHex(p.hairColor ?? 0x2b1d14).lerp(GREYING, t);
 }
 
-function colourFor(p, group, key) {
-  if (group === 'tunic') {
-    return leads(p) ? _col.setHex(CHIEF_CLOTH) : _col.setHex(p.garment).multiplyScalar(p.garmentShade ?? 1);
+/* A band that sews well dyes: its cloth goes toward the band's own colour,
+   the one on its chip and its dots on the map. Read off the chip's hue, since
+   the chip is CSS and three will not parse that shape of hsl(). */
+const _dye = new THREE.Color();
+function clothColour(p) {
+  if (leads(p)) return _col.setHex(CHIEF_CLOTH);
+  _col.setHex(p.garment).multiplyScalar(p.garmentShade ?? 1);
+  if (clothingGrade(p) >= CLOTH.dyed) {
+    const hue = Number((/hsl\((\d+)/.exec(p.camp?.color || '') || [])[1]);
+    if (Number.isFinite(hue)) _col.lerp(_dye.setHSL(hue / 360, 0.5, 0.3), 0.7);
   }
+  return _col;
+}
+
+function colourFor(p, group, key) {
+  if (CLOTH_GROUPS.has(group)) return clothColour(p);
+  if (group === 'cloak') return _col.setHex(0x5e4a38).multiplyScalar(p.garmentShade ?? 1);
   if (group === 'hair') return hairColour(p);
   // The face is its marks, dark, and a nose and ears in whatever skin it is on.
   if (group === 'face') return _col.setHex(p.skin).multiplyScalar(p.skinShade ?? 1);
@@ -172,10 +194,21 @@ let lookGroup = null;
 /* Put something on, or take it off with null. Returns what they are wearing,
    which is what the caller draws. Cheap when nothing changes, which is nearly
    every call: it is asked every frame for everybody on screen. */
-export function wear(p, group, key) {
+export function wear(p, group, key, stamp = 0) {
   const worn = p.worn || (p.worn = {});
   const was = worn[group] || null;
-  if (was === key) return key;
+  const stamps = p.wornStamp || (p.wornStamp = {});
+  if (was === key) {
+    /* The same thing, in a new colour — cloth dyed the day the band learns to.
+       Painted where it already is; nothing moves in the list. */
+    if (key && (stamps[group] ?? 0) !== stamp) {
+      stamps[group] = stamp;
+      looks[key].setColorAt(p.wornAt[group], colourFor(p, group, key));
+      looks[key].instanceColor.needsUpdate = true;
+    }
+    return key;
+  }
+  stamps[group] = stamp;
   if (was) takeOff(p, group);
   if (key) {
     const m = looks[key], who = m.userData.who;
@@ -223,7 +256,7 @@ export function undressAll(people) {
     looks[key].userData.who.length = 0;
     looks[key].count = 0;
   }
-  for (const p of people) { p.worn = null; p.wornAt = null; }
+  for (const p of people) { p.worn = null; p.wornAt = null; p.wornStamp = null; }
 }
 
 export function flushLooks() {
@@ -527,6 +560,21 @@ const pickaxeGeo = () => inHand([
   painted(box(0.267, 0.60, 0.018, 0.033, 0.49, 0.033), 0x705133), painted(box(0.267, 0.38, 0.018, 0.33, 0.046, 0.044), 0x777c7a),
 ]);
 
+/* Clothes on a limb: a tube round it in the limb's own space — the joint at the
+   top, hanging down — so it bends with whatever it is on. Open at both ends,
+   and wider than the limb at every height it covers, rounded ends included. */
+const tube = (profile) =>
+  merge([new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 10).toNonIndexed()]);
+const sleeveGeo = () => tube([[0.050, -0.24], [0.062, -0.17], [0.068, 0.045]]);
+const leggingGeo = () => tube([[0.060, -0.45], [0.088, -0.236], [0.086, 0.03]]);
+const shinwearGeo = () => tube([[0.042, -0.40], [0.066, -0.228], [0.060, 0.02]]);
+/* A fur cloak: most of a cone, open at the front, from the shoulders to below
+   the hips. Cut for the fullest build, because a cloak hangs rather than fits. */
+function cloakGeo() {
+  const g = new THREE.CylinderGeometry(0.24, 0.34, 0.78, 14, 1, true, Math.PI - 1.9, 3.8).toNonIndexed();
+  return merge([g.scale(1, 1, 0.8).translate(0, 0.14, -0.02)]);
+}
+
 function lookGeometries() {
   const out = {};
   for (const sex of ['m', 'f']) {
@@ -544,6 +592,14 @@ function lookGeometries() {
   out['cargo:vegetables'] = { geo: cargoVegetables(), shadow: true };
   out['tool:knife'] = { geo: knifeGeo(), shadow: true };
   out['tool:pickaxe'] = { geo: pickaxeGeo(), shadow: true };
+  // One shape for both sides, a mesh for each, so nobody is in any list twice.
+  const sleeve = sleeveGeo(), legging = leggingGeo(), shinwear = shinwearGeo();
+  for (const side of [0, 1]) {
+    out['sleeve:' + side] = { geo: sleeve, cloth: true, shadow: true };
+    out['legs:' + side] = { geo: legging, cloth: true, shadow: true };
+    out['shins:' + side] = { geo: shinwear, cloth: true, shadow: true };
+  }
+  out.cloak = { geo: cloakGeo(), cloth: true, shadow: true };
   out['tool:hoe'] = { geo: hoeGeo(), shadow: true };
   return out;
 }
