@@ -3,6 +3,7 @@ import { clamp, mulberry32 } from './noise.js';
 import { sunDir } from './scene.js';
 import { CAMP_CLEARING, people } from './people.js';
 import { $ } from './save.js';
+import { HUMAN_JOINTS, HUMAN_PARTS } from './human-parts.js';
 
 /* -------------------------------------------------------------------------
    How fast the clock runs
@@ -230,19 +231,57 @@ export function pace() { return clamp((P.paceDay || P.dayLength) / P.dayLength, 
 
    Lengths are in metres at scale 1, and the upper and lower halves overlap
    slightly at every joint so there is no gap to see through when it bends. */
+/* The body is the humans-threejs model (src/human-parts.js, vendored exactly as
+   it is generated there): fifteen pieces, each already hanging from its own
+   joint. So the rig takes its measurements from the model's joint table rather
+   than keeping a second set that could drift away from the shapes. A thigh is
+   exactly as long as the hip-to-knee the model was built around, and a foot
+   lands on the ground because thigh, shin and ankle add up to the hip height —
+   which the old hand-set numbers did not, by fourteen centimetres.
+
+   Widths and depths are read off the shapes themselves. Nothing in the rig
+   hangs anything from them; they size the near set's joints and fingers. */
+const MODEL = HUMAN_JOINTS.male, MODEL_F = HUMAN_JOINTS.female;
+const extent = (key) => {
+  const a = HUMAN_PARTS[key].positions;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < a.length; i++) {
+    lo[i % 3] = Math.min(lo[i % 3], a[i]);
+    hi[i % 3] = Math.max(hi[i % 3], a[i]);
+  }
+  return { lo, size: [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] };
+};
+/* Width, length, depth — the length being the bone's, joint to joint, when
+   there is a next joint to reach. */
+const across = (key, len) => {
+  const { size } = extent(key);
+  return [size[0], len ?? size[1], size[2]];
+};
+const HEAD = extent('head').size;
+
 export const PERSON = {
-  legLen: 0.85, legW: 0.13, legD: 0.15, hipX: 0.115,
-  thigh: [0.145, 0.48, 0.155],    // hip to knee
-  shin: [0.115, 0.44, 0.125],     // knee to ankle
-  foot: [0.115, 0.075, 0.26], footZ: 0.055,
-  torso: [0.40, 0.58, 0.22], torsoMid: 0.29,
-  neck: [0.115, 0.10, 0.115], neckY: 0.545,
-  shoulderY: 0.50, armX: 0.245, arm: [0.11, 0.54, 0.115],
-  upperArm: [0.105, 0.31, 0.105], // shoulder to elbow
-  foreArm: [0.088, 0.28, 0.090],  // elbow to wrist
-  hand: [0.075, 0.115, 0.055],
-  headY: 0.70, head: [0.20, 0.235, 0.205],
-  hair: [0.215, 0.085, 0.22],
+  legLen: MODEL.hip[1],               // the hip joint's height: where the body's origin is
+  /* Where the legs and arms hang from, across. A woman's hips are wider and
+     her shoulders narrower, and in this model that is where the joints are,
+     not different limbs — every limb is one shape shared by everybody, and only
+     the torso differs. */
+  hipX: MODEL.hip[0], hipXF: MODEL_F.hip[0],
+  thigh: across('thigh', MODEL.lengths.thigh),          // hip to knee
+  shin: across('calf', MODEL.lengths.calf),             // knee to ankle
+  foot: across('foot'),
+  neck: across('neck'), neckY: MODEL.neckBase[1] - MODEL.hip[1],
+  shoulderY: MODEL.shoulder[1] - MODEL.hip[1],
+  armX: MODEL.shoulder[0], armXF: MODEL_F.shoulder[0],
+  upperArm: across('upperArm', MODEL.lengths.upperArm), // shoulder to elbow
+  foreArm: across('forearm', MODEL.lengths.forearm),    // elbow to wrist
+  // A hand's length is how far it hangs below the wrist, rounded end and all.
+  hand: [extent('hand').size[0], -extent('hand').lo[1], extent('hand').size[2]],
+  /* The head is held at its middle rather than its base, so a child's larger
+     head grows about its own centre. headDrop is how far that is above the
+     base of the skull the model hangs it from. */
+  headY: MODEL.headCentre[1] - MODEL.hip[1], head: HEAD,
+  headDrop: MODEL.headCentre[1] - MODEL.headBase[1],
+  hair: [HEAD[0] * 1.08, 0.085, HEAD[2] * 1.08],
   spear: [0.045, 2.1, 0.045],
   load: [0.30, 0.11, 0.26],       // the heap: across, high, deep
   basket: [0.19, 0.15, 0.17],     // the basket: rim, base, height
@@ -257,7 +296,7 @@ export const PERSON = {
 export const SHIN_MAX = 1.35;
 
 export const PERSON_PARTS = {
-  torso: 1, neck: 1, head: 1, hair: 1,
+  torso: 1, torsoF: 1, neck: 1, head: 1, hair: 1,
   upperArm: 2, foreArm: 2, hand: 2,
   thigh: 2, shin: 2, foot: 2,
   spear: 1, load: 1, basket: 1,

@@ -3285,45 +3285,86 @@ check('and a stubby one falls back rather than asking for a negative length',
 check('the page guards that case', /if \(len <= 0\.001\) return roundBox\(w, h, d\);/.test(html));
 
 check('nothing alive is a box any more at full quality',
-  !/new THREE\.BoxGeometry\(\.\.\.p\.torso\)/.test(html)
-  && !/new THREE\.BoxGeometry\(\.\.\.spec\.body\)/.test(html)
-  && /torsoGeometry\(\.\.\.p\.torso\)/.test(html) && /roundBox\(\.\.\.spec\.body\)/.test(html));
+  !/new THREE\.BoxGeometry\(\.\.\.spec\.body\)/.test(html)
+  && /const torsoGeo = body\('torsoMale'\);/.test(html) && /roundBox\(\.\.\.spec\.body\)/.test(html));
 
-/* A torso is the one part an ellipsoid cannot do: wide at the shoulders, narrow
-   at the waist, wide again at the hips. */
-const PROFILE = [...html.slice(html.indexOf('const TORSO_PROFILE = ['),
-  html.indexOf('function torsoGeometry')).matchAll(/\[([\d.]+), (-?[\d.]+)\]/g)]
-  .map((m) => [Number(m[1]), Number(m[2])]);
-check('the torso profile is a profile', PROFILE.length >= 7, JSON.stringify(PROFILE));
-check('it closes at both ends', PROFILE[0][0] === 0 && PROFILE[PROFILE.length - 1][0] === 0);
-check('it runs bottom to top without doubling back',
-  PROFILE.every(([, y], i) => i === 0 || y > PROFILE[i - 1][1]),
-  JSON.stringify(PROFILE.map((q) => q[1])));
-const radiusAt = (y) => {
-  for (let i = 1; i < PROFILE.length; i++) {
-    if (PROFILE[i][1] >= y) {
-      const [r0, y0] = PROFILE[i - 1], [r1, y1] = PROFILE[i];
-      return r0 + (r1 - r0) * ((y - y0) / (y1 - y0));
-    }
+/* The body is the humans-threejs model, read here the way the page reads it:
+   plain arrays, no three.js. What the torso used to be tested for as a lathe
+   profile it is now tested for as a shape — wide at the hips, narrow at the
+   waist, wide again at the chest — and there are two of them to test. */
+const { pathToFileURL: fileUrl } = await import('node:url');
+const { HUMAN_PARTS, HUMAN_JOINTS } = await import(fileUrl(join(SRC, 'human-parts.js')).href);
+const ringsOf = (key) => {
+  const a = HUMAN_PARTS[key].positions, by = new Map();
+  for (let i = 0; i < a.length; i += 3) {
+    const y = a[i + 1].toFixed(3);
+    by.set(y, Math.max(by.get(y) || 0, Math.abs(a[i])));
   }
-  return 0;
+  return [...by].map(([y, r]) => [Number(y), r]).sort((p, q) => p[0] - q[0]);
 };
-const hip = radiusAt(-0.6), waist = radiusAt(-0.02), chest = radiusAt(0.4);
-check('there is a waist between the hips and the chest',
-  waist < hip && waist < chest,
-  `hip ${hip.toFixed(2)} waist ${waist.toFixed(2)} chest ${chest.toFixed(2)}`);
-check('and it is a waist, not a pinch', waist > hip * 0.6 && waist > chest * 0.6,
-  `waist is ${(waist / chest * 100).toFixed(0)}% of the chest`);
-check('a chest is deeper across than front to back', /g\.scale\(1, 1, d \/ w\)/.test(html));
+for (const key of ['torsoMale', 'torsoFemale']) {
+  const R = ringsOf(key);
+  const waist = R.slice(1, -1).reduce((m, q) => (q[1] < m[1] ? q : m));
+  const hips = Math.max(...R.filter((q) => q[0] < waist[0]).map((q) => q[1]));
+  const chest = Math.max(...R.filter((q) => q[0] > waist[0]).map((q) => q[1]));
+  check(`${key}: there is a waist between the hips and the chest`,
+    waist[1] < hips && waist[1] < chest, JSON.stringify(R));
+  check(`${key}: and it is a waist, not a pinch`, waist[1] > hips * 0.6 && waist[1] > chest * 0.6,
+    `waist ${waist[1]} against hips ${hips} and chest ${chest}`);
+  const a = HUMAN_PARTS[key].positions;
+  let wide = 0, deep = 0;
+  for (let i = 0; i < a.length; i += 3) { wide = Math.max(wide, Math.abs(a[i])); deep = Math.max(deep, Math.abs(a[i + 2])); }
+  check(`${key}: a chest is wider across than front to back`, wide > deep, `${wide} by ${deep}`);
+}
+check('the two torsos are two shapes',
+  HUMAN_PARTS.torsoMale.positions.some((v, i) => v !== HUMAN_PARTS.torsoFemale.positions[i]));
+check('the model is plain data: nothing imported, nothing fetched',
+  !/^import /m.test(moduleSource('human-parts.js')) && !/fetch\(|await /.test(moduleSource('human-parts.js')));
+check('the page takes every piece of a body from the model',
+  /const body = \(key\) => \{[\s\S]{0,200}?HUMAN_PARTS\[key\]\.positions\.slice\(\)/.test(html)
+  && ['torsoMale', 'torsoFemale', 'neck', 'head', 'upperArm', 'forearm', 'hand', 'thigh', 'calf', 'foot']
+    .every((k) => html.includes(`body('${k}')`)));
+
+/* A grown woman has the woman's torso, and the joints follow the torso: arms
+   from its shoulders, legs from its hips. The other torso is parked in the
+   same frame, every frame, because the slot may have been somebody else's. */
+check('a grown woman has the woman\'s torso',
+  /const woman = p\.sex === 'f' && !p\.child;\n  personParts\[woman \? 'torsoF' : 'torso'\]\.setMatrixAt\(i, _mChain\);\n  personParts\[woman \? 'torso' : 'torsoF'\]\.setMatrixAt\(i, HIDDEN\);/.test(moduleSource('move.js')));
+check('and her arms and legs hang from its joints',
+  /const armX = \(woman \? S\.armXF : S\.armX\) \* p\.shoulder;/.test(moduleSource('move.js'))
+  && /const hipX = \(woman \? S\.hipXF : S\.hipX\) \* p\.hip;/.test(moduleSource('move.js'))
+  && /setPosition\(dir \* armX, S\.shoulderY, 0\)/.test(moduleSource('move.js'))
+  && /setPosition\(dir \* hipX, 0, 0\)/.test(moduleSource('move.js')));
+check('which are the model\'s, not numbers of our own',
+  /hipX: MODEL\.hip\[0\], hipXF: MODEL_F\.hip\[0\]/.test(html)
+  && /armX: MODEL\.shoulder\[0\], armXF: MODEL_F\.shoulder\[0\]/.test(html));
+check('and a woman\'s shoulders are narrower and her hips wider',
+  HUMAN_JOINTS.female.shoulder[0] < HUMAN_JOINTS.male.shoulder[0]
+  && HUMAN_JOINTS.female.hip[0] > HUMAN_JOINTS.male.hip[0]);
 
 /* Limbs in two pieces. This is most of what separates a figure from a
    mannequin, and it only works if every piece hangs from its own joint. */
 for (const joint of ['upperArm', 'foreArm', 'thigh', 'shin']) {
-  check(`${joint} is a limb piece`, new RegExp(`${joint}: \\[[\\d., ]+\\]`).test(html));
+  check(`${joint} is a limb piece, as long as the model's bone`,
+    new RegExp(`${joint}: across\\('\\w+', MODEL\\.lengths\\.\\w+\\)`).test(html));
   check(`and there are two of them`, PERSON_PARTS[joint] === 2);
 }
-check('every limb piece hangs from its joint rather than its middle',
-  /const hang = \(dims\) => \{[\s\S]{0,140}?g\.translate\(0, -dims\[1\] \/ 2, 0\);/.test(html));
+/* Joint-local: the joint is the origin, the piece hangs from it to the next
+   joint down, and its rounded end reaches a little past both — which is what
+   stops a bent knee opening a gap on the outside of the bend. */
+const J = HUMAN_JOINTS.male;
+for (const [key, len] of [['thigh', J.lengths.thigh], ['calf', J.lengths.calf],
+  ['upperArm', J.lengths.upperArm], ['forearm', J.lengths.forearm]]) {
+  const a = HUMAN_PARTS[key].positions;
+  let top = -Infinity, bottom = Infinity;
+  for (let i = 1; i < a.length; i += 3) { top = Math.max(top, a[i]); bottom = Math.min(bottom, a[i]); }
+  check(`the ${key} hangs from its joint rather than its middle`,
+    top > 0 && top < 0.1 && bottom < -len && bottom > -len - 0.1,
+    `${top.toFixed(3)} to ${bottom.toFixed(3)} for a ${len} m bone`);
+}
+check('and the legs add up to the hip, so a foot stands on the ground',
+  Math.abs(J.lengths.thigh + J.lengths.calf + J.ankle[1] - J.hip[1]) < 1e-6,
+  `${J.lengths.thigh} + ${J.lengths.calf} + ${J.ankle[1]} against ${J.hip[1]}`);
 check('the forearm hangs off the end of the upper arm',
   /_mOff\.setPosition\(0, -S\.upperArm\[1\], 0\);/.test(html));
 check('and the shin off the end of the thigh',
@@ -3332,8 +3373,12 @@ check('a hand is on the end of the forearm',
   /_mOff\.makeTranslation\(0, -S\.foreArm\[1\], 0\);/.test(html));
 check('a foot is on the end of the shin, and kept level with the ground',
   /_mOff\.makeRotationX\(-\(leg \+ knee\)\);\n    _mOff\.setPosition\(0, -S\.shin\[1\], 0\);/.test(html));
-check('and it sits forward of the ankle, like a foot',
-  /footGeo\.translate\(0, -p\.foot\[1\] \/ 2, p\.footZ\)/.test(html));
+check('and it sits forward of the ankle, like a foot', (() => {
+  const a = HUMAN_PARTS.foot.positions;
+  let front = 0, back = 0;
+  for (let i = 2; i < a.length; i += 3) { front = Math.max(front, a[i]); back = Math.min(back, a[i]); }
+  return front > -back * 1.5;
+})());
 check('there is a neck', PERSON_PARTS.neck === 1 && /personParts\.neck\.setMatrixAt/.test(html));
 
 /* A knee bends through the swing and not through the stance — a knee that bent
@@ -3391,7 +3436,9 @@ check('and folds the shin back under it', /\+ crouch \* 1\.3|\+ p\.crouch \* 1\.
 const deep = pose(0, 0, 1);
 check('a deep crouch leaves the shin near upright', Math.abs(deep.shin) < 0.6,
   `shin ${deep.shin.toFixed(2)} rad with the thigh at ${deep.leg.toFixed(2)}`);
-for (const part of ['p.head', 'p.hair', 'spec.head', 'spec.hump.size']) {
+/* Not a person's head any more: that is the model's, and is checked with the
+   rest of the body above. */
+for (const part of ['p.hair', 'spec.head', 'spec.hump.size']) {
   check(`${part} is rounded`, html.includes(`roundBox(...${part})`));
 }
 for (const [what, call] of [['a spear', 'roundLimb(...p.spear)'],

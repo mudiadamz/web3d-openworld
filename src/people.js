@@ -6,6 +6,7 @@ import { faunaMaterial, rockMaterial } from './scene.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, stats, world } from './world.js';
 import { recordPerson, setLineage, tribeVoice, uniqueName, usedCodes, usedNames } from './wildlife.js';
 import { PERSON, PERSON_PARTS, partsPer } from './clock.js';
+import { HUMAN_PARTS } from './human-parts.js';
 import {
   FOOD, LIFE, chiefOf, emptySkills, hidePeopleFrom, nearestShore, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay
 } from './life.js';
@@ -23,6 +24,10 @@ import { codeColor, takeTribeCode } from './ui.js';
    spent per instance, and there can be two hundred people and two hundred
    animals, so how round anything is comes off the quality preset — LOW keeps
    the boxes it always had.
+
+   People are no longer made of these. Their bodies are the humans-threejs
+   model — see buildPeople — and what is left here is the animals, and on a
+   person the hair and the spear.
    ------------------------------------------------------------------------- */
 
 /* Measured rather than guessed: at HIGH these take the scene from 1.85M
@@ -30,32 +35,6 @@ import { codeColor, takeTribeCode } from './ui.js';
    is grass and terrain and the bodies in it are a rounding error. Roundness was
    the cheapest thing on the list. */
 export const ROUND_RINGS = [[0, 0], [8, 5], [10, 7]];       // [radial, rings] per level
-
-/* A torso is the one part an ellipsoid cannot do: a person is wide at the
-   shoulders, narrow at the waist and wide again at the hips, and that double
-   curve is most of what makes a silhouette read as a body. A lathe turns a
-   profile about the vertical axis, and the cross-section is then squashed
-   front-to-back, because a chest is wider than it is deep.
-
-   The profile runs bottom to top in fractions of the half-height, with the
-   radius as a fraction of the half-width. It starts and ends on the axis so the
-   shape closes at both ends. */
-export const TORSO_PROFILE = [
-  [0.00, -1.00], [0.58, -0.94], [0.93, -0.74],   // seat and hips
-  [0.86, -0.34], [0.75, -0.02],                  // waist
-  [0.93, 0.34], [0.90, 0.62],                    // chest
-  [0.64, 0.90], [0.00, 1.00],                    // shoulders
-];
-
-export function torsoGeometry(w, h, d) {
-  const [seg] = ROUND_RINGS[QUALITY[P.quality]?.round ?? 2];
-  if (!seg) return new THREE.BoxGeometry(w, h, d);
-  const pts = TORSO_PROFILE.map(([r, y]) => new THREE.Vector2(r * w * 0.5, y * h * 0.5));
-  const g = new THREE.LatheGeometry(pts, Math.max(seg, 7));
-  g.scale(1, 1, d / w);
-  g.computeVertexNormals();
-  return g;
-}
 
 /** A box-shaped ellipsoid: same width, height and depth, none of the corners. */
 export function roundBox(w, h, d) {
@@ -82,10 +61,15 @@ export function roundLimb(w, h, d) {
   return g;
 }
 
+/* The model is 1.735 m to the crown and the old figure was 1.67, so every scale
+   is 1.67 / 1.735 of what it was: the same people, the same heights, a
+   different body. Shoulder and hip are 1 for a grown man or woman because the
+   difference between them is in the model's joints now (PERSON.armXF, hipXF);
+   what is left is a child being narrower than the adult they grow into. */
 export const BUILDS = {
-  m:     { scale: [1.00, 1.07], shoulder: 1.07, hip: 0.97, head: 1.00, hair: 0.85 },
-  f:     { scale: [0.92, 0.98], shoulder: 0.94, hip: 1.06, head: 1.00, hair: 4.20 },
-  child: { scale: [0.58, 0.76], shoulder: 0.95, hip: 0.98, head: 1.18, hair: 1.20 },
+  m:     { scale: [0.963, 1.030], shoulder: 1.00, hip: 1.00, head: 1.00, hair: 0.85 },
+  f:     { scale: [0.886, 0.943], shoulder: 1.00, hip: 1.00, head: 1.00, hair: 4.20 },
+  child: { scale: [0.558, 0.731], shoulder: 0.95, hip: 0.98, head: 1.18, hair: 1.20 },
 };
 
 export const SKIN = [0x8d5a3b, 0x6f4429, 0xa9754c, 0x5a3620, 0xc08a5e, 0x7b4e33];
@@ -1194,6 +1178,7 @@ export function paintPerson(i, p) {
   personParts.torso.setColorAt(i, leads
     ? _c.setHex(CHIEF_CLOTH)
     : _c.setHex(p.garment).multiplyScalar(p.garmentShade));
+  personParts.torsoF.setColorAt(i, _c);    // the same cloth, whichever they have
   personParts.hair.setColorAt(i, leads ? _c.setHex(CHIEF_BAND) : _c.setHex(p.hairColor));
   personParts.spear.setColorAt(i, _c.setHex(0x6b5334));
   personParts.load.setColorAt(i, _c.setHex(0x7b6a45));
@@ -1287,28 +1272,32 @@ export function buildPeople(count) {
   // camps[i % 0] would be an index of NaN.
   if (!camps.length) count = 0;
   const p = PERSON;
-  /* Every limb piece is modelled hanging from its own joint — the geometry is
-     shifted down by half its length so that rotating the matrix rotates it
-     about the shoulder, elbow, hip or knee rather than about its middle. */
-  const hang = (dims) => {
-    const g = roundLimb(...dims);
-    g.translate(0, -dims[1] / 2, 0);
+  /* The body is the humans-threejs model, piece by piece. Every piece arrives
+     already hanging from its own joint — the torso from the hips, the neck from
+     its base, a thigh from the hip, a foot from the ankle — so rotating a
+     piece's matrix turns it about that joint with no shifting here. Copied
+     rather than shared: a geometry owns its arrays, and the module's are
+     everybody's. */
+  const body = (key) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(HUMAN_PARTS[key].positions.slice(), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(HUMAN_PARTS[key].normals.slice(), 3));
     return g;
   };
-  const torsoGeo = torsoGeometry(...p.torso);
-  torsoGeo.translate(0, p.torsoMid, 0);            // pivot at the waist
-  const neckGeo = hang(p.neck);
-  const headGeo = roundBox(...p.head);
+  /* Two torsos, because that is where a man and a woman differ. Every limb is
+     the same shape on both; where it hangs from is the difference. */
+  const torsoGeo = body('torsoMale');
+  const torsoFGeo = body('torsoFemale');
+  const neckGeo = body('neck');
+  // From the base of the skull to its middle, which is where the rig holds it.
+  const headGeo = body('head').translate(0, -p.headDrop, 0);
   const hairGeo = roundBox(...p.hair);
-  const upperArmGeo = hang(p.upperArm);
-  const foreArmGeo = hang(p.foreArm);
-  const handGeo = roundBox(...p.hand);
-  handGeo.translate(0, -p.hand[1] / 2, 0);
-  const thighGeo = hang(p.thigh);
-  const shinGeo = hang(p.shin);
-  // A foot sits forward of the ankle rather than under it, like a foot.
-  const footGeo = roundBox(...p.foot);
-  footGeo.translate(0, -p.foot[1] / 2, p.footZ);
+  const upperArmGeo = body('upperArm');
+  const foreArmGeo = body('forearm');
+  const handGeo = body('hand');
+  const thighGeo = body('thigh');
+  const shinGeo = body('calf');
+  const footGeo = body('foot');                    // forward of the ankle, like a foot
   const spearGeo = roundLimb(...p.spear);
   /* What is carried, as a heap rather than a box, and the basket it goes in. */
   const loadGeo = heapGeo(...p.load);
@@ -1349,7 +1338,7 @@ export function buildPeople(count) {
   setPeopleCapacity(Math.max(count, PEOPLE_ROOM));
   const n = peopleCapacity;
   const GEOMETRY = {
-    torso: torsoGeo, neck: neckGeo, head: headGeo, hair: hairGeo,
+    torso: torsoGeo, torsoF: torsoFGeo, neck: neckGeo, head: headGeo, hair: hairGeo,
     upperArm: upperArmGeo, foreArm: foreArmGeo, hand: handGeo,
     thigh: thighGeo, shin: shinGeo, foot: footGeo,
     spear: spearGeo, load: loadGeo, basket: basketGeo,

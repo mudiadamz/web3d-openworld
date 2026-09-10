@@ -1302,10 +1302,20 @@ export function writePerson(p, i) {
   _mTorso.multiplyMatrices(_mBody, _mLocal);
   _mLocal.makeScale(p.shoulder, 1, 1);
   _mChain.multiplyMatrices(_mTorso, _mLocal);
-  personParts.torso.setMatrixAt(i, _mChain);
+  /* A woman's torso on a grown woman; a child of either sex has the other. The
+     joints follow the torso they belong to — the arms hang from its shoulders
+     and the legs from its hips — so a girl's arms move out to a woman's
+     shoulders on the day she comes of age. The torso not in use is parked, and
+     it is parked every frame because the slot may have been somebody else's
+     until a death shifted the band up one. */
+  const woman = p.sex === 'f' && !p.child;
+  personParts[woman ? 'torsoF' : 'torso'].setMatrixAt(i, _mChain);
+  personParts[woman ? 'torso' : 'torsoF'].setMatrixAt(i, HIDDEN);
+  const armX = (woman ? S.armXF : S.armX) * p.shoulder;
+  const hipX = (woman ? S.hipXF : S.hipX) * p.hip;
 
-  // A neck. Short, and mostly it stops the head sitting straight on the chest.
-  _mLocal.makeTranslation(0, S.neckY + S.neck[1], 0);
+  // A neck, hung from its base at the top of the chest.
+  _mLocal.makeTranslation(0, S.neckY, 0);
   _mChain.multiplyMatrices(_mTorso, _mLocal);
   personParts.neck.setMatrixAt(i, _mChain);
 
@@ -1346,7 +1356,7 @@ export function writePerson(p, i) {
     }
 
     _mLocal.makeRotationX(arm);
-    _mLocal.setPosition(dir * S.armX * p.shoulder, S.shoulderY, 0);
+    _mLocal.setPosition(dir * armX, S.shoulderY, 0);
     _mUpper.multiplyMatrices(_mTorso, _mLocal);
     personParts.upperArm.setMatrixAt(i * 2 + side, _mUpper);
 
@@ -1411,7 +1421,7 @@ export function writePerson(p, i) {
     knee = clamp(knee, 0, Math.max(0, SHIN_MAX - leg));
 
     _mLocal.makeRotationX(leg);
-    _mLocal.setPosition(dir * S.hipX * p.hip, 0, 0);
+    _mLocal.setPosition(dir * hipX, 0, 0);
     _mUpper.multiplyMatrices(_mBody, _mLocal);
     personParts.thigh.setMatrixAt(i * 2 + side, _mUpper);
 
@@ -1430,7 +1440,7 @@ export function writePerson(p, i) {
 
   if (p.hasSpear) {
     _mLocal.makeRotationX(-0.30);
-    _mLocal.setPosition(S.armX * p.shoulder + 0.09, S.shoulderY - 0.35, 0.10);
+    _mLocal.setPosition(armX + 0.09, S.shoulderY - 0.35, 0.10);
     _mChain.multiplyMatrices(_mTorso, _mLocal);
     personParts.spear.setMatrixAt(i, _mChain);
   } else {

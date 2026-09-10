@@ -10,7 +10,10 @@ happens.
 
 **No build step, no `node_modules`, no assets, no dependencies.** `index.html`
 and a folder of ES modules are the whole program; `node:http` and `node:fs` are
-the whole server.
+the whole server. The people are the low-poly body from
+[humans-threejs](https://github.com/mudiadamz/humans-threejs), vendored as a
+module of plain arrays (`src/human-parts.js`) and hung on the simulation's own
+rig.
 
 ![A camp of tents on the slope above a river, the band gathered at its fire](assets/ss/cool-camp.webp)
 
