@@ -503,8 +503,14 @@ export function pickFollow(announce = true) {
      afford the exclusion. F is "show me somebody", and showing you the person
      you are looking at is F doing nothing — which is what narrowing the first
      pool did the moment a band had exactly one adult on an errand. */
-  const pool = [];
+  /* A raid first, whenever there is one: the rarest thing on the island and
+     the one there is most to see. */
+  const raiders = [];
   for (let i = 0; i < people.length; i++) {
+    if (i !== followIdx && !people[i].hidden && people[i].job === 'raid') raiders.push(i);
+  }
+  const pool = raiders;
+  if (!raiders.length) for (let i = 0; i < people.length; i++) {
     const q = people[i];
     if (i !== followIdx && !q.hidden && !q.child && !IDLE_JOBS.has(q.job)) pool.push(i);
   }

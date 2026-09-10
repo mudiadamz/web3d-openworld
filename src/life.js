@@ -444,6 +444,7 @@ export const RAID = {
   home: 1.35,          // what defending your own camp is worth
   hurt: 0.10,          // chance the losing side loses somebody, per raid
   every: 2.0,          // sim-days before a band will try again
+  party: 8,            // most a war party will be, the one who called it included
   chance: 0.55,        // weight against the other jobs, for a band that would
 };
 
@@ -491,7 +492,7 @@ export function raidTarget(camp) {
    cannot see how the other one has been eating. */
 export function resolveRaid(party, host) {
   const home = party[0]?.camp;
-  if (!home || !host || host.gone) return;
+  if (!home || !host || host.gone) return false;
   const mine = strengthOf(home, party) ;
   const theirs = strengthOf(host, people) * RAID.home;
   const won = mine > theirs * (0.7 + luck() * 0.6);
@@ -533,6 +534,7 @@ export function resolveRaid(party, host) {
       if (i >= 0) killPerson(i, 'raid');
     }
   }
+  return won;
 }
 
 /* -------------------------------------------------------------------------

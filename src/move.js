@@ -21,11 +21,11 @@ import {
 } from './wildlife.js';
 import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
 import {
-  CAMP_CLEARING, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
+  CAMP_CLEARING, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
 import { buildPaths, tread } from './paths.js';
 import {
-  LIFE, DUSK_AT, FISH, FOOD, GROUND, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, otherCamp, personAge, nearestShore, pickFishing, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, updateEconomy
+  LIFE, DUSK_AT, FISH, FOOD, GROUND, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, otherCamp, personAge, nearestShore, pickFishing, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, logEvent, updateEconomy
 } from './life.js';
 import { ORCHARD, nearestFruit, pickFruit } from './orchard.js';
 import { followIdx, leadRunning, syncLookFromCamera } from './chronicle.js';
@@ -531,6 +531,7 @@ export function pickWork(p) {
       p.raiding = mark;
       p.targetX = mark.x + (luck() - 0.5) * 6;
       p.targetZ = mark.z + (luck() - 0.5) * 6;
+      gatherWarParty(p, mark);
       return true;
     }
     p.job = 'gather';                     // nobody worth it: eat instead
@@ -734,8 +735,43 @@ export function chooseJob(p, day) {
    see the note on the stream in clock.js. That is why an order is left on the
    person for their next turn to pick up rather than acted on where it is
    given. */
+/* A raid is a war party, not one hungry person walking into somebody's camp.
+   Whoever decides on it takes others — the band's warriors first, then whoever
+   is at home and able — up to a quarter of its adults and never more than
+   RAID.party, and they set out at once, so they arrive together. The first to
+   get there settles it for all of them. */
+const AT_HOME = new Set(['tend', 'craft']);
+function gatherWarParty(leader, mark) {
+  const camp = leader.camp;
+  let adults = 0;
+  const free = [];
+  for (const q of people) {
+    if (q.camp !== camp || q.child) continue;
+    adults++;
+    if (q === leader || q.sick || q.led || q.acting || q.asleep || q.job === 'raid') continue;
+    if (q.state === 'idle' || AT_HOME.has(q.job)) free.push(q);
+  }
+  free.sort((a, b) => (b.role === 'warrior') - (a.role === 'warrior'));
+  const take = Math.min(RAID.party - 1, Math.max(0, Math.round(adults / 4) - 1), free.length);
+  for (let k = 0; k < take; k++) {
+    const q = free[k];
+    q.job = 'raid';
+    q.raiding = mark;
+    q.hasSpear = true;
+    q.prey = null;
+    q.visiting = null;
+    q.state = 'goto';
+    q.targetX = mark.x + (luck() - 0.5) * 8;
+    q.targetZ = mark.z + (luck() - 0.5) * 8;
+    q.timer = travelTimeout(q);
+  }
+  logEvent('raid', `[${camp.code}] ${camp.name} set out to raid [${mark.code}] ${mark.name}, ${take + 1} strong`,
+    camp.x, camp.z);
+}
+
 export function setOut(p) {
-  p.hasSpear = p.job === 'hunt';
+  // A spear for the hunt, and for a raid.
+  p.hasSpear = p.job === 'hunt' || p.job === 'raid';
   p.prey = null;
   if (p.job === 'visit') {
     const host = otherCamp(p.camp);
@@ -840,6 +876,11 @@ function nearJoint(mesh, i, mat) {
 }
 
 export function updatePeople(dt, day) {
+  /* A camp is under attack for as long as raiders stand in it, and its people
+     turn out to meet them (writePerson). Read off where the raiders are rather
+     than kept, so it ends the moment the raid is settled. */
+  for (const c of camps) c.underRaid = null;
+  for (const q of people) if (q.job === 'raid' && q.state === 'work' && q.raiding) q.raiding.underRaid = q;
   if (!personParts) return;
   /* The same turn-taking as the herds, and it starts later: twenty-odd people
      is under the threshold, so nothing changes until a world grows past it.
@@ -1029,7 +1070,16 @@ export function updatePeople(dt, day) {
             if (Math.hypot(p.x - mark.x, p.z - mark.z) < CAMP_CLEARING * 1.6) {
               const party = people.filter((q) => q.camp === p.camp
                 && Math.hypot(q.x - mark.x, q.z - mark.z) < CAMP_CLEARING * 2);
-              resolveRaid(party, mark);
+              const won = resolveRaid(party, mark);
+              /* Settled once, for all of them: every raider of this band on
+                 their way to it or standing in it stops, and comes home — the
+                 winners carrying what was taken. */
+              for (const q of people) {
+                if (q.camp !== p.camp || q.raiding !== mark) continue;
+                q.raiding = null;
+                if (q.state === 'work') q.timer = 0;
+              }
+              if (won) for (const q of party) if (!q.child) q.carry = 1;
             }
           }
           /* A catch. The same shape as a foraging trip and deliberately so —
@@ -1348,7 +1398,17 @@ export function updatePeople(dt, day) {
 
 export function writePerson(p, i) {
   const S = PERSON;
-  const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+  /* A raid, fought. The raiders stand in the camp they came for, and the
+     people of that camp who are home and able face them and fight back — a
+     spear each, drawn in and driven out. Only drawing: who wins was never going
+     to be decided by the poses (resolveRaid). Turned to face each other, and
+     only while standing, so nobody walks sideways to a fight. */
+  const raiding = p.job === 'raid' && p.state === 'work' && p.raiding;
+  const defending = !raiding && !p.child && !p.sick && !p.asleep && p.speed < 0.5 && p.camp?.underRaid
+    && Math.hypot(p.x - p.camp.x, p.z - p.camp.z) < campReach(p.camp);
+  const foe = raiding ? p.raiding : defending ? p.camp.underRaid : null;
+  const yaw = foe ? Math.atan2(foe.x - p.x, foe.z - p.z) : p.yaw;
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
   const probe = 0.5;
   const hF = sampleHeight(p.x + fx * probe, p.z + fz * probe);
   const hB = sampleHeight(p.x - fx * probe, p.z - fz * probe);
@@ -1358,7 +1418,7 @@ export function writePerson(p, i) {
   const bounce = Math.sin(p.phase * 2) * 0.018 * Math.min(gaitF, 1);
   const drop = S.legLen * p.scale * 0.44 * p.crouch;
 
-  _eAnim.set(pitch, p.yaw, 0, 'YXZ');
+  _eAnim.set(pitch, yaw, 0, 'YXZ');
   _qAnim.setFromEuler(_eAnim);
   _pAnim.set(p.x, sampleHeight(p.x, p.z) + S.legLen * p.scale - drop + bounce + (p.lift || 0), p.z);
   _sAnim.setScalar(p.scale);
@@ -1370,12 +1430,15 @@ export function writePerson(p, i) {
      a pick is swung from the hips — so it is worked out before the torso.
      These are the library's working poses: a pick swung two-handed, a knife
      worked in one hand while the other holds, an arm up into the branches. */
-  const act = p.state === 'work'
+  const act = foe ? 'fighting' : p.state === 'work'
     ? (p.job === 'quarry' ? 'mining' : p.job === 'craft' ? 'cutting' : p.job === 'farm' ? 'hoeing'
       : p.job === 'gather' && p.climbed ? 'picking' : null)
     : null;
   const stroke = Math.sin(p.work * 0.7);
-  const lean = act === 'mining' ? 0.16 + 0.11 * (1 - stroke) : act === 'hoeing' ? 0.34 : 0;
+  // Each fighter on their own beat, off the clock, so a defender standing still still fights.
+  const blow = Math.sin(worldClock * 4.2 + i * 1.7);
+  const lean = act === 'mining' ? 0.16 + 0.11 * (1 - stroke) : act === 'hoeing' ? 0.34
+    : act === 'fighting' ? 0.12 + 0.08 * blow : 0;
   _mLocal.makeRotationX(p.bend + lean);
   _mLocal.setPosition(0, 0, 0);
   _mTorso.multiplyMatrices(_mBody, _mLocal);
@@ -1431,7 +1494,11 @@ export function writePerson(p, i) {
     if (p.carry) elbow = 1.30;
     else if (p.hasSpear && side === 0) elbow = 0.75;
     if (act && !p.carry) {
-      if (act === 'mining') {
+      if (act === 'fighting') {
+        // The spear driven forward and drawn back; the other arm up to fend.
+        arm = side === 0 ? -1.45 + 0.75 * blow : -1.1;
+        elbow = side === 0 ? 0.35 + 0.45 * Math.max(0, -blow) : 1.25;
+      } else if (act === 'mining') {
         // Both arms together: the pick is held in two hands.
         arm = -1.45 + 0.8 * stroke;
         elbow = 0.35;
@@ -1481,7 +1548,7 @@ export function writePerson(p, i) {
 
        The fingers themselves are in the near set, on the one person you are
        looking at, and they only exist when the hand is open. A fist is a fist. */
-    const closed = p.carry || (p.hasSpear && side === 0) || p.state === 'work';
+    const closed = p.carry || ((p.hasSpear || foe) && side === 0) || p.state === 'work';
     /* The tool, in the right hand before it closes: a fist is a squashed hand,
        and a squashed pick is not a pick. */
     if (side === 0) {
@@ -1551,7 +1618,7 @@ export function writePerson(p, i) {
     personParts.foot.setMatrixAt(i * 2 + side, _mFit.copy(_mChain).scale(fit.foot));
   }
 
-  if (p.hasSpear) {
+  if (p.hasSpear || foe) {
     _mLocal.makeRotationX(-0.30);
     _mLocal.setPosition(armX + 0.09, S.shoulderY - 0.35, 0.10);
     _mChain.multiplyMatrices(_mTorso, _mLocal);
@@ -1646,7 +1713,7 @@ export const LOADS = {
 };
 /* What somebody carrying with nothing counted in their bag has, by errand: a
    session saved before baskets were counted, or stone from the rocks. */
-export const LOAD_FOR_JOB = { gather: 'berries', fish: 'fish', hunt: 'game', quarry: 'stone', farm: 'vegetables' };
+export const LOAD_FOR_JOB = { gather: 'berries', fish: 'fish', hunt: 'game', quarry: 'stone', farm: 'vegetables', raid: 'fruit' };
 /* Where the basket is held, in the torso's own space: low and in front, the
    heap sitting on its rim. And how much food is a full one. */
 export const BASKET_AT = { y: -0.36, z: 0.28, rim: 0.07 };

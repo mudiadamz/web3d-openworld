@@ -7042,7 +7042,7 @@ check('a new world does not inherit the last one\'s face',
    away, and it costs nothing: everybody already has this box, and closing it is
    a scale on it. */
 check('a hand closes round what it is holding',
-  /const closed = p\.carry \|\| \(p\.hasSpear && side === 0\) \|\| p\.state === 'work';/.test(moduleSource('move.js'))
+  /const closed = p\.carry \|\| \(\(p\.hasSpear \|\| foe\) && side === 0\) \|\| p\.state === 'work';/.test(moduleSource('move.js'))
   && /if \(closed\) _mChain\.scale\(FIST\);/.test(moduleSource('move.js')));
 check('and a fist is shorter and thicker than a hand hanging', (() => {
   const m = moduleSource('move.js').match(/FIST = new THREE\.Vector3\(([\d., ]+)\)/);
@@ -7409,6 +7409,38 @@ check('with granaries in the yards as the store fills, as in the core',
   /spots\.slice\(0, camp\.storesUp \|\| 0\)/.test(html));
 check('a camp laid out again loses its outskirts with it',
   /camp\.outer = null;\s*camp\.reach = 0;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Raids you can see
+
+   A raid used to be one unarmed person walking into a camp and a number moving
+   between two stores. Now it is a war party with spears, a fight while they
+   stand there, and the loot carried home.
+   ------------------------------------------------------------------------- */
+group('raids you can see');
+
+{
+  const mv = moduleSource('move.js');
+  check('raiders carry spears', /p\.hasSpear = p\.job === 'hunt' \|\| p\.job === 'raid';/.test(mv));
+  check('and go as a war party, warriors first',
+    /gatherWarParty\(p, mark\);/.test(mv) && /free\.sort\(\(a, b\) => \(b\.role === 'warrior'\) - \(a\.role === 'warrior'\)\);/.test(mv)
+    && /const take = Math\.min\(RAID\.party - 1,/.test(mv) && /party: \d+,/.test(html));
+  check('the chronicle says when they set out', /set out to raid \[\$\{mark\.code\}\]/.test(mv));
+  check('settled once for the whole party, not once for each who arrives',
+    /if \(q\.camp !== p\.camp \|\| q\.raiding !== mark\) continue;\s*q\.raiding = null;/.test(mv)
+    && /return won;/.test(html.slice(html.indexOf('function resolveRaid'), html.indexOf('function canTake'))));
+  check('a camp is under attack while raiders stand in it',
+    /q\.job === 'raid' && q\.state === 'work' && q\.raiding\) q\.raiding\.underRaid = q;/.test(mv));
+  check('and its people turn and fight, raiders and defenders facing each other',
+    /const foe = raiding \? p\.raiding : defending \? p\.camp\.underRaid : null;/.test(mv)
+    && /const yaw = foe \? Math\.atan2\(foe\.x - p\.x, foe\.z - p\.z\) : p\.yaw;/.test(mv)
+    && /_eAnim\.set\(pitch, yaw, 0, 'YXZ'\);/.test(mv));
+  check('with a spear each, driven and drawn back', /if \(act === 'fighting'\) \{/.test(mv) && /if \(p\.hasSpear \|\| foe\) \{/.test(mv));
+  check('and the winners carry it home', /if \(won\) for \(const q of party\) if \(!q\.child\) q\.carry = 1;/.test(mv));
+  check('F goes to a raid first, when there is one',
+    /people\[i\]\.job === 'raid'\) raiders\.push\(i\);/.test(moduleSource('chronicle.js'))
+    && /const pool = raiders;\s*if \(!raiders\.length\)/.test(moduleSource('chronicle.js')));
+}
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
