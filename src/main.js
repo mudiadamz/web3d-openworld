@@ -37,6 +37,7 @@ import { onMapResize, drawMap } from './map.js';
 import {
   codeChip, ensureCurrentWorld, hhmm, setRate, syncLabels, toast, tribeChips, updateToast
 } from './ui.js';
+import { updateLivestock } from './farming.js';
 
 /* -------------------------------------------------------------------------
    Loop
@@ -136,6 +137,7 @@ export function stepWorld(dt) {
     updateGround(owed);
     updateLives(owed);
     repopulate(owed);
+    updateLivestock(owed);
   }
   updatePeople(paced, smoothstep(-0.10, 0.14, sunDir.y));
   setDrawingWorld(true);
@@ -432,6 +434,7 @@ export function tick() {
     updateGround(owed);
     updateLives(owed);
     repopulate(owed);
+    updateLivestock(owed);
   }
   updatePeople(paced, daylight);
   // After the people have moved, so a bubble is over where somebody is now.

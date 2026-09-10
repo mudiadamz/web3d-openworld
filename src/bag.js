@@ -15,6 +15,7 @@
 export const BAG = {
   berry: 0.02,         // food in a berry, the same as a fruit off the tree
   fish: 0.1,           // food in a fish: a morning's catch is a handful of them
+  veg: 0.05,           // food in a vegetable: a session in the field is a basket of them
 };
 
 export function bagAdd(p, kind, n, what) {
@@ -31,7 +32,7 @@ export function bagAdd(p, kind, n, what) {
 export function emptyBag(p) {
   if (!p.bag) return;
   p.bag.fruit = 0; p.bag.berries = 0; p.bag.fish = 0; p.bag.game = 0; p.bag.animal = null;
-  p.bag.ore = 0; p.bag.oreKind = null; p.bag.wood = 0;
+  p.bag.ore = 0; p.bag.oreKind = null; p.bag.wood = 0; p.bag.vegetables = 0;
 }
 
 /** Whether they are carrying anything at all: food, stone or ore, or wood. */
@@ -58,6 +59,7 @@ export function bagWords(bag, all = false) {
       : `${bag.game} ${['deer', 'bison'].includes(a) ? a : `${a}s`}`);
   }
   if (bag.fish > 0) said.push(`${bag.fish} fish`);
+  if (bag.vegetables > 0) said.push(`${bag.vegetables} ${bag.vegetables === 1 ? 'vegetable' : 'vegetables'}`);
   if (bag.fruit > 0) said.push(`${bag.fruit} fruit`);
   if (bag.berries > 0) said.push(`${bag.berries} ${bag.berries === 1 ? 'berry' : 'berries'}`);
   // All of it, for the basket on screen: a list there rather than a sentence.
@@ -72,6 +74,7 @@ export function bagKind(bag) {
   if (bag.wood > 0) return 'wood';
   if (bag.game > 0) return 'game';
   if (bag.fish > 0) return 'fish';
+  if (bag.vegetables > 0) return 'vegetables';
   if (bag.fruit > 0 || bag.berries > 0) return bag.fruit >= bag.berries ? 'fruit' : 'berries';
   return null;
 }
@@ -101,7 +104,8 @@ export function loadOf(p) {
   const bag = p.bag;
   // A session saved before loads were counted: the food is the weight.
   if (!bag) return p.haul > 0 ? p.haul : 0;
-  let load = (bag.berries || 0) * BAG.berry + (bag.fruit || 0) * LOAD.fruit + (bag.fish || 0) * BAG.fish;
+  let load = (bag.berries || 0) * BAG.berry + (bag.fruit || 0) * LOAD.fruit + (bag.fish || 0) * BAG.fish
+    + (bag.vegetables || 0) * BAG.veg;
   if (bag.game > 0) load += bag.game * (LOAD.animal[bag.animal] ?? 1);
   if (bag.ore > 0) load += bag.ore * (!bag.oreKind || bag.oreKind === 'stone' ? LOAD.stone : LOAD.ore);
   if (bag.wood > 0) load += bag.wood * LOAD.wood;
@@ -129,7 +133,7 @@ export function loadPace(load, cap) {
    the ground and what is left in the basket add up to what there was — and the
    last of it takes whatever the rounding left, so nothing goes missing.
    ------------------------------------------------------------------------- */
-export const DROP_UNIT = { berries: 10, fruit: 5, fish: 1 };
+export const DROP_UNIT = { berries: 10, fruit: 5, fish: 1, vegetables: 5 };
 
 export function takeOut(p) {
   const bag = p.bag;
@@ -140,7 +144,8 @@ export function takeOut(p) {
     p.carry = 0;
     return { kind: 'food', n: 1, food };
   }
-  const basket = (bag.berries || 0) * BAG.berry + (bag.fruit || 0) * LOAD.fruit + (bag.fish || 0) * BAG.fish;
+  const basket = (bag.berries || 0) * BAG.berry + (bag.fruit || 0) * LOAD.fruit + (bag.fish || 0) * BAG.fish
+    + (bag.vegetables || 0) * BAG.veg;
   let out = null;
   if (bag.game > 0) {
     out = { kind: 'game', n: 1, animal: bag.animal, food: Math.max(0, p.haul - basket) / bag.game };
@@ -154,7 +159,7 @@ export function takeOut(p) {
     out = { kind: 'wood', n: 1, food: 0 };
     bag.wood--;
   } else {
-    for (const [kind, worth] of [['fish', BAG.fish], ['fruit', LOAD.fruit], ['berries', BAG.berry]]) {
+    for (const [kind, worth] of [['fish', BAG.fish], ['vegetables', BAG.veg], ['fruit', LOAD.fruit], ['berries', BAG.berry]]) {
       if (!(bag[kind] > 0)) continue;
       const n = Math.min(DROP_UNIT[kind], bag[kind]);
       bag[kind] -= n;
@@ -168,7 +173,7 @@ export function takeOut(p) {
   }
   p.haul = Math.max(0, p.haul - out.food);
   const left = (bag.berries || 0) + (bag.fruit || 0) + (bag.fish || 0) + (bag.game || 0) + (bag.ore || 0)
-    + (bag.wood || 0);
+    + (bag.wood || 0) + (bag.vegetables || 0);
   if (!left) { out.food += p.haul; p.haul = 0; }
   p.carry = hasLoad(p) ? 1 : 0;
   return out;
@@ -189,14 +194,15 @@ export function putIn(p, pile) {
 export function eatFromBag(p, want) {
   if (!(p.haul > 0)) return 0;
   const bag = p.bag;
-  const items = bag ? (bag.berries || 0) + (bag.fruit || 0) + (bag.fish || 0) + (bag.game || 0) : 0;
+  const items = bag ? (bag.berries || 0) + (bag.fruit || 0) + (bag.fish || 0) + (bag.vegetables || 0) + (bag.game || 0) : 0;
   let ate = 0;
   if (items) {
-    for (const [kind, worth] of [['berries', BAG.berry], ['fruit', LOAD.fruit], ['fish', BAG.fish]]) {
+    for (const [kind, worth] of [['berries', BAG.berry], ['vegetables', BAG.veg], ['fruit', LOAD.fruit], ['fish', BAG.fish]]) {
       while (ate < want - 1e-9 && bag[kind] > 0) { bag[kind]--; ate += worth; }
     }
     // Off the animal: its meat is what the haul holds past the basket.
-    const basket = (bag.berries || 0) * BAG.berry + (bag.fruit || 0) * LOAD.fruit + (bag.fish || 0) * BAG.fish;
+    const basket = (bag.berries || 0) * BAG.berry + (bag.fruit || 0) * LOAD.fruit + (bag.fish || 0) * BAG.fish
+      + (bag.vegetables || 0) * BAG.veg;
     if (ate < want && bag.game > 0) ate += Math.max(0, Math.min(want - ate, p.haul - ate - basket));
   } else ate = want;
   ate = Math.min(ate, p.haul);

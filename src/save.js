@@ -50,7 +50,7 @@ export function snapshot() {
     camps: camps.map((c) => ({ name: c.name, food: r2(c.food), history: c.history,
       skill: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, r2(c.skill[k] || 0)])),
       toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0,
-      stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0) })),
+      stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0) })),
     /* What is left in each quarry, by its place in the list — the seed lays the
        same deposits out in the same order, so the position is the name. */
     quarries: deposits.map((d) => d.left),
@@ -64,7 +64,7 @@ export function snapshot() {
       x: r2(landing(p).x), z: r2(landing(p).z), y: r2(p.yaw), k: p.kind,
       as: r2(p.adultScale), ash: r2(p.adultShoulder), ahp: r2(p.adultHip), ahd: r2(p.adultHead),
       h: p.camp.huts.indexOf(p.hut), j: p.job, s: p.state, hl: r2(p.haul), ki: p.kills,
-      bg: p.haul > 0 && p.bag ? [p.bag.fruit, p.bag.berries, p.bag.fish, p.bag.game, p.bag.animal] : undefined,
+      bg: p.haul > 0 && p.bag ? [p.bag.fruit, p.bag.berries, p.bag.fish, p.bag.game, p.bag.animal, p.bag.vegetables || 0] : undefined,
       id: p.id, mo: p.mother || 0, fa: p.father || 0, mn: p.motherName || '', fn: p.fatherName || '',
       ln: p.line || '', gn: p.gen || 1,
       /* Keyed rather than ordered. It was a three-element array, which is
@@ -198,7 +198,7 @@ export function personFromRecord(r) {
     hidden: false,
     haul: r.hl || 0, prey: null, attempt: 0, kills: r.ki | 0,
     bag: Array.isArray(r.bg)
-      ? { fruit: r.bg[0] | 0, berries: r.bg[1] | 0, fish: r.bg[2] | 0, game: r.bg[3] | 0, animal: r.bg[4] || null }
+      ? { fruit: r.bg[0] | 0, berries: r.bg[1] | 0, fish: r.bg[2] | 0, game: r.bg[3] | 0, animal: r.bg[4] || null, vegetables: r.bg[5] | 0 }
       : null,
     hut: camp.huts[r.h] || camp.huts[0],
     work: Math.random() * Math.PI * 2,
@@ -241,6 +241,8 @@ export function applySavedLife(st) {
     // than at day zero, or it comes back claiming to be a century old.
     camps[i].founded = Number.isFinite(c.founded) ? c.founded : simDay;
     camps[i].history = Array.isArray(c.history) ? c.history : [];
+    // The flock (farming.js). Older saves have none, and no band had one.
+    camps[i].stock = Number(c.st) || 0;
   });
 
   setLineage(Array.isArray(st.lineage) ? st.lineage : []);

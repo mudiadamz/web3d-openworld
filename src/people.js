@@ -12,6 +12,7 @@ import {
   FOOD, LIFE, chiefOf, emptySkills, hidePeopleFrom, nearestShore, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay
 } from './life.js';
 import { codeColor, takeTribeCode } from './ui.js';
+import { dressField, farmGeometries } from './farming.js';
 
 /* -------------------------------------------------------------------------
    Bodies
@@ -492,6 +493,14 @@ export const CAMP_PIECES = {
      and walls in one, the thatch in the other. One matrix places both. */
   stores: STORES,
   storeRoofs: STORES,
+  /* A band's field and its pen (farming.js): ridges of turned earth, what is
+     growing on them, the posts round the pen and the animals in it. Numbers
+     rather than FARM's names, because farming.js imports this module back and
+     nothing may cross that while either is loading. `sheep` is FARM.stockMax. */
+  rows: 8,
+  crops: 56,
+  pen: 10,
+  sheep: 12,
   /* No `fires` here, and the crash that put this comment in is the reason:
      `buildCamps` walks this object and parks every slot of the mesh named by
      each key, so a key with no `campParts` mesh behind it is a TypeError on the
@@ -723,6 +732,9 @@ export function dressCamp(camp) {
     else campParts.poles.setMatrixAt(slot, HIDDEN);
   }
   campParts.poles.instanceMatrix.needsUpdate = true;
+
+  // The field and the pen, as far as the band has got with them (farming.js).
+  dressField(camp, campParts, index);
 }
 
 export function dressCamps() { for (const c of camps) dressCamp(c); }
@@ -1080,6 +1092,10 @@ export function buildCamps() {
   campParts.poles = instancedFrom(poleGeo, campCapacity * CAMP_PIECES.poles, tribeGroup);
   campParts.stores = instancedFrom(storeGeo, campCapacity * CAMP_PIECES.stores, tribeGroup);
   campParts.storeRoofs = instancedFrom(roofGeo, campCapacity * CAMP_PIECES.storeRoofs, tribeGroup);
+  const farm = farmGeometries();
+  for (const key of ['rows', 'crops', 'pen', 'sheep']) {
+    campParts[key] = instancedFrom(farm[key], campCapacity * CAMP_PIECES[key], tribeGroup);
+  }
   campParts.fire = new THREE.InstancedMesh(fireGeo, fireMaterial, campCapacity * HEARTHS);
   campParts.fire.frustumCulled = false;
   tribeGroup.add(campParts.fire);

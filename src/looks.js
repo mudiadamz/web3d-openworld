@@ -16,9 +16,8 @@ import { HIDDEN } from './world.js';
    things are measured off the head the rig actually draws, which matters: in
    the library's own v0.3 the eyes and mouth are a centimetre inside the head.
 
-   Two of the library's things are not here, because nothing in the world does
-   them yet: a basket of vegetables and a hoe want somebody digging, and nobody
-   on the island farms.
+   The last two came in with farming: the library's basket of vegetables and
+   its hoe, for whoever works a band's field (farming.js).
 
    How they are drawn is the part that is not the library's. Every person is in
    exactly one of eight tunics, one of five hairstyles or none, one of three
@@ -131,6 +130,7 @@ export function headKey(p, group) {
    wood are none of the library's and are not dressed here. */
 export function cargoKey(kind, bag) {
   if (kind === 'fruit' || kind === 'berries' || kind === 'fish') return 'cargo:' + kind;
+  if (kind === 'vegetables') return 'cargo:vegetables';
   if (kind === 'game') return bag?.animal === 'rabbit' || bag?.animal === 'boar' ? 'cargo:animal' : 'cargo:meat';
   return null;
 }
@@ -492,6 +492,16 @@ function cargoFish() {
   }
   return heap(parts);
 }
+// Roots, greens and a carrot, off the field.
+function cargoVegetables() {
+  const parts = [];
+  for (let i = 0; i < 4; i++) {
+    parts.push(painted(ball((i - 1.5) * 0.105, 1.16, 0.43, 0.048, 0.052, 0.085), 0x55753a));
+    parts.push(painted(ball((i - 1.5) * 0.105, 1.22, 0.46, 0.06, 0.07, 0.025), 0x729548));
+  }
+  parts.push(painted(box(0.06, 1.19, 0.34, 0.19, 0.025, 0.027), 0xc88135));
+  return heap(parts);
+}
 /* The library's lamb, held level in front: body, head, four legs, ears, an eye
    and a muzzle. Pale, so the instance's colour makes it a rabbit or a boar. */
 function cargoAnimal() {
@@ -509,6 +519,9 @@ const GRIP = [0.267, 0.79, 0.018], FIST_Y = -0.05;
 const inHand = (parts) => merge(parts).translate(-GRIP[0], -GRIP[1] + FIST_Y, -GRIP[2]);
 const knifeGeo = () => inHand([
   painted(box(0.267, 0.76, 0.018, 0.035, 0.13, 0.035), 0x5b402d), painted(box(0.267, 0.665, 0.018, 0.075, 0.09, 0.014), 0xa3a7a0),
+]);
+const hoeGeo = () => inHand([
+  painted(box(0.267, 0.55, 0.018, 0.033, 0.62, 0.033), 0x705133), painted(box(0.267, 0.25, 0.072, 0.16, 0.035, 0.15), 0x777c7a),
 ]);
 const pickaxeGeo = () => inHand([
   painted(box(0.267, 0.60, 0.018, 0.033, 0.49, 0.033), 0x705133), painted(box(0.267, 0.38, 0.018, 0.33, 0.046, 0.044), 0x777c7a),
@@ -528,7 +541,9 @@ function lookGeometries() {
   out['cargo:fish'] = { geo: cargoFish(), shadow: true };
   out['cargo:meat'] = { geo: cargoMeat(), shadow: true };
   out['cargo:animal'] = { geo: cargoAnimal(), shadow: true };
+  out['cargo:vegetables'] = { geo: cargoVegetables(), shadow: true };
   out['tool:knife'] = { geo: knifeGeo(), shadow: true };
   out['tool:pickaxe'] = { geo: pickaxeGeo(), shadow: true };
+  out['tool:hoe'] = { geo: hoeGeo(), shadow: true };
   return out;
 }

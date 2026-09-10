@@ -126,6 +126,14 @@ export const SKILLS = {
      what it moves is how many logs a trip brings home (WOOD.perTrip, in
      wood.js) — which is how soon a band on a coast has its raft. */
   woodcraft: { label: 'woodcraft', of: 'woodcutting' },
+  /* Sixteenth and seventeenth, and a chain like mining and tools: nothing is
+     sown until a band can get water onto the ground. `irrigation` is learned
+     digging ditches and carrying water at the band's field, and `farming` only
+     once that is a fair hand — then the field feeds them, and past a fair hand
+     at farming a pen of animals gives a little every day, winter included. The
+     first food anybody on the island makes rather than finds (farming.js). */
+  irrigation: { label: 'irrigation', of: 'watering' },
+  farming: { label: 'farming', of: 'farming' },
 };
 
 /* Every skill at nothing. Built from SKILLS rather than written out, because it
@@ -308,6 +316,9 @@ export const FORGET_WORDS = {
   fishing: 'take anything out of the water',
   /* The axe is still there. Nobody remembers which trees split clean. */
   woodcutting: 'cut a log worth carrying',
+  /* The ditches are still there. Nobody remembers where the water came in. */
+  watering: 'get water onto a field',
+  farming: 'bring anything up out of the ground',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be
@@ -329,6 +340,8 @@ export function announceSkill(camp, key) {
   camp.told[key] = tier;
   // The rack goes up, or comes down, the moment drying crosses the line.
   if (key === 'drying') dressCamp(camp);
+  // And the field, the moment digging or farming crosses a line (farming.js).
+  if (key === 'irrigation' || key === 'farming') dressCamp(camp);
   logEvent(tier > told ? 'learned' : 'lost',
     tier > told
       ? `[${camp.code}] ${camp.name} has ${SKILL_WORDS[tier]} ${SKILLS[key].of}`
@@ -340,7 +353,14 @@ export function announceSkill(camp, key) {
    remember, so a camp that buries its last elder loses the difference that
    evening rather than gradually. */
 export function fadeSkills(days) {
+  /* Knowledge lives in people, so it fades as they go — but a band with nobody
+     left has nobody left to forget. What they knew the day the last of them
+     died is what they are remembered by, and it is what keeps their monument
+     standing, which used to come down in the days after they did. */
+  const living = new Set();
+  for (const p of people) living.add(p.camp);
   for (const camp of camps) {
+    if (!living.has(camp)) continue;
     for (const key in SKILLS) {
       const cap = Math.min(1, bestKnown(camp, key) + SKILL.step);
       camp.skill[key] = Math.max(0, Math.min(camp.skill[key] - SKILL.fade * days, cap));

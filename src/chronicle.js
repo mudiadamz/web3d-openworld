@@ -264,6 +264,8 @@ export function renderTribeCard() {
     + `<div><span>store</span> ${camp.food.toFixed(1)} `
     + `<span>(${daysOfFood(camp).toFixed(1)} days)</span> · `
     + `<span>carried home between them</span> ${brought.toFixed(0)}</div>`
+    // The flock, when there is one (farming.js): the food that comes in every day.
+    + (camp.stock >= 1 ? `<div><span>penned</span> ${Math.round(camp.stock)} <span>animals</span></div>` : '')
     /* What they are holding that somebody else could want, which is the number
        a raid is decided by and the one that makes a band a target. Stone rather
        than food is most of it: food spoils, so a band cannot hoard it, and the
@@ -722,7 +724,7 @@ export function carryOn(p) {
 /** What they will do now, said. */
 export function carryOnWords(p) {
   if (p.goingHome) return p.name + ' takes it home';
-  const on = { gather: 'goes on foraging', fish: 'goes on fishing', quarry: 'goes on digging', wood: 'goes on cutting wood' }[p.orders];
+  const on = { gather: 'goes on foraging', fish: 'goes on fishing', quarry: 'goes on digging', wood: 'goes on cutting wood', farm: 'goes on working the fields' }[p.orders];
   return p.name + ' ' + (on || 'goes back to it');
 }
 
@@ -771,7 +773,7 @@ export function releaseLead(announce = true, natural = true) {
 /* What you can tell somebody to do. The last two are errands a grown band has
    and a new one does not: there is nowhere to quarry until somebody has found
    the rocks, and nowhere to stand until somebody has been buried. */
-export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit', 'quarry', 'mourn', 'raid', 'fish', 'wood'];
+export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit', 'quarry', 'mourn', 'raid', 'fish', 'wood', 'farm'];
 
 /* Too heavy to walk is too heavy to be sent anywhere: an order, the walk home
    or being let go to carry on would all have them walking off with it — the
@@ -1214,6 +1216,7 @@ export const JOB_WORDS = {
   raid: 'taking it',
   fish: 'fishing',
   wood: 'cutting wood',
+  farm: 'working the fields',
   visit: 'walking to the next band',
   led: 'going where you point',
 };
@@ -1230,6 +1233,7 @@ export const CAME_WORDS = {
   hunt: ', back from a hunt',
   quarry: ', back from the rocks',
   wood: ', back with wood',
+  farm: ', back from the fields',
   mourn: ', back from the stones',
   visit: ', back from the next band',
 };
@@ -1247,6 +1251,7 @@ export const GOING_WORDS = {
   raid: 'going to take it',
   fish: 'walking down to the water',
   wood: 'walking out for wood',
+  farm: 'walking out to the fields',
   craft: 'off to sit and knap',
   tend: 'walking to the fire',
   nurse: 'going to sit with the ill',

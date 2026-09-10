@@ -48,6 +48,7 @@ import { atHome, eat, lifeWant, restBoost, spendLife } from './vitals.js';
 import { arm } from './ui.js';
 import { updateHud } from './main.js';
 import { traceStreams, carveStreams, buildStreamWater } from './creeks.js';
+import { farmDone, farmSite, farmWeight } from './farming.js';
 
 /* -------------------------------------------------------------------------
    Getting there
@@ -544,6 +545,8 @@ export function pickWork(p) {
     if (t) { p.targetX = t.x + 1.1; p.targetZ = t.z; return true; }
     p.job = 'gather';
   }
+  // Along the rows of the band's field (farming.js).
+  if (p.job === 'farm') return farmSite(p);
   /* The stones, and a step short of them: standing among the graves rather than
      at the edge of them is the difference between visiting and trampling. */
   if (p.job === 'mourn' && camp.barrow) {
@@ -677,6 +680,10 @@ export function chooseJob(p, day) {
       /* Out for wood: with a raft to build, or the stack by the granaries low.
          Not while hungry, like the rocks — a log does not feed anybody today. */
       ['wood', !p.child ? woodWant(p.camp) * (1 - 0.7 * hunger) * rested : 0],
+      /* To the field (farming.js): ditches and water until the band can
+         irrigate, then a crop — something a fed band learns and a hungry one
+         leans on once it pays. */
+      ['farm', farmWeight(p, hunger, rested)],
       /* Going to take it. Only past the hunger at which a band would rather
          walk over and ask, only if there is somebody near enough holding
          enough, and only if this band has not just tried — see RAID. A warrior
@@ -1041,6 +1048,8 @@ export function updatePeople(dt, day) {
           }
           // Logs off a tree, onto the shoulder (wood.js).
           if (p.job === 'wood') chopDone(p);
+          // A field: ditches until the band can water it, then a crop (farming.js).
+          if (p.job === 'farm') farmDone(p);
           if (p.job === 'mourn') {
             practise(p.camp, 'rites', SKILL.perVisit);
             p.knows.rites = Math.max(p.knows.rites || 0, p.camp.skill.rites);
@@ -1136,6 +1145,7 @@ export function updatePeople(dt, day) {
           const quick = 1 - SKILL.toolSpeed * (p.camp.skill?.tools || 0);
           p.timer = p.job === 'hunt' ? (8 + luck() * 14) * quick
                   : p.job === 'gather' ? (6 + luck() * 10) * quick
+                  : p.job === 'farm' ? (8 + luck() * 12) * quick
                   : p.job === 'sleep' ? 600
                   : (10 + luck() * 20) * quick;
         } else {
@@ -1247,6 +1257,7 @@ export function updatePeople(dt, day) {
     // Bent to the rock, and stooped over the water.
     else if (working && p.job === 'quarry') { wantCrouch = 0.5; wantBend = 0.9; }
     else if (working && p.job === 'wood') { wantCrouch = 0.2; wantBend = 0.55; }
+    else if (working && p.job === 'farm') { wantCrouch = 0.15; wantBend = 0.3; }
     else if (working && p.job === 'fish') { wantCrouch = 0.3; wantBend = 0.45; }
     // Kneeling on the raft.
     else if (p.onRaft) { wantCrouch = 0.6; wantBend = 0.2; }
@@ -1333,10 +1344,11 @@ export function writePerson(p, i) {
      These are the library's working poses: a pick swung two-handed, a knife
      worked in one hand while the other holds, an arm up into the branches. */
   const act = p.state === 'work'
-    ? (p.job === 'quarry' ? 'mining' : p.job === 'craft' ? 'cutting' : p.job === 'gather' && p.climbed ? 'picking' : null)
+    ? (p.job === 'quarry' ? 'mining' : p.job === 'craft' ? 'cutting' : p.job === 'farm' ? 'hoeing'
+      : p.job === 'gather' && p.climbed ? 'picking' : null)
     : null;
   const stroke = Math.sin(p.work * 0.7);
-  const lean = act === 'mining' ? 0.16 + 0.11 * (1 - stroke) : 0;
+  const lean = act === 'mining' ? 0.16 + 0.11 * (1 - stroke) : act === 'hoeing' ? 0.34 : 0;
   _mLocal.makeRotationX(p.bend + lean);
   _mLocal.setPosition(0, 0, 0);
   _mTorso.multiplyMatrices(_mBody, _mLocal);
@@ -1393,6 +1405,10 @@ export function writePerson(p, i) {
       } else if (act === 'cutting') {
         arm = side === 0 ? -1.05 + 0.25 * Math.sin(p.work * 1.3) : -0.9;
         elbow = side === 0 ? 0.9 : 1.05;
+      } else if (act === 'hoeing') {
+        // Both hands on the haft, a short low stroke: the library's hoeing.
+        arm = -0.62 + 0.34 * stroke;
+        elbow = 0.55;
       } else {
         arm = side === 0 ? -2.35 + 0.14 * Math.sin(p.work) : -0.4;
         elbow = side === 0 ? 0.2 : 0.3;
@@ -1433,7 +1449,8 @@ export function writePerson(p, i) {
     /* The tool, in the right hand before it closes: a fist is a squashed hand,
        and a squashed pick is not a pick. */
     if (side === 0) {
-      const tool = wear(p, 'tool', act === 'mining' ? 'tool:pickaxe' : act === 'cutting' ? 'tool:knife' : null);
+      const tool = wear(p, 'tool', act === 'mining' ? 'tool:pickaxe' : act === 'cutting' ? 'tool:knife'
+        : act === 'hoeing' ? 'tool:hoe' : null);
       if (tool) looks[tool].setMatrixAt(p.wornAt.tool, _mChain);
     }
     if (closed) _mChain.scale(FIST);
@@ -1575,6 +1592,7 @@ export const LOADS = {
   berries: { scale: new THREE.Vector3(1.0, 1.0, 1.0), hex: 0x5c2742, basket: true },
   fruit:   { scale: new THREE.Vector3(1.05, 1.15, 1.05), hex: 0xc7462c, basket: true },
   fish:    { scale: new THREE.Vector3(1.25, 0.75, 0.9), hex: 0x9fb0b8, basket: true },
+  vegetables: { scale: new THREE.Vector3(1.0, 1.05, 1.0), hex: 0x6f8f45, basket: true },
   game:    { scale: new THREE.Vector3(1.7, 1.4, 1.2), hex: 0x6e3630, basket: false },
   stone:   { scale: new THREE.Vector3(1.0, 0.9, 1.0), hex: 0x7a746a, basket: false },
   /* Ore, the colour of the rock it came out of — the same numbers as ORES in
@@ -1588,7 +1606,7 @@ export const LOADS = {
 };
 /* What somebody carrying with nothing counted in their bag has, by errand: a
    session saved before baskets were counted, or stone from the rocks. */
-export const LOAD_FOR_JOB = { gather: 'berries', fish: 'fish', hunt: 'game', quarry: 'stone' };
+export const LOAD_FOR_JOB = { gather: 'berries', fish: 'fish', hunt: 'game', quarry: 'stone', farm: 'vegetables' };
 /* Where the basket is held, in the torso's own space: low and in front, the
    heap sitting on its rim. And how much food is a full one. */
 export const BASKET_AT = { y: -0.36, z: 0.28, rim: 0.07 };

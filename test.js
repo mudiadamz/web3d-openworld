@@ -3617,7 +3617,9 @@ check('and the books are opened before anybody picks a job', (() => {
 check('and again after coming back to a saved world', (() => {
   const restore = html.indexOf('camps[i].food = c.food;');
   if (restore < 0) return 'no restore';
-  return /updateEconomy\(0\);/.test(html.slice(restore, restore + 3000))
+  /* A window, not a rule about distance: the restore reads the flock and a
+     basket's vegetables back too, and the call is still in the same function. */
+  return /updateEconomy\(0\);/.test(html.slice(restore, restore + 4000))
     ? true : 'the store is restored but the hunger is not';
 })() === true);
 
@@ -4435,11 +4437,11 @@ check('and the save carries the mastery, not the announcement', (() => {
    the simulation already had, because a skill that only shows on a readout is a
    readout.
    ------------------------------------------------------------------------- */
-check('there are fifteen of them', Object.keys(
+check('there are seventeen of them', Object.keys(
   (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
     .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
     .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
-).length === 15);
+).length === 17);
 check('and every one of them does something', (() => {
   const want = [
     ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
@@ -7038,6 +7040,44 @@ check('a full one is fullest at the waist, and deeper than it is wide there',
   fullW > 1.4 && fullD > fullW && avgW === 1 && avgD === 1, `${fullW} by ${fullD}`);
 check('and a head is a head, whatever the build',
   ['slim', 'broad', 'full'].every((b) => buildAt(b, 1.62).every((v) => v === 1)));
+
+/* -------------------------------------------------------------------------
+   Fields and flocks
+
+   The first food anybody makes rather than finds, and the order is the point:
+   nothing is sown until a band can water the ground.
+   ------------------------------------------------------------------------- */
+group('fields and flocks');
+const farmSrc = moduleSource('farming.js');
+check('irrigation comes first: nothing is sown until a band can water the ground',
+  /const learning = \(camp\.skill\.irrigation \|\| 0\) < FARM\.irrigateFirst;/.test(farmSrc)
+  && /if \(learning\) return;/.test(farmSrc)
+  && farmSrc.indexOf("practise(camp, 'irrigation'") < farmSrc.indexOf("practise(camp, 'farming'"));
+check('the field is by a creek when there is one, and watered by hand when not',
+  /for \(const path of streams\)/.test(farmSrc) && /\(f\.wet \? 1 : FARM\.dry\)/.test(farmSrc));
+check('a crop follows the season, and the island\'s ABUNDANCE', /\* forageSeason \* P\.abundance;/.test(farmSrc));
+check('the job is chosen, sent, worked and told like the others',
+  /\['farm', farmWeight\(p, hunger, rested\)\]/.test(html)
+  && /if \(p\.job === 'farm'\) return farmSite\(p\);/.test(html)
+  && /if \(p\.job === 'farm'\) farmDone\(p\);/.test(html)
+  && /farm: 'working the fields'/.test(html) && /farm: ', back from the fields'/.test(html)
+  && /farm: 'walking out to the fields'/.test(html));
+check('with the library\'s hoe and its basket of vegetables',
+  /out\['tool:hoe'\]/.test(html) && /out\['cargo:vegetables'\]/.test(html)
+  && /act === 'hoeing' \? 'tool:hoe'/.test(html) && /if \(kind === 'vegetables'\) return 'cargo:vegetables';/.test(html));
+check('the flock feeds the store every day, on both sets of books',
+  /c\.food \+= c\.stock \* FARM\.milk \* P\.abundance \* days;/.test(farmSrc)
+  && (html.match(/updateLivestock\(owed\);/g) || []).length === 2);
+check('and is remembered across a reload',
+  /st: r2\(c\.stock \|\| 0\)/.test(html) && /camps\[i\]\.stock = Number\(c\.st\) \|\| 0;/.test(html));
+check('the pen has room for the biggest flock', (() => {
+  const places = Number((html.match(/^\s*sheep: (\d+),/m) || [, NaN])[1]);
+  const most = Number((farmSrc.match(/stockMax: (\d+),/) || [, NaN])[1]);
+  return places === most ? true : `${places} places for ${most} head`;
+})() === true);
+check('nothing crosses the farming import cycle while a module loads',
+  !/^(?:const|let|export const|export let)[^\n]*\b(camps|people|CAMP_PIECES|CAMP_CLEARING|streams)\b/m.test(
+    farmSrc.replace(/^import .*$/gm, '')));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
