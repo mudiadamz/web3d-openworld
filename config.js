@@ -37,6 +37,9 @@ export const SCHEMA = {
   PACE_DAY: { path: 'paceDay', type: 'float', min: 300, max: 7200 },
   YEAR_LENGTH: { path: 'yearLength', type: 'float', min: 4, max: 200, slider: 'yearLen' },
   FERTILITY: { path: 'fertility', type: 'float', min: 0, max: 3 },
+  /* How much the island gives: every basket, catch and kill is worth this many
+     times what it was tuned at. */
+  ABUNDANCE: { path: 'abundance', type: 'float', min: 0.25, max: 4 },
   EXPOSURE: { path: 'exposure', type: 'float', min: 0.1, max: 1.2 },
 
   // wind

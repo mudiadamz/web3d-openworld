@@ -4,6 +4,7 @@ import { sampleHeight } from './noise.js';
 import { packs, recountAnimals } from './wildlife.js';
 import { bagAdd } from './bag.js';
 import { QUARRY, logEvent, simDay, who } from './life.js';
+import { P } from './params.js';
 
 /* Hunting by hand, for the person you are playing: the nearest animal worth a
    spear, and the throw. Everything the band's own hunters do — the chase, the
@@ -136,7 +137,7 @@ export function takeCarcass(p, t) {
   const a = t && t.animal;
   if (!a || !a.carcass) { p.actResult = 'nothing there now'; return; }
   const key = t.pack.spec.key;
-  const meat = QUARRY[key].meat * (a.scale || 1);
+  const meat = QUARRY[key].meat * (a.scale || 1) * P.abundance;
   a.carcass = null;
   p.haul += meat;
   p.carry = 1;

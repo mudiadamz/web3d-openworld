@@ -6874,7 +6874,13 @@ check('the colour is written when it changes hands, not every frame',
    the store gets is the sum it always was. */
 check('a foraging trip is counted as berries and fruit',
   /bagAdd\(p, 'berries', Math\.max\(1, Math\.round\(ground \* hands \/ BAG\.berry\)\)\);\s*bagAdd\(p, 'fruit', Math\.round\(fruit \/ ORCHARD\.worth\)\);/.test(html)
-  && /const got = \(ground \+ fruit\) \* baskets \* childWorth\(p\);/.test(html));
+  && /const got = \(ground \+ fruit\) \* baskets \* childWorth\(p\) \* P\.abundance;/.test(html));
+/* Food security is a setting: every yield the island has goes through it. */
+check('every basket, catch and kill is scaled by ABUNDANCE',
+  (html.match(/\* P\.abundance;/g) || []).length >= 4
+  && /childWorth\(p\) \* P\.abundance;/.test(html)
+  && /const meat = q\.meat \* \(a\.scale \|\| 1\) \* P\.abundance;/.test(html)
+  && /const meat = QUARRY\[key\]\.meat \* \(a\.scale \|\| 1\) \* P\.abundance;/.test(html));
 check('a catch as fish', /bagAdd\(p, 'fish', Math\.max\(1, Math\.round\(got \/ BAG\.fish\)\)\);/.test(html));
 check('a kill as the animal it was', /bagAdd\(p, 'game', 1, prey\.pack\.spec\.key\);/.test(html));
 check('and the basket is emptied with the haul, into the store',

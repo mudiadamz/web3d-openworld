@@ -38,6 +38,7 @@ export const P = {
   yearLength: 24,     // simulated days in a year
   map: 1600,          // metres across; the island's extent, set with MAP
   fertility: 1,       // multiplier on the birth rate
+  abundance: 1,       // multiplier on every food yield: foraging, fruit, fish, meat
   exposure: 0.5,
   wind: 0.35,         // 0..1
   windDir: 135,       // degrees the wind blows TOWARD; 0 = north

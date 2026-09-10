@@ -1334,7 +1334,7 @@ export function tryKill(p, dt) {
 
   a.dead = true;
   recountAnimals();
-  const meat = q.meat * (a.scale || 1);
+  const meat = q.meat * (a.scale || 1) * P.abundance;
   p.haul += meat;
   p.carry = 1;
   bagAdd(p, 'game', 1, prey.pack.spec.key);

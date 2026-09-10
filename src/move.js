@@ -949,7 +949,7 @@ export function updatePeople(dt, day) {
                so the caption can say which. The food is the same sum it was. */
             const ground = FOOD.gather * forageRichness(p.x, p.z);
             const fruit = pickFruit(p.x, p.z);
-            const got = (ground + fruit) * baskets * childWorth(p);
+            const got = (ground + fruit) * baskets * childWorth(p) * P.abundance;
             p.haul += got;
             p.carry = 1;
             const hands = baskets * childWorth(p);
@@ -1016,7 +1016,7 @@ export function updatePeople(dt, day) {
             const spot = p.raftTrip ? p.raftTrip.spot : p;
             const baskets = 1 + SKILL.basketHaul * p.camp.skill.baskets;
             const got = fishRichness(spot.x, spot.z, p.camp) * baskets
-              * (1 + p.camp.skill.fishing) * childWorth(p);
+              * (1 + p.camp.skill.fishing) * childWorth(p) * P.abundance;
             p.haul += got;
             p.carry = 1;
             if (got > 0) bagAdd(p, 'fish', Math.max(1, Math.round(got / BAG.fish)));
