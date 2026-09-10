@@ -4093,6 +4093,30 @@ check('it stops short of deleting the file a server is holding open',
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 check('npm run reset exists', pkg.scripts.reset === 'node reset.js', JSON.stringify(pkg.scripts));
 
+/* npm start watches and reloads; npm run serve and the Windows service do not.
+   The service runs `node server.js` directly, so the thing that must never
+   happen is the reload leaking into a plain run. */
+const devSrc = readFileSync(join(ROOT, 'dev.js'), 'utf8');
+const watched = (devSrc.match(/WATCHED = new Set\(\[[^\]]*\]\)/) || [''])[0];
+check('npm start is the development server, npm run serve the plain one',
+  pkg.scripts.start === 'node dev.js' && pkg.scripts.serve === 'node server.js', JSON.stringify(pkg.scripts));
+check('a change to .env restarts it, because settings are only read at startup',
+  watched.includes("'.env'"), watched);
+check('and so does a change to the page or the server',
+  ['index.html', 'server.js', 'config.js', 'db.js'].every((f) => watched.includes(`'${f}'`))
+  && /WATCHED_DIRS = \['src'\]/.test(devSrc), watched);
+check('but not the chronicle, which is written every simulated day', !/chronicle/.test(watched));
+check('it passes its arguments on, so --port still works',
+  /spawn\(process\.execPath, \[join\(ROOT, 'server\.js'\), \.\.\.args\]/.test(devSrc));
+check('the reload is only offered in dev',
+  /const DEV = Boolean\(process\.env\.DEV_RELOAD\);/.test(serverSrc)
+  && /if \(DEV && path === '\/__dev\/reload'\)/.test(serverSrc)
+  && /\+ \(DEV \? DEV_SCRIPT : ''\)\);/.test(serverSrc));
+check('and the service never asks for it',
+  !/DEV_RELOAD/.test(readFileSync(join(ROOT, 'deploy', 'service.ps1'), 'utf8')));
+check('a restart is not held up by a page still listening for it',
+  /for \(const stream of devStreams\) stream\.end\(\);\n\s*listening\.close\(/.test(serverSrc));
+
 check('the button clears the browser\'s copies as well as the server\'s',
   ['WORLD_STORE', 'STATE_STORE', 'CHRONICLE_STORE'].every((k) =>
     new RegExp(`for \\(const key of \\[[^\\]]*${k}`).test(html)));

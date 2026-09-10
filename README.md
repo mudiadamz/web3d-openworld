@@ -82,6 +82,12 @@ npm start                       # http://localhost:8080
 npm start -- --port 8089        # ...or wherever. --host, --people, --map too
 ```
 
+`npm start` is the development server: it restarts whenever `.env`,
+`index.html`, anything in `src/` or the server's own files change, and the open
+page reloads itself when it comes back. Change a setting in `.env`, save, and the
+world is rebuilt with it. `npm run serve` is the same server without the
+watching, for leaving running; the Windows service runs that way too.
+
 or without editing anything at all:
 
 ```bash
@@ -2461,6 +2467,7 @@ db.js           the chronicle, in SQLite
 config.js       the variable schema, .env parsing, validation
 test.js         npm test — 782 checks: config, shaders, clock, grass, bodies, life
 reset.js        npm run reset — empties every table
+dev.js          npm start — restarts the server on a change and reloads the page
 test-boot.js    boots the page for real against a mocked DOM
 .env.example    every variable, documented
 ```

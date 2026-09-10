@@ -46,6 +46,28 @@ for (const note of [...args.notes, ...notes, ...server.notes]) console.warn(`  !
 const db = openDb(join(ROOT, server.chronicle_db));
 const payload = { values, explicit, chronicle: Boolean(db) };
 
+/* `npm start` runs this under dev.js, which sets DEV_RELOAD and restarts it
+   whenever .env, the page or the server changes. The page cannot see a restart
+   — it only stops hearing from the server for a moment — so in that mode it is
+   given something to listen to: an event stream that says which run of the
+   server this is, and a few lines that reload the page when the answer changes.
+   Neither exists without DEV_RELOAD, so the deployed copy and `npm run serve`
+   never send a page anything it did not ask for. */
+const DEV = Boolean(process.env.DEV_RELOAD);
+const BOOT = `${process.pid}-${Date.now()}`;
+const devStreams = new Set();
+/* How soon the page tries again once the server has gone. The browser's own
+   default is about three seconds, which is most of the wait. */
+export const DEV_RETRY_MS = 300;
+const DEV_SCRIPT = `<script>(() => {
+  let first = null;
+  const es = new EventSource('/__dev/reload');
+  es.onmessage = (e) => {
+    if (first === null) first = e.data;
+    else if (e.data !== first) location.reload();
+  };
+})();</script>`;
+
 /* How big a body each endpoint may send.
 
    A megabyte was one number for everything, and a saved world is not the same
@@ -112,7 +134,7 @@ async function serveIndex() {
   // says; escaping `<` is the usual, boring fix.
   const json = JSON.stringify(payload).replace(/</g, '\\u003c');
   return html.replace(PLACEHOLDER,
-    `<script>window.__CONFIG__ = ${json};</script>`);
+    `<script>window.__CONFIG__ = ${json};</script>` + (DEV ? DEV_SCRIPT : ''));
 }
 
 function safePath(urlPath) {
@@ -135,6 +157,19 @@ const listening = createServer(async (req, res) => {
         'cache-control': 'no-store',
       });
       return res.end(html);
+    }
+
+    // Held open: the page learns a restart happened by hearing a new BOOT.
+    if (DEV && path === '/__dev/reload') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+      });
+      res.write(`retry: ${DEV_RETRY_MS}\ndata: ${BOOT}\n\n`);
+      devStreams.add(res);
+      req.on('close', () => devStreams.delete(res));
+      return;
     }
 
     /* Is it up, and is it the one you think it is?
@@ -349,6 +384,10 @@ export function shutdown(signal) {
     process.exit(0);
   };
 
+  /* A page listening for the next restart never finishes its request, and
+     close() waits for every request — so each restart would sit out the whole
+     grace period. They are ended first; the page is about to reload anyway. */
+  for (const stream of devStreams) stream.end();
   listening.close(() => finish('all connections done'));
   /* A request that never ends must not hold the service open for ever — the
      service manager's own patience runs out and then it kills the process,

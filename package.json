@@ -6,7 +6,8 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node dev.js",
+    "serve": "node server.js",
     "test": "node test.js && node test-boot.js",
     "boot": "node test-boot.js",
     "reset": "node reset.js",
