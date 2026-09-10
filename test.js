@@ -1047,20 +1047,21 @@ check('and is carried back to their band\'s ground rather than left where they f
   const fn = html.slice(i, i + 1400);
   return /const ground = p\.camp\?\.barrow;/.test(fn) && /y: sampleHeight\(x, z\)/.test(fn);
 })());
-/* An InstancedMesh cannot grow, so a world left running for a century must not
-   be able to spend all of memory on headstones. */
-check('and there is a limit to how many the ground holds',
-  /const GRAVE_MAX = \d+;/.test(html)
-  && /if \(graves\.length > GRAVE_MAX\) graves\.splice\(0, graves\.length - GRAVE_MAX\);/.test(html));
-check('the oldest is the one that goes', /graves\.splice\(0, /.test(html));
-check('they survive a reload', /\n    graves,\n/.test(html)
-  && /setGraves\(Array\.isArray\(st\.graves\) \? st\.graves\.slice\(-GRAVE_MAX\) : \[\]\);/.test(html));
+/* None is ever taken away. They were capped at four hundred, oldest first —
+   and the oldest are the bands that died out, so the one thing left of them
+   was the first thing to go. The mesh is built again bigger instead. */
+check('no grave is ever taken away', !/graves\.splice\(/.test(html) && !/graves\.slice\(-/.test(html));
+check('the ground makes room instead',
+  /if \(graves\.length > graveRoom\) \{/.test(html)
+  && /while \(graveRoom < graves\.length\) graveRoom \*= 2;/.test(html));
+check('they survive a reload, every one', /\n    graves,\n/.test(html)
+  && /setGraves\(Array\.isArray\(st\.graves\) \? st\.graves : \[\]\);/.test(html));
 /* Or the next world opens with the last one's dead scattered over ground they
    never walked on. */
 check('and a new world starts with nobody buried in it',
   /setGraves\(\[\]\);\n  setGraveMesh\(null\);/.test(html));
 check('every slot past the last cairn is parked out of sight',
-  /for \(let i = n \* GRAVE_STONES; i < GRAVE_MAX \* GRAVE_STONES; i\+\+\) \{\n    graveMesh\.setMatrixAt\(i, HIDDEN\);/.test(html));
+  /for \(let i = n \* GRAVE_STONES; i < graveRoom \* GRAVE_STONES; i\+\+\) \{\n    graveMesh\.setMatrixAt\(i, HIDDEN\);/.test(html));
 check('a cairn is stones piled, not one stone', (() => {
   const n = Number((html.match(/const GRAVE_STONES = (\d+);/) || [, 0])[1]);
   return n > 1;
@@ -1636,7 +1637,9 @@ check('and none of it can run away', /clamp\(mid \* TRAIT_FROM_PARENTS \+ own \*
 /* Each one has to reach something, or they are decoration. */
 check('the bold forage further out',
   /const far = \(p\.traits\?\.bold \?\? 1\) \* \(p\.child \? FORAGE\.childRange : 1\);/.test(html)
-  && /95 \* far\]/.test(html));
+  && /95 \* far \* groundFor\(camp\)\]/.test(html));
+check('and a bigger band walks further, as far as the ground it needs',
+  /return clamp\(Math\.sqrt\(\(camp\.pop \|\| 1\) \/ FORAGE\.ringFeeds\), 1, FORAGE\.ringMax\);/.test(html));
 check('and notice a tiger later', /const notice = PANIC\.sees \/ \(p\.traits\?\.bold \?\? 1\);/.test(html));
 check('the sociable walk to the neighbours more',
   /VISIT\.chance \* rested \* \(p\.traits\?\.sociable \?\? 1\)/.test(html));
@@ -6068,7 +6071,12 @@ check('and it goes up over years rather than appearing',
 check('the world is told only when a stone actually goes up',
   /if \(up !== camp\.stonesUp\) \{ camp\.stonesUp = up; drawGraves\(\); \}/.test(html));
 check('and there is room in the mesh for them',
-  /GRAVE_MAX \* GRAVE_STONES \+ campCapacity \* MONUMENT_MAX/.test(artSrc));
+  /graveRoom \* GRAVE_STONES \+ campCapacity \* MONUMENT_MAX/.test(artSrc));
+/* A band that dies out keeps what it raised. Its monument used to vanish that
+   day, and its art to fade to nothing after, taking the stones with it. */
+check('a band that has died out keeps its monument',
+  !/camp\.gone \? \[\] : monumentPlan\(camp\)/.test(html)
+  && /if \(!living\.has\(camp\)\) continue;/.test(html));
 
 /* Learned at the ground and nowhere else — the six worked skills come off
    craftChoice, these two do not. */
@@ -6241,7 +6249,10 @@ check('and dealing in it teaches dealing',
 group('the size of a saved world');
 
 const LINE_MAX = Number((html.match(/LINE_MAX = (\d+)/) || [, 0])[1]);
-const GRAVE_MAX = Number((html.match(/GRAVE_MAX = (\d+)/) || [, 0])[1]);
+/* Graves are never taken away (buryPerson), so there is no ceiling on them
+   either. A save is promised to hold two hundred thousand: over a hundred
+   thousand sim-days at the death rate the chronicle records. */
+const GRAVES_PROMISED = 200000;
 /* There is no ceiling on people any more (growPeople), so there is no worst
    case to measure against. This is the size a save is promised to fit at:
    twenty thousand, which is past anything that still draws. */
@@ -6261,7 +6272,7 @@ const LINE_ROW = JSON.stringify({
 }).length;
 const PERSON_ROW = 620 + skillCount * 14;   // the fixed fields, plus one entry a skill
 const GRAVE_ROW = 60;
-const worstSave = LINE_MAX * LINE_ROW + PEOPLE_CAP * PERSON_ROW + GRAVE_MAX * GRAVE_ROW;
+const worstSave = LINE_MAX * LINE_ROW + PEOPLE_CAP * PERSON_ROW + GRAVES_PROMISED * GRAVE_ROW;
 
 check('the server takes the largest save the page can make',
   STATE_LIMIT > worstSave,

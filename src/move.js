@@ -364,6 +364,8 @@ export const FORAGE = {
   childHaul: 0.40,     // what an eight-year-old brings back, against an adult's basket
   childGrown: 0.90,    // and a thirteen-year-old, nearly grown
   childRange: 0.55,    // and how far from the fire they will go
+  ringFeeds: 14,       // people the 95 m ring round a fire feeds with food to spare
+  ringMax: 2.5,        // and how many times that far a big band will walk
 };
 
 /* What a child's hands are worth against an adult's, rising with age. It was
@@ -374,6 +376,16 @@ export function childWorth(p) {
   if (!p.child) return 1;
   const t = clamp((personAge(p) - FORAGE.helpFrom) / (LIFE.adultAt - 1 - FORAGE.helpFrom), 0, 1);
   return FORAGE.childHaul + (FORAGE.childGrown - FORAGE.childHaul) * t;
+}
+
+/* How far out a band goes for its food, against the 95 metres a small one
+   needs. The ring was the same whatever the band's size, and it was what capped
+   them: recorded, a band of twelve to fifteen held 6.4 days of store and one of
+   twenty-eight held 4.3, and the big ones starved out one by one over a century.
+   The ground a band needs grows with the mouths it feeds, so the reach grows
+   with the square root of them — until it runs into the neighbours'. */
+export function groundFor(camp) {
+  return clamp(Math.sqrt((camp.pop || 1) / FORAGE.ringFeeds), 1, FORAGE.ringMax);
 }
 
 /* Where to forage. It used to be a random point between twenty-six and
@@ -481,7 +493,7 @@ export function pickWork(p) {
      down is nobody's idea of daring. */
   const far = (p.traits?.bold ?? 1) * (p.child ? FORAGE.childRange : 1);
   const range = p.job === 'hunt' ? [90 * far, 260 * far]
-    : p.job === 'gather' ? [26 * (p.child ? FORAGE.childRange : 1), 95 * far]
+    : p.job === 'gather' ? [26 * (p.child ? FORAGE.childRange : 1), 95 * far * groundFor(camp)]
     : p.job === 'tend' ? FIRESIDE : [2, 9];
   if (p.job === 'gather') return pickForage(p, camp, range);
   /* The water's edge. Found once for the camp rather than per trip — a coast

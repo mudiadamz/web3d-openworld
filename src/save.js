@@ -8,7 +8,7 @@ import {
   lineage, nextPersonId, packs, recountAnimals, setLineage, setNextPersonId, takePersonId, usedNames
 } from './wildlife.js';
 import {
-  BUILDS, GARMENT, GRAVE_MAX, HAIR, SKIN, camps, drawGraves, graves, growPeople, paintPeople, people,
+  BUILDS, GARMENT, HAIR, SKIN, camps, drawGraves, graves, growPeople, paintPeople, people,
   setGraves
 } from './people.js';
 import {
@@ -246,7 +246,7 @@ export function applySavedLife(st) {
   setLineage(Array.isArray(st.lineage) ? st.lineage : []);
   /* A save written before there were cairns simply has none, which is right:
      the chronicle still says who died, there is just nothing on the ground. */
-  setGraves(Array.isArray(st.graves) ? st.graves.slice(-GRAVE_MAX) : []);
+  setGraves(Array.isArray(st.graves) ? st.graves : []);
   drawGraves();
   people.length = 0;
   // Past anything the save used, or a newborn would collide with a grandparent.

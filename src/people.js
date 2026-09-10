@@ -232,12 +232,16 @@ export function instancedFrom(geo, count, group) {
    ones who died at home. Walk far enough after a few decades and you can read
    where the bad years happened off the ground.
 
-   Saved with everything else, so they survive a reload; capped, because an
-   InstancedMesh cannot grow and a world left running for a century should not
-   be able to spend all of memory on headstones.
+   Saved with everything else, so they survive a reload, and never taken away.
+   They were capped at four hundred, oldest first — and the oldest are the bands
+   that have died out, so the one thing left of a band was the first thing to
+   go. The mesh is built again bigger when the dead outgrow it, the way the
+   people's meshes are, and a cairn is three stones: a century of them is still
+   less than one tree line.
    ------------------------------------------------------------------------- */
 
-export const GRAVE_MAX = 400;
+export const GRAVE_ROOM = 400;       // room the graves start with; it doubles when full
+export let graveRoom = GRAVE_ROOM;
 export const GRAVE_STONES = 3;       // stones per cairn
 export let graves = [];              // { x, z, y, day, sex }
 export let graveMesh = null;
@@ -295,8 +299,10 @@ export function buildGraves() {
   /* The graves, and behind them whatever each band has raised. One mesh for
      both because they are the same material and the same shape at different
      scales — a standing stone is a cairn stone that somebody stood up. */
+  graveRoom = GRAVE_ROOM;
+  while (graveRoom < graves.length) graveRoom *= 2;
   graveMesh = new THREE.InstancedMesh(geo, rockMaterial,
-    GRAVE_MAX * GRAVE_STONES + campCapacity * MONUMENT_MAX);
+    graveRoom * GRAVE_STONES + campCapacity * MONUMENT_MAX);
   graveMesh.castShadow = true;
   graveMesh.receiveShadow = true;
   graveMesh.frustumCulled = false;
@@ -309,7 +315,16 @@ export function buildGraves() {
    differently, which is enough to read as piled by somebody at this size. */
 export function drawGraves() {
   if (!graveMesh) return;
-  const n = Math.min(graves.length, GRAVE_MAX);
+  /* More dead than there is room for: the mesh is built again, bigger, and
+     every stone drawn where it was. Nobody's cairn is cleared to make room. */
+  if (graves.length > graveRoom) {
+    tribeGroup.remove(graveMesh);
+    graveMesh.geometry.dispose();
+    graveMesh.dispose();
+    buildGraves();                 // sizes itself to the graves, and draws them
+    return;
+  }
+  const n = graves.length;
   for (let g = 0; g < n; g++) {
     const it = graves[g];
     const rng = mulberry32((it.x * 131 + it.z * 977 + it.day * 7) | 0);
@@ -330,9 +345,10 @@ export function drawGraves() {
      the planned stones are up follows their `art`, so a monument goes up over
      years — and it comes back down if a band forgets what it was for, which is
      the only way any of this is ever lost. */
-  let at = GRAVE_MAX * GRAVE_STONES;
+  let at = graveRoom * GRAVE_STONES;
   for (const camp of camps) {
-    const plan = camp.gone ? [] : monumentPlan(camp);
+    // A band that has died out keeps what it raised: it is all that is left of them.
+    const plan = monumentPlan(camp);
     const up = Math.round(plan.length * (camp.skill?.art || 0));
     for (let i = 0; i < MONUMENT_MAX; i++) {
       const stone = i < up ? plan[i] : null;
@@ -350,7 +366,7 @@ export function drawGraves() {
     }
   }
 
-  for (let i = n * GRAVE_STONES; i < GRAVE_MAX * GRAVE_STONES; i++) {
+  for (let i = n * GRAVE_STONES; i < graveRoom * GRAVE_STONES; i++) {
     graveMesh.setMatrixAt(i, HIDDEN);
   }
   graveMesh.instanceMatrix.needsUpdate = true;
@@ -359,9 +375,8 @@ export function drawGraves() {
   stats.graves = n;
 }
 
-/* The oldest goes when there is no room, which is the wrong way round for a
-   record and the right way round for a view: the cairns you can still find are
-   the ones from living memory. The chronicle keeps the rest. */
+/* Every one of them stays. A band that has died out has nothing else left on
+   the island, and its graves were the first thing a cap would clear. */
 export function buryPerson(p) {
   /* Carried back rather than left. Somebody who dies out on the hill is buried
      with the rest of their band — which is the whole difference between a
@@ -387,7 +402,6 @@ export function buryPerson(p) {
     day: Math.floor(simDay),
     sex: p.sex,
   });
-  if (graves.length > GRAVE_MAX) graves.splice(0, graves.length - GRAVE_MAX);
   drawGraves();
 }
 
