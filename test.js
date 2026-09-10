@@ -7537,6 +7537,20 @@ group('stores by rung');
     (st.match(/storeAt\(camp, /g) || []).length === 3);
 }
 
+group('going by the path');
+{
+  const pa = moduleSource('paths.js'), mv = moduleSource('move.js');
+  check('off the path is slower, a trail full pace, a road quicker',
+    /if \(w >= 0\.94\) return TREAD\.road;/.test(pa) && /return TREAD\.rough \+ \(1 - TREAD\.rough\) \* Math\.min\(1, w \/ PATH\.bare\);/.test(pa)
+    && /if \(!p\.onRaft\) want \*= groundPace\(p\.x, p\.z\);/.test(mv));
+  check('a walker takes the heading that gets them there soonest: the ground ahead, paid for by the angle',
+    /return footing \* Math\.cos\(off\);/.test(pa) && /let diff = aim \+ \(p\.swerve \|\| 0\) - p\.yaw;/.test(mv));
+  check('and holds a heading unless another is clearly better, looking only now and then',
+    /let best = held, most = made\(held\) \* TREAD\.keep;/.test(pa) && /p\.swerveAt = worldClock \+ TREAD\.every;/.test(mv));
+  check('the one you play, a chase and a fright go straight',
+    /if \(p\.onRaft \|\| p\.led \|\| p\.panic > 0 \|\| p\.prey \|\| p\.hiding \|\| dist < TREAD\.near\) p\.swerve = 0;/.test(mv));
+}
+
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);

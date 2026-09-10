@@ -1635,6 +1635,10 @@ and roads run from it to every village of its tribe and between the cities —
 the shortest set that joins them all — in a colour of their own on the ground
 and on the map. A road is laid, not worn: it never grows back.
 
+People walk slower through grass and scrub than on a trodden path, and faster
+still on a road. So a walker takes a path when one near enough runs their way:
+whichever heading gets them there soonest. Worn paths get used, and get deeper.
+
 What the food is kept in climbs too: a band's granary on stilts, a village's
 timber storehouse on staddle stones, a city's cluster of domed brick silos.
 

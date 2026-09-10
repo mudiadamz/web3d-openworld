@@ -212,6 +212,53 @@ export function wearAt(x, z) {
   return (top + (bot - top) * tz) / 255;
 }
 
+/* -------------------------------------------------------------------------
+   Going by the path
+
+   Walking through grass and scrub is slower than walking a trodden line, and a
+   paved road is quicker still. So how fast somebody goes depends on the ground
+   under them. And when there is a path near enough, they take it. Nobody is told
+   to: a walker picks the heading that gets them to where they are going soonest,
+   which is the one with the best ground in front of it once the angle away from
+   the goal is paid for (the cosine). A path running roughly their way wins. One
+   running across it, or far off, does not. That is why the paths people wear
+   become the paths people use, and why they keep getting deeper.
+   ------------------------------------------------------------------------- */
+export const TREAD = {
+  rough: 0.82,          // pace off any path, of a walk on one
+  road: 1.12,           // and on a paved road
+  look: 4,              // metres ahead a walker judges the ground
+  swerve: [0.35, 0.7],  // radians off the straight line they will consider
+  keep: 1.04,           // a new heading has to beat the one held by this much
+  near: 8,              // within this of the goal, they just go straight to it
+  every: 0.4,           // seconds between looks
+};
+
+/** How fast the ground here lets somebody walk, as a share of a walk on a path. */
+export function groundPace(x, z) {
+  const w = wearAt(x, z);
+  if (w >= 0.94) return TREAD.road;
+  return TREAD.rough + (1 - TREAD.rough) * Math.min(1, w / PATH.bare);
+}
+
+/** The turn off the straight line to the goal that gets there soonest, given
+    the ground either side, and the turn held since the last look. */
+export function pathSwerve(x, z, aim, held = 0) {
+  const made = (off) => {
+    const a = aim + off, s = Math.sin(a), c = Math.cos(a);
+    const footing = (groundPace(x + s * TREAD.look * 0.5, z + c * TREAD.look * 0.5)
+      + groundPace(x + s * TREAD.look, z + c * TREAD.look)) / 2;
+    return footing * Math.cos(off);
+  };
+  let best = held, most = made(held) * TREAD.keep;
+  for (const off of [0, ...TREAD.swerve, ...TREAD.swerve.map((o) => -o)]) {
+    if (off === held) continue;
+    const m = made(off);
+    if (m > most) { most = m; best = off; }
+  }
+  return best;
+}
+
 /* Grass grows back over a path nobody walks any more. Once a sim-day, over the
    cells that are actually worn. */
 export function fadePaths(days) {

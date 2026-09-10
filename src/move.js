@@ -23,7 +23,7 @@ import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPe
 import {
   CAMP_CLEARING, CITY, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
-import { buildPaths, tread } from './paths.js';
+import { buildPaths, groundPace, pathSwerve, TREAD, tread } from './paths.js';
 import {
   LIFE, DUSK_AT, FISH, FOOD, GROUND, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, otherCamp, personAge, nearestShore, pickFishing, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, logEvent, updateEconomy
 } from './life.js';
@@ -1283,6 +1283,8 @@ export function updatePeople(dt, day) {
           want = PERSON.walk + (want - PERSON.walk) * clamp(p.energy * 1.4, 0, 1);
         }
         if (p.sick) want *= PLAGUE.drag;
+        // Off the path, slower; on a road, quicker (paths.js).
+        if (!p.onRaft) want *= groundPace(p.x, p.z);
         // Frightened, and whatever is left in them goes into running.
         if (p.panic > 0) want = Math.max(want, PERSON.jog * (p.child ? 0.8 : 1));
       }
@@ -1337,7 +1339,17 @@ export function updatePeople(dt, day) {
     if (p.led && p.life != null) p.energy = Math.max(0.05, p.life);
 
     if (!arrived && want > 0) {
-      let diff = Math.atan2(tdx, tdz) - p.yaw;
+      /* By the path, if one near enough runs their way (paths.js). Not for
+         the one you are playing, who goes where they are pointed; not after
+         something that moves, or away from something that frightens; and not
+         on the last few metres, where the goal is the goal. */
+      const aim = Math.atan2(tdx, tdz);
+      if (p.onRaft || p.led || p.panic > 0 || p.prey || p.hiding || dist < TREAD.near) p.swerve = 0;
+      else if ((p.swerveAt || 0) <= worldClock) {
+        p.swerve = pathSwerve(p.x, p.z, aim, p.swerve || 0);
+        p.swerveAt = worldClock + TREAD.every;
+      }
+      let diff = aim + (p.swerve || 0) - p.yaw;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       p.yaw += clamp(diff, -PERSON.turn * slice, PERSON.turn * slice);
     }
