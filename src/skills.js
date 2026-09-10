@@ -145,6 +145,10 @@ export const SKILLS = {
      pyramid behind them. What it moves is who comes to visit: see
      SKILL.pyramidDraw. */
   stonework: { label: 'stonework', of: 'masonry' },
+  /* Twentieth: ruling. Learned by winning raids once a band is a fair hand at
+     war, and by taking a village; what it moves is whether a won raid takes
+     the village rather than a share of its store (CONQUEST, in life.js). */
+  conquest: { label: 'conquest', of: 'ruling' },
 };
 
 /* Every skill at nothing. Built from SKILLS rather than written out, because it
@@ -349,6 +353,7 @@ export const FORGET_WORDS = {
   building: 'put up anything better than a cone of hides',
   /* The pyramid is still standing. Nobody can dress a stone to go on it. */
   masonry: 'dress a stone',
+  ruling: 'hold a village it did not build',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be

@@ -160,10 +160,12 @@ export let tribeTab = 'now';
 
 export function formerOf(camp) {
   const out = [];
+  // A village taken by another tribe keeps the dead it had under its old code.
+  const mine = (code) => code === camp.code || (camp.pastCodes || []).includes(code);
   for (const r of lineage) {
-    if (r.d > 0 && (r.dc || r.c) === camp.code) {
+    if (r.d > 0 && mine(r.dc || r.c)) {
       out.push({ r, when: r.d, gone: 'died', how: DEATH_TOLD[r.x] || r.x || 'nobody knows what of' });
-    } else if (r.to && r.fr === camp.code) {
+    } else if (r.to && mine(r.fr)) {
       out.push({ r, when: r.md || 0, gone: 'left', how: `went to ${r.to}` });
     }
   }
@@ -253,7 +255,12 @@ export function renderTribeCard() {
       + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td></tr>`;
   }).join('');
 
-  $('tribeHead').innerHTML =
+  /* A tribe of more than one village, and what a taken village used to be. */
+  const villages = camps.filter((c) => !c.gone && c.code === camp.code).length;
+  const held = (villages > 1 ? `<div><span>one of</span> ${villages} <span>villages of</span> ${camp.name}</div>` : '')
+    + (camp.villageName
+      ? `<div><span>once</span> ${camp.villageName}<span>, taken on day ${Math.floor(camp.conqueredAt || 0)}</span></div>` : '');
+  $('tribeHead').innerHTML = held +
     `<div>Chief <b>${chief ? chief.name : 'nobody'}</b>`
     + `${chief ? ` <span>${Math.floor(personAge(chief))}${sexMarks(chief.sex === 'f' ? '♀' : '♂')}</span>` : ''}</div>`
     + `<div><b>${bandAge(camp)}</b> <span>old · founded on day ${Math.floor(camp.founded || 0)}</span></div>`

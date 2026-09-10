@@ -578,6 +578,10 @@ export const CAMP_PIECES = {
   tentHide: HEARTHS * HUTS_PER_HEARTH,
   tentPainted: HEARTHS * HUTS_PER_HEARTH,
   lodge: HEARTHS * HUTS_PER_HEARTH,
+  /* A flag for every village, in its tribe's colour: the same flag over every
+     village a tribe holds, which is what a tribe of more than one looks like. */
+  flagPole: 1,
+  flagCloth: 1,
   // Nine stones and four logs *per hearth*: a fire nobody can sit at is a
   // bonfire, not a hearth.
   stones: 9 * HEARTHS,
@@ -838,6 +842,36 @@ export function dressCamp(camp) {
 
   // The field and the pen, as far as the band has got with them (farming.js).
   dressField(camp, campParts, index);
+  // The flag, in the tribe's colour: the same over every village it holds.
+  dressFlag(camp, index, here);
+}
+
+/* By the first fire, a little off it. The colour is the band's code's — read as
+   a hue off `camp.color`, whose `hsl(h s% l%)` three will not parse — so a
+   village taken by another tribe changes its flag the moment it changes hands. */
+function dressFlag(camp, index, here) {
+  if (!campParts.flagPole) return;
+  const at = camp.fireAt?.[0] || camp;
+  const x = at.x + 3.2, z = at.z - 2.4;
+  if (here > 0) {
+    _v.set(x, sampleHeight(x, z), z);
+    _e.set(0, index * 1.7, 0);
+    _q.setFromEuler(_e);
+    _s.setScalar(1);
+    _m4.compose(_v, _q, _s);
+    campParts.flagPole.setMatrixAt(index, _m4);
+    campParts.flagCloth.setMatrixAt(index, _m4);
+    const hue = Number((/hsl\((\d+)/.exec(camp.color) || [, 0])[1]);
+    campParts.flagCloth.setColorAt(index, _c.setHSL(hue / 360, 0.7, 0.5));
+    campParts.flagPole.setColorAt(index, _c.setHex(0x6b5334));
+  } else {
+    campParts.flagPole.setMatrixAt(index, HIDDEN);
+    campParts.flagCloth.setMatrixAt(index, HIDDEN);
+  }
+  for (const m of [campParts.flagPole, campParts.flagCloth]) {
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  }
 }
 
 export function dressCamps() { for (const c of camps) dressCamp(c); }
@@ -1195,6 +1229,10 @@ export function buildCamps() {
 
   campParts = {};
   campParts.huts = instancedFrom(hutGeo, campCapacity * CAMP_PIECES.huts, tribeGroup);
+  campParts.flagPole = instancedFrom(new THREE.CylinderGeometry(0.05, 0.07, 4.6, 5).translate(0, 2.3, 0),
+    campCapacity * CAMP_PIECES.flagPole, tribeGroup);
+  campParts.flagCloth = instancedFrom(new THREE.BoxGeometry(1.4, 0.85, 0.04).translate(0.72, 4.05, 0),
+    campCapacity * CAMP_PIECES.flagCloth, tribeGroup);
   const tents = tentGeometries();
   for (const key of TENT_KEYS.slice(1)) {
     const m = new THREE.InstancedMesh(tents[key], tentMaterial, Math.max(1, campCapacity * CAMP_PIECES[key]));

@@ -2,7 +2,7 @@
 
 **An island that runs itself.** Procedural terrain, a physical sky on a running
 clock, five species of wildlife — and a few hundred hunter-gatherers who forage
-it, hunt it, learn nineteen crafts, trade with each other, split off to found
+it, hunt it, learn twenty crafts, trade with each other, split off to found
 new bands, bury their dead, and are still at it a century later.
 
 Nobody scripts any of that. It is a simulation, and the history is whatever
@@ -26,7 +26,7 @@ and a pick and a knife for the work that uses them (`src/looks.js`).
   They forage where it paid last time, hunt what they can catch, come home at
   dusk, sleep in a hut, fall ill, recover or do not. A tiger takes the ones who
   went out alone.
-- **Bands that learn.** Nineteen skills, each moving a number the simulation
+- **Bands that learn.** Twenty skills, each moving a number the simulation
   already had — curing meat means less of the store spoils, tracking means a
   hunter sees further, fire-keeping means a tiger will not come as close. What
   a band practises is what it has been worrying about, so a band good at

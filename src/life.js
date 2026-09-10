@@ -82,6 +82,7 @@ export const MILESTONES = new Set([
   'hunger',     // the store ran out
   'relief',     // ...and the day it came back
   'find',       // the first of a metal carried home
+  'conquest',   // a band took another's village
   'slain',      // somebody killed a tiger
   'extinct',    // a band ended
   'end',        // and the last one of them
@@ -456,6 +457,7 @@ export function raidTarget(camp) {
   let best = null, bestD = Infinity;
   for (const c of camps) {
     if (c === camp || c.gone) continue;
+    if (c.code === camp.code) continue;          // a village of their own tribe
     if (daysOfFood(c) < RAID.worth && (c.stone || 0) < SKILL.stoneMax * 0.3) continue;
     const d = Math.hypot(c.x - camp.x, c.z - camp.z);
     if (d < bestD) { bestD = d; best = c; }
@@ -484,8 +486,13 @@ export function resolveRaid(party, host) {
   practise(home, 'war', SKILL.perRaid);
   practise(host, 'war', SKILL.perRaid);
   home.lastRaid = simDay;
+  /* Past a fair hand at war, a win teaches ruling — and a band that can rule,
+     winning by a wide enough margin, takes the village rather than robbing it. */
+  if (won && (home.skill.war || 0) >= CONQUEST.warFirst) practise(home, 'conquest', CONQUEST.perWin);
 
-  if (won) {
+  if (won && canTake(home, host, mine, theirs)) {
+    conquer(home, host);
+  } else if (won) {
     const food = Math.max(0, host.food) * RAID.takesFood;
     const stone = (host.stone || 0) * RAID.takesStone;
     host.food -= food;
@@ -510,6 +517,87 @@ export function resolveRaid(party, host) {
       const i = people.indexOf(who_);
       if (i >= 0) killPerson(i, 'raid');
     }
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Taking the village
+
+   A raid carries off a share of a neighbour's store. A band that has fought
+   enough to know how to hold what it takes can do more: past a fair hand at
+   `war`, winning raids teaches `conquest`, and a band with some of that which
+   wins by a wide margin takes the village itself.
+
+   Nobody moves. The village keeps its tents, its fire and its people, and
+   flies the conqueror's flag under the conqueror's name — remembering what it
+   was called, for its own history. Its store and its pile are pooled with
+   theirs, each skill is whichever of the two knew it better, and from then on
+   the tribe's villages share their food, so that one is not starving beside a
+   full one. Villages of one tribe never raid each other.
+   ------------------------------------------------------------------------- */
+export const CONQUEST = {
+  warFirst: 0.5,       // war a band needs before winning teaches it to rule
+  from: 0.25,          // conquest a band needs before it takes a village
+  margin: 2.0,         // how much stronger than the defenders, to take and not just rob
+  perWin: 0.05,        // conquest learned by a won raid
+  perTaking: 0.12,     // and by taking a village
+  share: 0.25,         // share of the gap between a tribe's villages' food moved in a sim-day
+};
+
+function canTake(home, host, mine, theirs) {
+  return (home.skill.conquest || 0) >= CONQUEST.from && mine > theirs * CONQUEST.margin && host.code !== home.code;
+}
+
+export function conquer(home, host) {
+  const was = `[${host.code}] ${host.name}`;
+  // One store, shared by the mouths in each; one pile and one stack, halved.
+  const need = (home.need || 1) + (host.need || 1);
+  const food = Math.max(0, home.food) + Math.max(0, host.food);
+  home.food = food * (home.need || 1) / need;
+  host.food = food - home.food;
+  const stone = (home.stone || 0) + (host.stone || 0), wood = (home.wood || 0) + (host.wood || 0);
+  home.stone = Math.min(SKILL.stoneMax, stone / 2);
+  host.stone = Math.min(SKILL.stoneMax, stone / 2);
+  home.wood = wood / 2;
+  host.wood = wood / 2;
+  /* What either knew, both know — for as long as somebody in each remembers
+     it, which is the rule every skill lives by. Told as it stands, so the
+     chronicle says "took" once rather than a ladder of "learned". */
+  for (const k in SKILLS) {
+    const v = Math.max(home.skill[k] || 0, host.skill[k] || 0);
+    home.skill[k] = v;
+    host.skill[k] = v;
+    home.told[k] = skillTier(v);
+    host.told[k] = skillTier(v);
+  }
+  host.pastCodes = [...(host.pastCodes || []), host.code];
+  host.villageName = host.villageName || host.name;
+  host.name = home.name;
+  host.code = home.code;
+  host.conqueredAt = simDay;
+  practise(home, 'conquest', CONQUEST.perTaking);
+  logEvent('conquest', `[${home.code}] ${home.name} took ${was} — it flies their flag now`, host.x, host.z);
+  dressCamp(host);
+  renderTribes();
+}
+
+/* A tribe's villages feed each other: food moves from where there is more for
+   the mouths to where there is less, a share of the gap a day, so the tribe is
+   one store in all but the walking. Nothing is invented; it only moves. */
+export function shareTribes(days) {
+  const tribes = new Map();
+  for (const c of camps) {
+    if (c.gone || !(c.pop > 0)) continue;
+    if (!tribes.has(c.code)) tribes.set(c.code, []);
+    tribes.get(c.code).push(c);
+  }
+  const k = Math.min(1, CONQUEST.share * days);
+  for (const list of tribes.values()) {
+    if (list.length < 2) continue;
+    const food = list.reduce((s, c) => s + Math.max(0, c.food), 0);
+    const need = list.reduce((s, c) => s + (c.need || 0), 0);
+    if (!(need > 0)) continue;
+    for (const c of list) c.food = Math.max(0, c.food) + (food * (c.need || 0) / need - Math.max(0, c.food)) * k;
   }
 }
 
@@ -1112,6 +1200,9 @@ export function updateEconomy(days) {
       break;                       // one at a time; the next can go tomorrow
     }
   }
+
+  // A tribe of more than one village shares what it has (conquest).
+  shareTribes(days);
 
   for (const c of camps) {
     if (c.pop > (c.peak || 0)) c.peak = c.pop;

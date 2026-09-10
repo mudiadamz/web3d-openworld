@@ -4437,11 +4437,11 @@ check('and the save carries the mastery, not the announcement', (() => {
    the simulation already had, because a skill that only shows on a readout is a
    readout.
    ------------------------------------------------------------------------- */
-check('there are nineteen of them', Object.keys(
+check('there are twenty of them', Object.keys(
   (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
     .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
     .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
-).length === 19);
+).length === 20);
 check('and every one of them does something', (() => {
   const want = [
     ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
@@ -7121,6 +7121,45 @@ check('a band that can dress stone stands its graves up, and older cairns stay c
 check('the kerb and the pyramid are drawn with the graves, so a dead band keeps them',
   /drawMasonry\(\);\n\n  for \(let i = n \* GRAVE_STONES/.test(html)
   && /const courses = ground \? Math\.round\(PYRAMID_COURSES \* \(camp\.skill\?\.stonework \|\| 0\)\) : 0;/.test(html));
+
+/* -------------------------------------------------------------------------
+   Conquest
+
+   After war, ruling: a band that can hold what it takes takes the village —
+   same name, same flag, one store — and a tribe's villages feed each other.
+   ------------------------------------------------------------------------- */
+group('conquest');
+check('ruling is learned by winning, once a band can fight',
+  /if \(won && \(home\.skill\.war \|\| 0\) >= CONQUEST\.warFirst\) practise\(home, 'conquest', CONQUEST\.perWin\);/.test(html));
+check('a band that can rule, winning by a wide margin, takes the village rather than robbing it',
+  /return \(home\.skill\.conquest \|\| 0\) >= CONQUEST\.from && mine > theirs \* CONQUEST\.margin && host\.code !== home\.code;/.test(html)
+  && /if \(won && canTake\(home, host, mine, theirs\)\) \{\s*conquer\(home, host\);\s*\} else if \(won\) \{/.test(html));
+check('which flies the conqueror\'s name and flag, and remembers what it was called',
+  /host\.name = home\.name;\s*host\.code = home\.code;/.test(html)
+  && /host\.villageName = host\.villageName \|\| host\.name;/.test(html)
+  && /host\.pastCodes = \[\.\.\.\(host\.pastCodes \|\| \[\]\), host\.code\];/.test(html));
+check('villages of one tribe never raid each other', /if \(c\.code === camp\.code\) continue;/.test(html));
+check('a tribe\'s villages share their food, and invent none of it', (() => {
+  const at = html.indexOf('function shareTribes');
+  const fn = new Function('camps', 'CONQUEST',
+    html.slice(at, html.indexOf('\n}', at) + 2) + '\nreturn shareTribes;');
+  const camps = [
+    { code: 'AB', pop: 5, food: 100, need: 10 }, { code: 'AB', pop: 5, food: 0, need: 10 },
+    { code: 'CD', pop: 5, food: 40, need: 10 },
+  ];
+  fn(camps, { share: 0.25 })(1);
+  const tribe = camps[0].food + camps[1].food;
+  return Math.abs(tribe - 100) < 1e-9 && camps[1].food > 0 && camps[0].food < 100 && camps[2].food === 40
+    ? true : JSON.stringify(camps.map((c) => c.food));
+})() === true);
+check('every village flies a flag in its tribe\'s colour',
+  /flagPole: 1,/.test(html) && /flagCloth: 1,/.test(html) && /setHSL\(hue \/ 360, 0\.7, 0\.5\)/.test(html)
+  && /dressFlag\(camp, index, here\);/.test(html));
+check('a taken village comes back under its new name and flag',
+  /cd: c\.code, vn: c\.villageName \|\| undefined/.test(html)
+  && /if \(typeof c\.cd === 'string' && c\.cd\) \{ usedCodes\.add\(c\.cd\); camps\[i\]\.code = c\.cd; \}/.test(html));
+check('and keeps the dead it had under its old name', /const mine = \(code\) => code === camp\.code \|\| \(camp\.pastCodes \|\| \[\]\)\.includes\(code\);/.test(html));
+check('a conquest is worth telling', /'conquest',   \/\/ a band took another's village/.test(html));
 
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);

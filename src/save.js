@@ -5,7 +5,7 @@ import { landing } from './rafts.js';
 import { setSeasonIndex } from './scene.js';
 import { stats } from './world.js';
 import {
-  lineage, nextPersonId, packs, recountAnimals, setLineage, setNextPersonId, takePersonId, usedNames
+  lineage, nextPersonId, packs, recountAnimals, setLineage, setNextPersonId, takePersonId, usedCodes, usedNames
 } from './wildlife.js';
 import {
   BUILDS, GARMENT, HAIR, SKIN, camps, drawGraves, graves, growPeople, paintPeople, people,
@@ -50,7 +50,10 @@ export function snapshot() {
     camps: camps.map((c) => ({ name: c.name, food: r2(c.food), history: c.history,
       skill: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, r2(c.skill[k] || 0)])),
       toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0,
-      stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0) })),
+      stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0),
+      // A village taken by another tribe: its code now, its name then (life.js, conquer).
+      cd: c.code, vn: c.villageName || undefined, pc: c.pastCodes?.length ? c.pastCodes : undefined,
+      ca: c.conqueredAt })),
     /* What is left in each quarry, by its place in the list — the seed lays the
        same deposits out in the same order, so the position is the name. */
     quarries: deposits.map((d) => d.left),
@@ -217,6 +220,11 @@ export function applySavedLife(st) {
     usedNames.delete(camps[i].name);
     camps[i].name = c.name;
     usedNames.add(c.name);
+    // A village taken by another tribe flies that tribe's code (life.js, conquer).
+    if (typeof c.cd === 'string' && c.cd) { usedCodes.add(c.cd); camps[i].code = c.cd; }
+    camps[i].villageName = c.vn || null;
+    camps[i].pastCodes = Array.isArray(c.pc) ? c.pc : [];
+    camps[i].conqueredAt = Number.isFinite(c.ca) ? c.ca : undefined;
     camps[i].food = c.food;
     // A save from before a band could learn anything has no skills in it.
     for (const key in SKILLS) {
