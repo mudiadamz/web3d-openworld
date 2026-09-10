@@ -2432,7 +2432,9 @@ src/
   clock.js      day length, pace, the simulation's stream of luck
   people.js     bodies, camps, the cairns
   life.js       food, hunts, skills, visits, splits, births, deaths
-  move.js       getting there, jobs, the creek surface, the camera rig
+  orchard.js    fruit on the trees: picking it, and it growing back
+  move.js       getting there, jobs, the camera rig
+  creeks.js     creeks: traced downhill, carved, and filled with water
   chronicle.js  events, the chronicle window, the band card, bisect
   save.js       snapshot and restore
   audio.js      nature sound

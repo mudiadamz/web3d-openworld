@@ -7,7 +7,8 @@ import { camera, faunaMaterial } from './scene.js';
 import { HIDDEN, _c, fauna, stats } from './world.js';
 import { drawingWorld, herdStride, lodStride, lodTurn, luck, turnStart } from './clock.js';
 import { inCamp, people, roundBox, roundLimb } from './people.js';
-import { killPerson, logEvent, nearestFruit, pickFruit, simDay, who } from './life.js';
+import { killPerson, logEvent, simDay, who } from './life.js';
+import { nearestFruit, pickFruit } from './orchard.js';
 import { rebuildFauna } from './move.js';
 import { updateHud } from './main.js';
 

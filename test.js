@@ -930,6 +930,26 @@ check('it takes one of each to have a child',
   /if \(mothers < 1 \|\| fathers < 1\) continue;/.test(html));
 check('and the mothers set the rate, not the head count',
   /chance = mothers \* 2 \* LIFE\.birthPerYear/.test(html));
+/* A mother nurses before she can carry again. Without it FERTILITY=3 was a
+   child every seven months per woman, and a world that ran on it starved
+   1,008 people, 80% of them children. */
+check('a mother nursing her last child is not counted as a mother',
+  /if \(p\.sex === 'f'\) \{ if \(!nursing\(p\)\) mothers\+\+; \} else fathers\+\+;/.test(html)
+  && /return p\.lastBirth != null && simDay - p\.lastBirth < LIFE\.birthGap \* P\.yearLength;/.test(html));
+check('nor picked as one', /if \(sex === 'f' && nursing\(p\)\) continue;/.test(html));
+check('and a birth starts her nursing', /mother\.lastBirth = simDay;/.test(html));
+check('which a reload remembers',
+  /lb: p\.lastBirth != null \? r2\(p\.lastBirth\) : undefined/.test(html)
+  && /lastBirth: Number\.isFinite\(r\.lb\) \? r\.lb : undefined/.test(html));
+check('two years or so, not a pause nobody would notice',
+  Number((html.match(/birthGap: ([\d.]+),/) || [, 0])[1]) >= 1.5);
+/* Children who go out bring back more the older they are. */
+const childHaulAt = (k) => Number((html.match(new RegExp(`${k}: ([\\d.]+),`)) || [, NaN])[1]);
+check('an older child brings home more than a younger one, and less than an adult',
+  childHaulAt('childHaul') < childHaulAt('childGrown') && childHaulAt('childGrown') < 1,
+  `${childHaulAt('childHaul')} to ${childHaulAt('childGrown')}`);
+check('and every haul a child makes goes through it',
+  (html.match(/childWorth\(p\)/g) || []).length >= 3 && !/p\.child \? FORAGE\.childHaul : 1/.test(html));
 check('the panel counts both', html.includes('${women}♀ ${men}♂'));
 check('and a save carries it', /sx: p\.sex/.test(html));
 
@@ -6828,7 +6848,7 @@ check('the colour is written when it changes hands, not every frame',
    the store gets is the sum it always was. */
 check('a foraging trip is counted as berries and fruit',
   /bagAdd\(p, 'berries', Math\.max\(1, Math\.round\(ground \* hands \/ BAG\.berry\)\)\);\s*bagAdd\(p, 'fruit', Math\.round\(fruit \/ ORCHARD\.worth\)\);/.test(html)
-  && /const got = \(ground \+ fruit\) \* baskets \* \(p\.child \? FORAGE\.childHaul : 1\);/.test(html));
+  && /const got = \(ground \+ fruit\) \* baskets \* childWorth\(p\);/.test(html));
 check('a catch as fish', /bagAdd\(p, 'fish', Math\.max\(1, Math\.round\(got \/ BAG\.fish\)\)\);/.test(html));
 check('a kill as the animal it was', /bagAdd\(p, 'game', 1, prey\.pack\.spec\.key\);/.test(html));
 check('and the basket is emptied with the haul, into the store',

@@ -77,6 +77,7 @@ export function snapshot() {
       lf: p.life != null ? r2(p.life) : undefined,
       e: r2(p.energy), nr: r2(p.nourish ?? 1), sk: r2(p.sick || 0), im: r2(p.immuneUntil || 0), sx: p.sex,
       sc: p.skin, sh: r2(p.skinShade), gc: p.garment, gh: r2(p.garmentShade), hc: p.hairColor,
+      lb: p.lastBirth != null ? r2(p.lastBirth) : undefined,
     })),
     /* Everyone who has ever lived. The living are saved below with everything
        they need to go on being alive; this is the record of the dead, which is
@@ -190,6 +191,8 @@ export function personFromRecord(r) {
     garment: r.gc ?? GARMENT[(Math.random() * GARMENT.length) | 0],
     garmentShade: Number.isFinite(r.gh) ? r.gh : 1,
     hairColor: r.hc ?? HAIR[(Math.random() * HAIR.length) | 0],
+    // Older saves never recorded it: nobody is nursing, which is how they were.
+    lastBirth: Number.isFinite(r.lb) ? r.lb : undefined,
     targetX: camp.x, targetZ: camp.z,
     crouch: 0, bend: 0, carry: r.hl > 0 ? 1 : 0, hasSpear: r.j === 'hunt', asleep: false, led: false, orders: null,
     hidden: false,

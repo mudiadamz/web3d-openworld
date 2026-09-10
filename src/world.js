@@ -10,7 +10,8 @@ import {
 import { clearFauna, pick } from './wildlife.js';
 import { clearTribe, inCamp, setGraveMesh, setGraves, setNearParts, tribeGroup } from './people.js';
 import { PATH, PATH_EARTH, clearPaths, takeWornTiles, tileFromKey, wearAt } from './paths.js';
-import { isWet, setWet, streams } from './move.js';
+import { setWet } from './creeks.js';
+import { isWet, streams } from './creeks.js';
 import { updateHud } from './main.js';
 
 /* -------------------------------------------------------------------------

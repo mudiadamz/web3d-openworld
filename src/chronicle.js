@@ -8,11 +8,9 @@ import { lineage, pick } from './wildlife.js';
 import { PERSON, rateIndex, worldClock } from './clock.js';
 import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from './people.js';
 import {
-  FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood,
-  wealthOf,
-  energyOutOfTen, isMilestone, milestonesOnly, personAge, skillTier,
-  runId, tollOf, traitWord, who, fruitNear
+  FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood, wealthOf, energyOutOfTen, isMilestone, milestonesOnly, personAge, skillTier, runId, tollOf, traitWord, who
 } from './life.js';
+import { fruitNear } from './orchard.js';
 import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
 import { ORES, depositRadius, deposits } from './quarries.js';
 import { preyNear } from './spear.js';

@@ -6,7 +6,7 @@ import { scene } from './scene.js';
 import { camps, inStoreArea } from './people.js';
 import { ORES, depositRadius, deposits } from './quarries.js';
 import { predatorNear, preyNear } from './spear.js';
-import { fruitNear, nearestRipeFruit } from './life.js';
+import { fruitNear, nearestRipeFruit } from './orchard.js';
 import { bagWords, hasLoad } from './bag.js';
 import { treeNear } from './danger.js';
 import { WOOD } from './wood.js';

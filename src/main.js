@@ -14,8 +14,9 @@ import { loadModels, recountAnimals, updateAnimals } from './wildlife.js';
 import { FF_STEP, NIGHT_SKIP_BASE, PACE_MAX_STEP, clockRate, ffStep, nightIdle, pace, rateIndex, setDrawingWorld, setWorldClock, skipping, tickWorldStep, worldClock } from './clock.js';
 import { camps, paintPeople, people } from './people.js';
 import {
-  bornCount, chronicle, diedCount, drawTribeChart, isMilestone, loadChronicle, logEvent, onNewDay, personAge, recoverForage, regrowFruit, renderChronicle, renderTribes, repopulate, setSimDay, simDay, startRun, updateEconomy, updateGround, updateLives
+  bornCount, chronicle, diedCount, drawTribeChart, isMilestone, loadChronicle, logEvent, onNewDay, personAge, recoverForage, renderChronicle, renderTribes, repopulate, setSimDay, simDay, startRun, updateEconomy, updateGround, updateLives
 } from './life.js';
+import { regrowFruit } from './orchard.js';
 import { buildWorld, placeCamera, recountBlades, updateCamps, updatePeople } from './move.js';
 import {
   moveCamera, restoreFocus, setViewMode, updateFollowCaption, updateShadowFocus, wireInput
