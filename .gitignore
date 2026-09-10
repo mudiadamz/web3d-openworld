@@ -13,3 +13,6 @@ vendor/
 # Written by deploy\service.ps1 — machine-specific paths and the service's own log.
 deploy/run.cmd
 logs/
+
+# The one dependency, installed from GitHub by `npm install`.
+node_modules/

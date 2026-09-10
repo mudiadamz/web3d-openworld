@@ -4,6 +4,9 @@
 
 `npm test` is two suites and they are three orders of magnitude apart in cost:
 
+`npm install` first: the people are the humans-threejs package, and both suites
+import it.
+
 | command | cost | when |
 |---|---|---|
 | `node test.js` | **0.35s**, 938 checks | default — run this |

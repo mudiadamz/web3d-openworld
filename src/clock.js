@@ -3,7 +3,7 @@ import { clamp, mulberry32 } from './noise.js';
 import { sunDir } from './scene.js';
 import { CAMP_CLEARING, people } from './people.js';
 import { $ } from './save.js';
-import { HUMAN_JOINTS, HUMAN_PARTS } from './human-parts.js';
+import { HUMAN_JOINTS, HUMAN_PARTS } from 'humans-threejs/human-parts.js';
 
 /* -------------------------------------------------------------------------
    How fast the clock runs
@@ -231,9 +231,9 @@ export function pace() { return clamp((P.paceDay || P.dayLength) / P.dayLength, 
 
    Lengths are in metres at scale 1, and the upper and lower halves overlap
    slightly at every joint so there is no gap to see through when it bends. */
-/* The body is the humans-threejs model (src/human-parts.js, vendored exactly as
-   it is generated there): fifteen pieces, each already hanging from its own
-   joint. So the rig takes its measurements from the model's joint table rather
+/* The body is the humans-threejs model — the package, installed from its GitHub
+   repository and tracking its main branch: fifteen pieces, each already
+   hanging from its own joint. So the rig takes its measurements from the model's joint table rather
    than keeping a second set that could drift away from the shapes. A thigh is
    exactly as long as the hip-to-knee the model was built around, and a foot
    lands on the ground because thigh, shin and ankle add up to the hip height —

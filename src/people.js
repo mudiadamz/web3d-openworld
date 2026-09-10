@@ -6,7 +6,7 @@ import { faunaMaterial, rockMaterial } from './scene.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, stats, world } from './world.js';
 import { recordPerson, setLineage, tribeVoice, uniqueName, usedCodes, usedNames } from './wildlife.js';
 import { PERSON, PERSON_PARTS, partsPer } from './clock.js';
-import { HUMAN_PARTS } from './human-parts.js';
+import { HUMAN_PARTS } from 'humans-threejs/human-parts.js';
 import { buildLooks, clearLooks, growLooks, undressAll } from './looks.js';
 import {
   FOOD, LIFE, chiefOf, emptySkills, hidePeopleFrom, nearestShore, newPerson, peopleCapacity, personAge, setPeopleCapacity, simDay

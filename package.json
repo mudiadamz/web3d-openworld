@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node dev.js",
     "serve": "node server.js",
+    "model": "npm install --no-audit --no-fund humans-threejs@github:mudiadamz/humans-threejs#main",
     "test": "node test.js && node test-boot.js",
     "boot": "node test-boot.js",
     "reset": "node reset.js",
@@ -18,5 +19,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "humans-threejs": "github:mudiadamz/humans-threejs#main"
   }
 }

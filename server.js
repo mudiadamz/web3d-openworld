@@ -10,6 +10,7 @@
  */
 
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +43,12 @@ const { values, explicit, notes } = resolveConfig(env);
 const server = resolveServer(env);
 
 for (const note of [...args.notes, ...notes, ...server.notes]) console.warn(`  ! ${note}`);
+/* The people are a dependency, served to the page out of node_modules. A
+   checkout that has not run `npm install` serves a page whose people cannot
+   load, which looks like a broken world rather than a missing step. */
+if (!existsSync(join(ROOT, 'node_modules', 'humans-threejs', 'human-parts.js'))) {
+  console.warn('  ! humans-threejs is not installed — run npm install, or nobody on the island can be drawn');
+}
 
 const db = openDb(join(ROOT, server.chronicle_db));
 const payload = { values, explicit, chronicle: Boolean(db) };

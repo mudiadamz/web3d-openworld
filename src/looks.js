@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { HUMAN_JOINTS, HUMAN_PARTS } from './human-parts.js';
+import { HUMAN_JOINTS, HUMAN_PARTS } from 'humans-threejs/human-parts.js';
 import { CHIEF_BAND, CHIEF_CLOTH } from './people.js';
 import { HIDDEN } from './world.js';
 

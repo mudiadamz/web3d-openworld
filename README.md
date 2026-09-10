@@ -8,12 +8,12 @@ new bands, bury their dead, and are still at it a century later.
 Nobody scripts any of that. It is a simulation, and the history is whatever
 happens.
 
-**No build step, no `node_modules`, no assets, no dependencies.** `index.html`
-and a folder of ES modules are the whole program; `node:http` and `node:fs` are
-the whole server. The people are the low-poly body from
-[humans-threejs](https://github.com/mudiadamz/humans-threejs), vendored as a
-module of plain arrays (`src/human-parts.js`) and hung on the simulation's own
-rig — and dressed in everything else the library makes: four builds, a hide
+**No build step, no assets, one dependency.** `index.html` and a folder of ES
+modules are the whole program; `node:http` and `node:fs` are the whole server.
+The dependency is the people: the low-poly body from
+[humans-threejs](https://github.com/mudiadamz/humans-threejs), installed from its
+GitHub repository on its main branch, loaded by the page straight out of
+`node_modules`, and hung on the simulation's own rig — and dressed in everything else the library makes: four builds, a hide
 tunic cut to each sex and build, six ways of wearing hair, three faces, the
 library's baskets of fruit, fish and meat, a small animal carried in the arms,
 and a pick and a knife for the work that uses them (`src/looks.js`).
@@ -62,16 +62,18 @@ chronicle beside it says what happened to them.*
 ```bash
 git clone https://github.com/mudiadamz/web3d-openworld
 cd web3d-openworld
+npm install                     # the one dependency: the people
 npm start                       # http://localhost:8080
 ```
 
-That is the whole setup. There is nothing to install.
+That is the whole setup.
 
 ## Run it
 
 Two ways, and the page is the same file in both.
 
-**As a static page.** `index.html` needs nothing but a web server:
+**As a static page.** After `npm install`, `index.html` needs nothing but a web
+server — the page loads the people from `node_modules`:
 
 ```bash
 python3 -m http.server 8000     # then open http://localhost:8000
@@ -88,8 +90,11 @@ npm start -- --port 8089        # ...or wherever. --host, --people, --map too
 `npm start` is the development server: it restarts whenever `.env`,
 `index.html`, anything in `src/` or the server's own files change, and the open
 page reloads itself when it comes back. Change a setting in `.env`, save, and the
-world is rebuilt with it. `npm run serve` is the same server without the
-watching, for leaving running; the Windows service runs that way too.
+world is rebuilt with it. It also asks GitHub for the newest humans-threejs
+before it starts, so a model pushed there is on the island at the next
+`npm start`; `npm run model` fetches it without restarting anything else.
+`npm run serve` is the same server without the watching or the fetching, for
+leaving running; the Windows service runs that way too.
 
 or without editing anything at all:
 
@@ -97,7 +102,7 @@ or without editing anything at all:
 DEER=90 CAMPS=4 QUALITY=low SEED=777 npm start
 ```
 
-No dependencies — `node:http` and `node:fs` are the whole server. Node 18+.
+One dependency, the people; `node:http` and `node:fs` are the whole server. Node 18+.
 
 Opening `index.html` straight off disk usually works too, but some browsers
 refuse ES modules on a `file://` page — if the loading screen sits there, it

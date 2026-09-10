@@ -3319,7 +3319,7 @@ check('nothing alive is a box any more at full quality',
    profile it is now tested for as a shape — wide at the hips, narrow at the
    waist, wide again at the chest — and there are two of them to test. */
 const { pathToFileURL: fileUrl } = await import('node:url');
-const { HUMAN_PARTS, HUMAN_JOINTS } = await import(fileUrl(join(SRC, 'human-parts.js')).href);
+const { HUMAN_PARTS, HUMAN_JOINTS } = await import('humans-threejs/human-parts.js');
 const ringsOf = (key) => {
   const a = HUMAN_PARTS[key].positions, by = new Map();
   for (let i = 0; i < a.length; i += 3) {
@@ -3344,8 +3344,22 @@ for (const key of ['torsoMale', 'torsoFemale']) {
 }
 check('the two torsos are two shapes',
   HUMAN_PARTS.torsoMale.positions.some((v, i) => v !== HUMAN_PARTS.torsoFemale.positions[i]));
+/* The package, not a copy of it: installed from GitHub on its main branch, so
+   the model on the island is whatever was last pushed there. */
+const partsSrc = readFileSync(join(ROOT, 'node_modules', 'humans-threejs', 'human-parts.js'), 'utf8');
 check('the model is plain data: nothing imported, nothing fetched',
-  !/^import /m.test(moduleSource('human-parts.js')) && !/fetch\(|await /.test(moduleSource('human-parts.js')));
+  !/^import /m.test(partsSrc) && !/fetch\(|await /.test(partsSrc));
+check('it comes from the humans-threejs package, not from a copy in src/',
+  !existsSync(join(SRC, 'human-parts.js'))
+  && srcFiles.every((f) => !/from '\.\/human-parts\.js'/.test(moduleSource(f)))
+  && ['clock.js', 'people.js', 'looks.js'].every((f) => moduleSource(f).includes("from 'humans-threejs/human-parts.js'")));
+check('the page finds it where npm put it',
+  html.includes('"humans-threejs/": "./node_modules/humans-threejs/"'));
+const deps = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).dependencies || {};
+check('installed from its GitHub repository, following main',
+  deps['humans-threejs'] === 'github:mudiadamz/humans-threejs#main', JSON.stringify(deps));
+check('and without the three.js it lists as a peer, which the page gets from its CDN',
+  /^omit=peer$/m.test(readFileSync(join(ROOT, '.npmrc'), 'utf8')));
 check('the page takes every piece of a body from the model',
   /const body = \(key\) => \{[\s\S]{0,200}?HUMAN_PARTS\[key\]\.positions\.slice\(\)/.test(html)
   && ['neck', 'head', 'upperArm', 'forearm', 'hand', 'thigh', 'calf', 'foot']
@@ -4141,6 +4155,19 @@ check('the reload is only offered in dev',
   && /\+ \(DEV \? DEV_SCRIPT : ''\)\);/.test(serverSrc));
 check('and the service never asks for it',
   !/DEV_RELOAD/.test(readFileSync(join(ROOT, 'deploy', 'service.ps1'), 'utf8')));
+/* The model is followed on its main branch: each npm start installs it by its
+   spec again, which makes npm look the branch up — a plain install would only
+   reinstall what the lockfile last wrote down. Done before the watchers exist,
+   and a lockfile event only restarts when the model it names has moved: the
+   first try restarted every start, on the lockfile its own install wrote. */
+check('npm start asks for the newest model before the server starts',
+  /\['install', [^\]]*`humans-threejs@\$\{spec\}`\]/.test(devSrc)
+  && devSrc.indexOf('updateModel();') < devSrc.indexOf('watch(ROOT,')
+  && devSrc.indexOf('updateModel();') < devSrc.lastIndexOf('start();'));
+check('and only a model that actually moved restarts it',
+  watched.includes("'package-lock.json'") && /if \(now === modelAt\) return;/.test(devSrc));
+check('npm run model fetches it without starting anything',
+  pkg.scripts.model === 'npm install --no-audit --no-fund humans-threejs@github:mudiadamz/humans-threejs#main');
 check('a restart is not held up by a page still listening for it',
   /for \(const stream of devStreams\) stream\.end\(\);\n\s*listening\.close\(/.test(serverSrc));
 

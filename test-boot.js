@@ -34,6 +34,14 @@ const readFileSync = (path, enc) => {
 };
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+/* The people's bodies are the humans-threejs package. Without `npm install`
+   there is nothing to hang a person on, and every check below would fail for
+   the same one reason — so say that reason instead. */
+const HUMANS_PATH = join(ROOT, 'node_modules', 'humans-threejs', 'human-parts.js');
+if (!existsSync(HUMANS_PATH)) {
+  console.log('\nboot check FAILED — humans-threejs is not installed: run npm install');
+  process.exit(1);
+}
 const THREE_PATH = process.env.THREE_PATH || join(ROOT, 'vendor', 'three.module.js');
 
 if (!existsSync(THREE_PATH)) {
@@ -459,7 +467,7 @@ export class Sky extends T.Mesh {
 
 /* The page asks for `three` by bare name, which the browser resolves through
    the importmap and Node does not resolve at all. Every module gets the same
-   four rewrites on its way into the temp directory. */
+   five rewrites on its way into the temp directory. */
 const useStubs = (src) => src
   .replace(/import \* as THREE from 'three';/, "import THREE from './three-stub.mjs';")
   .replace(/import \{ OrbitControls \} from 'three\/addons\/controls\/OrbitControls\.js';/,
@@ -467,7 +475,10 @@ const useStubs = (src) => src
   .replace(/import \{ Sky \} from 'three\/addons\/objects\/Sky\.js';/,
     "import { Sky } from './addons.mjs';")
   .replace(/import \{ GLTFLoader \} from 'three\/addons\/loaders\/GLTFLoader\.js';/,
-    "import { GLTFLoader } from './addons.mjs';");
+    "import { GLTFLoader } from './addons.mjs';")
+  /* A bare package name resolves from node_modules above the importing file,
+     and these copies live in a temp directory with none above it. */
+  .replace(/from 'humans-threejs\/human-parts\.js';/g, `from '${pathToFileURL(HUMANS_PATH).href}';`);
 
 /* Two shapes to boot, because the split happened one section at a time and the
    harness had to keep working across every step of it: the modules in src/ if
