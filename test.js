@@ -1476,7 +1476,7 @@ check('and that happens whenever the band changes', (() => {
 /* Laying the camp out again would shuffle it around them, because the layout
    comes off the camp's own rng and that rng moves on every call. */
 check('without laying the camp out again', /camp\.hutAt\[i\] = _m4\.clone\(\);/.test(html)
-  && /mesh\.setMatrixAt\(slot, key === style && i < want && camp\.hutAt\?\.\[i\] \? camp\.hutAt\[i\] : HIDDEN\)/.test(html));
+  && /mesh\.setMatrixAt\(slot, key === style && i < coreWant && camp\.hutAt\?\.\[i\] \? camp\.hutAt\[i\] : HIDDEN\)/.test(html));
 check('the drying rack only stands once they know what it is for',
   /RACK_KNOWN = [\d.]+;/.test(html)
   && /const knows = \(camp\.skill\?\.drying \|\| 0\) >= RACK_KNOWN;/.test(html));
@@ -5592,7 +5592,7 @@ check('and its own stones to ring it and logs to sit at',
 check('a fire is lit only once there are tents round it',
   /function hearthsFor\(families\) \{\s*return clamp\(Math\.ceil\(\(families \|\| 1\) \/ HUTS_PER_HEARTH\), 1, HEARTHS\)/
     .test(villageSrc)
-  && /camp\.hearths = here === 0 \? 0 : hearthsFor\(want\)/.test(villageSrc));
+  && /camp\.hearths = here === 0 \? 0 : city \? 1 : hearthsFor\(want\)/.test(villageSrc));
 check('so a band of one household still looks like one camp',
   /const lit = f < camp\.hearths;/.test(villageSrc));
 
@@ -7409,7 +7409,7 @@ check('and not made at all until a camp needs them',
 check('with granaries in the yards as the store fills, as in the core',
   /spots\.slice\(0, camp\.storesUp \|\| 0\)/.test(html));
 check('a camp laid out again loses its outskirts with it',
-  /camp\.outer = null;\s*camp\.reach = 0;/.test(html));
+  /camp\.outer = null;\s*(?:camp\.city = null;\s*)?camp\.reach = 0;/.test(html));
 
 /* -------------------------------------------------------------------------
    Raids you can see
@@ -7458,7 +7458,7 @@ group('cities');
     /if \(stage >= 4\) return 'townhouse';\s*if \(stage >= 3\) return 'house';/.test(vs));
   check('each made the first time any band builds one, on the tents\' spots',
     /const mesh = campParts\[key\] \|\| makeHouses\(key\);/.test(html)
-    && /key === style && i < want && camp\.hutAt\?\.\[i\] \? camp\.hutAt\[i\] : HIDDEN/.test(html));
+    && /key === style && i < coreWant && camp\.hutAt\?\.\[i\] \? camp\.hutAt\[i\] : HIDDEN/.test(html));
   check('a chiefdom has a hall, a city a market and a wall',
     /CIVIC = \{ hallAt: 2, marketAt: 4, wallAt: 4,/.test(html)
     && /stage >= CIVIC\.hallAt/.test(html) && /stage >= CIVIC\.marketAt/.test(html) && /stage >= CIVIC\.wallAt/.test(html));
@@ -7474,6 +7474,17 @@ group('cities');
   check('and deal there, which is how a city gets better at it',
     /if \(p\.job === 'market'\) \{\s*practise\(p\.camp, 'trade', SKILL\.perCall\);/.test(mv));
   check('and its children play in the square', /p\.job === 'play' && camp\.outer\?\.civic\?\.market && luck\(\) < 0\.5/.test(mv));
+  check('a city is laid out in streets: rows back to back, facing streets, a cross street every few houses',
+    /const CITY = \{ at: 4, along: [\d.]+, block: \d+, pair: [\d.]+, back: [\d.]+, plaza: \d+,/.test(html)
+    && /const v = j \* CITY\.pair \+ side \* CITY\.back;/.test(html) && /=== CITY\.block\) continue;/.test(html));
+  check('a house to a household, nearest the middle first, and each at its own door',
+    /if \(\(camp\.stage \|\| 0\) >= CITY\.at\) \{\s*const homes = cityPlotsFor\(camp, families\.length\);/.test(html)
+    && /return out\.sort\(\(a, b\) => a\.d - b\.d\);/.test(html));
+  check('and no rings round fires any more: only the fire at the middle of the plaza',
+    /const coreWant = city \? 0 : want;/.test(html) && /camp\.outerShown = city \|\| here === 0/.test(html));
+  check('the houses keep off the hall and the market, which are placed first',
+    /claimCivic\(camp, 'hall'\);\s*claimCivic\(camp, 'market'\);\s*c\.cand \|\|= cityCandidates\(camp\);/.test(html)
+    && ['camp.barrow', 'camp.field', 'camp.storeSpots', "['hall', 'market']", 'trees.some'].every((t) => (bodyOf('cityGround') || '').includes(t)));
   check('the caption knows the market', /market: 'trading at the market'/.test(html) && /market: 'off to the market'/.test(html));
 }
 

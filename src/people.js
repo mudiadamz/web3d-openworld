@@ -14,8 +14,8 @@ import {
 import { codeColor, takeTribeCode } from './ui.js';
 import { FIELD, dressField, farmGeometries } from './farming.js';
 import { HOUSE_KEYS, TENT_KEYS, tentGeometries, tentMaterial, tentStyle } from './village.js';
-import { campReach, CIVIC, claimCivic, dressCivic, dressOutskirts, extendOutskirts, makeHouses, OUTSKIRTS } from './settlement.js';
-export { CIVIC, OUTSKIRTS, campReach, claimCivic, dressCivic, dressOutskirts, extendOutskirts } from './settlement.js';
+import { campReach, CITY, cityPlotsFor, CIVIC, claimCivic, dressCivic, dressOutskirts, extendOutskirts, makeHouses, OUTSKIRTS } from './settlement.js';
+export { CITY, CIVIC, OUTSKIRTS, campReach, claimCivic, cityPlotsFor, dressCivic, dressOutskirts, extendOutskirts } from './settlement.js';
 /* The outskirts and what a larger place builds were lifted out into settlement.js
    when this file passed the length of the page it came from; see there. */
 
@@ -706,6 +706,22 @@ export function assignHuts(camp) {
   if (!camp?.huts?.length) return;
   const families = familiesOf(camp);
   camp.families = families.length;
+  /* A city is laid out in streets, not round fires (settlement.js): a house to
+     a household, nearest the middle first, and each sits at its own doorstep. */
+  if ((camp.stage || 0) >= CITY.at) {
+    const homes = cityPlotsFor(camp, families.length);
+    families.forEach((f, i) => {
+      const home = homes[Math.min(i, homes.length - 1)];
+      const fire = home ? home.step : camp.fireAt?.[0];
+      // One of the camp's own places to sit, as every hearth is.
+      if (home && camp.fireAt && camp.fireAt[home.step.slot] !== home.step) {
+        home.step.slot = camp.fireAt.length;
+        camp.fireAt.push(home.step);
+      }
+      for (const p of [...f.adults, ...f.kids]) { p.hut = home ? home.door : camp.huts[0]; p.hearth = fire; }
+    });
+    return;
+  }
   /* Past the core's fifty, the outskirts: laid out as far as there are
      households to fill them. A household past the last good spot shares the
      core's last tent, as every household past fifty used to. */
@@ -803,8 +819,14 @@ export function dressCamp(camp, pack = true) {
   assignHuts(camp);
   const here = people.reduce((n, p) => n + (p.camp === camp ? 1 : 0), 0);
   const want = here === 0 ? 0 : clamp(camp.families || Math.ceil(here / 2), 1, P0.huts);
+  /* A city has no rings of tents or houses round fires: its houses are on its
+     streets (settlement.js), and of its fires it keeps only the one at the
+     middle of its plaza. */
+  const city = (camp.stage || 0) >= CITY.at;
+  const coreWant = city ? 0 : want;
+  camp.cityShown = city && here > 0 ? Math.min(camp.families || 0, camp.city?.homes.length || 0) : 0;
   // And every household past the core's fifty, in the outskirts (dressOutskirts).
-  camp.outerShown = here === 0 || !camp.outer ? 0 : Math.min(Math.max(0, (camp.families || 0) - P0.huts), camp.outer.seats.length);
+  camp.outerShown = city || here === 0 || !camp.outer ? 0 : Math.min(Math.max(0, (camp.families || 0) - P0.huts), camp.outer.seats.length);
   /* Which kind of tent they put up is how well they build (village.js): the
      plain cone, then hides on poles, then painted, then a lodge. Every kind has
      a slot for every tent; the kinds this band does not build are parked. */
@@ -814,7 +836,7 @@ export function dressCamp(camp, pack = true) {
     if (!mesh) continue;
     for (let i = 0; i < P0.huts; i++) {
       const slot = index * P0.huts + i;
-      mesh.setMatrixAt(slot, key === style && i < want && camp.hutAt?.[i] ? camp.hutAt[i] : HIDDEN);
+      mesh.setMatrixAt(slot, key === style && i < coreWant && camp.hutAt?.[i] ? camp.hutAt[i] : HIDDEN);
     }
     mesh.instanceMatrix.needsUpdate = true;
     // Only as far as the bands there are: the rest of the room is for bands not yet founded.
@@ -827,7 +849,7 @@ export function dressCamp(camp, pack = true) {
     const mesh = campParts[key] || makeHouses(key);
     for (let i = 0; i < P0.huts; i++) {
       const slot = index * P0.huts + i;
-      mesh.setMatrixAt(slot, key === style && i < want && camp.hutAt?.[i] ? camp.hutAt[i] : HIDDEN);
+      mesh.setMatrixAt(slot, key === style && i < coreWant && camp.hutAt?.[i] ? camp.hutAt[i] : HIDDEN);
     }
     mesh.instanceMatrix.needsUpdate = true;
     mesh.count = Math.min(mesh.instanceMatrix.count, camps.length * P0.huts);
@@ -837,7 +859,7 @@ export function dressCamp(camp, pack = true) {
      no tents round it is a fire nobody is sitting at, which reads as a camp
      twice the size of the band living in it — the thing lighting them all
      unconditionally would do. */
-  camp.hearths = here === 0 ? 0 : hearthsFor(want);
+  camp.hearths = here === 0 ? 0 : city ? 1 : hearthsFor(want);
   const perFireStones = P0.stones / HEARTHS, perFireLogs = P0.logs / HEARTHS;
   for (let f = 0; f < HEARTHS; f++) {
     const lit = f < camp.hearths;
@@ -984,6 +1006,7 @@ export function layoutCamp(camp, index) {
   camp.huts = [];
   // Laid out again from nothing, so the outskirts and the ground they took go too.
   camp.outer = null;
+  camp.city = null;
   camp.reach = 0;
 
   /* Every hut a camp could have is placed; how many of them are standing is

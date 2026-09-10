@@ -6,7 +6,7 @@ import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, treeSpots } from './w
 import { FIELD } from './farming.js';
 import { civicGeometries, houseGeometry, tentMaterial, tentStyle } from './village.js';
 import {
-  CAMP_CLEARING, CAMP_PIECES, campCapacity, campParts, camps, GRAVE_SPACING, HEARTHS, PALE, people, STORE_FLAT, STORE_SCALE, STORE_SPOTS, STORE_STAND, STORE_THATCH, STORE_WALL, TENT_REACH, tribeGroup
+  CAMP_CLEARING, CAMP_PIECES, campCapacity, campParts, camps, GRAVE_SPACING, HEARTHS, PALE, people, STORE_FLAT, STORE_SCALE, STORE_SPOTS, STORE_STAND, STORE_THATCH, STORE_WALL, STORES, TENT_REACH, tribeGroup
 } from './people.js';
 
 /* -------------------------------------------------------------------------
@@ -185,6 +185,106 @@ export function extendOutskirts(camp, seats) {
   return o;
 }
 
+/* -------------------------------------------------------------------------
+   A city is laid out in streets
+
+   A camp is fires with tents round them, and so is a village — houses round
+   hearths. A city is not: it is rows of houses along streets, and a household
+   sits at its own door rather than round a fire it shares with nine others. So
+   a city gets a plan of its own, on a grid turned to the camp's own bearing:
+   rows back to back, each facing a street five metres wide, a cross street
+   every six houses, and an open plaza at the middle round the one fire it
+   keeps. Every household has a house, nearest the middle first, so a city
+   fills out from its heart — no fifty-house core, no rings.
+
+   The plan is worked out once, from where the camp is, and a plot is skipped
+   rather than moved: in the water, on a hillside, on the dead or the field, on
+   the granaries, the hall or the market (claimed first, so the houses keep off
+   them), among trees, or crowding the next place. Every twelfth good plot is a
+   granary rather than a house.
+   ------------------------------------------------------------------------- */
+export const CITY = { at: 4, along: 4.2, block: 6, pair: 11.4, back: 1.7, plaza: 10, reach: 150, storeEvery: 12 };
+
+function cityCandidates(camp) {
+  const th = camp.hearthTurn || 0;
+  const ux = Math.cos(th), uz = Math.sin(th), vx = -uz, vz = ux;
+  const out = [];
+  const J = Math.ceil(CITY.reach / CITY.pair), I = Math.ceil(CITY.reach / CITY.along);
+  for (let j = -J; j <= J; j++) {
+    for (const side of [-1, 1]) {
+      // Back to back, each row facing out onto its street.
+      const v = j * CITY.pair + side * CITY.back;
+      for (let i = -I; i <= I; i++) {
+        if ((((i % (CITY.block + 1)) + CITY.block + 1) % (CITY.block + 1)) === CITY.block) continue;   // a cross street
+        const u = i * CITY.along;
+        const d = Math.hypot(u, v);
+        if (d < CITY.plaza || d > CITY.reach) continue;
+        out.push({ x: camp.x + ux * u + vx * v, z: camp.z + uz * u + vz * v, d, fx: side * vx, fz: side * vz });
+      }
+    }
+  }
+  return out.sort((a, b) => a.d - b.d);
+}
+
+function cityGround(camp, q, trees) {
+  const sx = q.x + q.fx * 3.2, sz = q.z + q.fz * 3.2;
+  if (sampleHeight(q.x, q.z) < SEA + 1.2 || sampleHeight(sx, sz) < SEA + 1 || flatnessAt(q.x, q.z) < 0.72) return false;
+  if (camp.barrow) {
+    const ring = Math.ceil((Math.sqrt(Math.max(1, (camp.buried || 0) + 100)) - 1) / 2);
+    const half = (ring + 0.5) * GRAVE_SPACING + 0.3;
+    if (Math.hypot(q.x - camp.barrow.x, q.z - camp.barrow.z) < half * 1.6 + 4) return false;
+  }
+  if (camp.field) {
+    const most = FIELD.maxLen / 2 + (CAMP_PIECES.rows * FIELD.spacing) / 2 + 4;
+    if (Math.hypot(q.x - camp.field.x, q.z - camp.field.z) < most + 3) return false;
+  }
+  for (const s of camp.storeSpots || []) if (Math.hypot(q.x - s.x, q.z - s.z) < 4.2) return false;
+  for (const kind of ['hall', 'market']) {
+    const c = camp.outer?.civic?.[kind];
+    if (c && Math.hypot(q.x - c.x, q.z - c.z) < (kind === 'hall' ? 11 : 10)) return false;
+  }
+  for (const c of camps) {
+    if (c === camp || c.gone) continue;
+    if (Math.hypot(q.x - c.x, q.z - c.z) < campReach(c) + 6) return false;
+  }
+  return !trees.some((t) => Math.hypot(t.x - q.x, t.z - q.z) < 2.4);
+}
+
+/** A house for each of n households, and the granaries among them, kept. */
+export function cityPlotsFor(camp, n) {
+  if (!camp.city || camp.city.x !== camp.x || camp.city.z !== camp.z) {
+    camp.city = { x: camp.x, z: camp.z, cand: null, next: 0, homes: [], stores: [], trees: null };
+  }
+  const c = camp.city;
+  // The hall and the market first, so no house is ever put up where they go.
+  claimCivic(camp, 'hall');
+  claimCivic(camp, 'market');
+  c.cand ||= cityCandidates(camp);
+  c.trees ||= treeSpots.filter((t) => Math.hypot(t.x - camp.x, t.z - camp.z) < CITY.reach + 6);
+  while (c.homes.length < n && c.next < c.cand.length) {
+    const slot = c.next++;
+    const q = c.cand[slot];
+    if (!cityGround(camp, q, c.trees)) continue;
+    const jitter = mulberry32(outerSeed(camp, 100000 + slot));
+    _e.set(0, Math.atan2(q.fx, q.fz), 0); _q.setFromEuler(_e);
+    _v.set(q.x, sampleHeight(q.x, q.z) - 0.1, q.z);
+    if ((c.homes.length + c.stores.length) % CITY.storeEvery === CITY.storeEvery - 1) {
+      _s.setScalar(STORE_SCALE);
+      c.stores.push({ at: _m4.compose(_v, _q, _s).clone() });
+      continue;
+    }
+    const sc = 0.95 + jitter() * 0.15;
+    _s.set(sc, sc * (0.85 + jitter() * 0.35), sc);
+    const at = _m4.compose(_v, _q, _s).clone();
+    const hide = 0x6d5740 + ((jitter() * 0x101010) | 0);
+    const door = { x: q.x + q.fx * 2.2, z: q.z + q.fz * 2.2 };
+    const step = { x: q.x + q.fx * 3.2, y: sampleHeight(q.x + q.fx * 3.2, q.z + q.fz * 3.2), z: q.z + q.fz * 3.2 };
+    c.homes.push({ x: q.x, z: q.z, at, hide, door, step });
+    spread(camp, q.x, q.z, 3);
+  }
+  return c.homes;
+}
+
 /* Drawn packed, not slotted per camp: the core gives every camp fifty tents
    whether it has them or not, and the outskirts of one city can be a thousand.
    So every camp's outskirts go one after another into shared meshes, rewritten
@@ -266,7 +366,14 @@ export function dressOutskirts() {
     return fires;
   };
   const yardsOf = (camp) => Math.min(camp.outer.yards.length, Math.floor((camp.outerLit || 0) / OUTSKIRTS.storeEvery));
+  // A city's houses and granaries go in the same brick and granary meshes.
+  const cityStores = (camp) => Math.min(camp.city.stores.length,
+    Math.round(Math.floor(camp.cityShown / (CITY.storeEvery - 1)) * Math.min(1, (camp.storesUp || 0) / STORES)));
   for (const camp of camps) {
+    if (camp.cityShown && camp.city) {
+      need.outTownhouse += camp.cityShown;
+      need.outStores += cityStores(camp);
+    }
     camp.outerLit = camp.outer && !camp.gone ? lit(camp) : 0;
     if (!camp.outerLit) continue;
     need[OUT_TENTS[tentStyle(camp)]] += Math.min(camp.outerShown, camp.outer.seats.length);
@@ -280,6 +387,20 @@ export function dressOutskirts() {
   for (const camp of camps) {
     camp.outerFires = [];
     camp.outerStores = [];
+    if (camp.cityShown && camp.city) {
+      for (const h of camp.city.homes.slice(0, camp.cityShown)) {
+        const i = n.outTownhouse++;
+        campParts.outTownhouse.setMatrixAt(i, h.at);
+        campParts.outTownhouse.setColorAt(i, _c.setHex(h.hide).lerp(PALE, 0.72));
+      }
+      for (const st of camp.city.stores.slice(0, cityStores(camp))) {
+        const i = n.outStores++;
+        campParts.outStores.setMatrixAt(i, st.at);
+        campParts.outStoreRoofs.setMatrixAt(i, st.at);
+        campParts.outStores.setColorAt(i, _c.setHex(STORE_WALL));
+        campParts.outStoreRoofs.setColorAt(i, _c.setHex(STORE_THATCH));
+      }
+    }
     if (!camp.outerLit) continue;
     const key = OUT_TENTS[tentStyle(camp)], mesh = campParts[key];
     let left = camp.outerShown;
