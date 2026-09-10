@@ -4914,12 +4914,21 @@ group('surviving');
    change — a starving, weak band spent 58% of its time at the fire and 2% of it
    hunting, and resting could not help because the nourishment ceiling was down.
    There was nothing to recover on. */
+/* The daily round a fed band keeps, read off the page rather than copied — a
+   copy of these numbers is how this harness went on testing the old ones. */
+const ROUTINE = Number((html.match(/^\s*routine: ([\d.]+),/m) || [, NaN])[1]);
+const HUNT_ROUTINE = Number((html.match(/^\s*huntRoutine: ([\d.]+),/m) || [, NaN])[1]);
+check('the page weighs its jobs the way this harness does',
+  /\['gather', \(FORAGE\.routine \+ 0\.54 \* hunger\) \* \(0\.3 \+ 0\.7 \* rested \+ 0\.7 \* hunger\)\]/.test(html)
+  && /\['hunt', \(FORAGE\.huntRoutine \+ 0\.28 \* hunger\) \* Math\.max\(rested \* rested, 0\.25 \* hunger\)\]/.test(html)
+  && /\['tend', 0\.06 \+ 0\.12 \* \(1 - hunger\) \+ 0\.5 \* restWorth\]/.test(html)
+  && ROUTINE > 0 && HUNT_ROUTINE > 0);
 const jobsAt = (h, r) => {
   const w = [
-    ['gather', (0.10 + 0.62 * h) * (0.3 + 0.7 * r + 0.7 * h)],
-    ['hunt', (0.05 + 0.37 * h) * Math.max(r * r, 0.25 * h)],
+    ['gather', (ROUTINE + 0.54 * h) * (0.3 + 0.7 * r + 0.7 * h)],
+    ['hunt', (HUNT_ROUTINE + 0.28 * h) * Math.max(r * r, 0.25 * h)],
     ['craft', 0.30 * (1 - h)],
-    ['tend', 0.06 + 0.22 * (1 - h) + 0.5 * (1 - r) * (1 - h)],
+    ['tend', 0.06 + 0.12 * (1 - h) + 0.5 * (1 - r) * (1 - h)],
   ];
   const total = w.reduce((n, x) => n + x[1], 0);
   return Object.fromEntries(w.map(([k, v]) => [k, v / total]));
@@ -4931,6 +4940,11 @@ check('and spends almost nothing at the fire',
   desperate.tend < 0.15, `tend ${(desperate.tend * 100).toFixed(0)}%`);
 check('while a fed one still has time for everything else',
   jobsAt(0, 1).craft > 0.3, `craft ${(jobsAt(0, 1).craft * 100).toFixed(0)}%`);
+/* And a full store is not a reason to stop: a band whose fields keep it fed
+   still goes out for food as the day's work, rather than sitting in camp. */
+check('and a fed band still goes out foraging and hunting every day',
+  jobsAt(0, 1).gather + jobsAt(0, 1).hunt > 0.4,
+  `forage ${(jobsAt(0, 1).gather * 100).toFixed(0)}%, hunt ${(jobsAt(0, 1).hunt * 100).toFixed(0)}%`);
 check('foraging rises with hunger at every state of tiredness',
   [0, 0.3, 0.6, 1].every((r) => jobsAt(1, r).gather > jobsAt(0.2, r).gather));
 

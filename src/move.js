@@ -367,6 +367,14 @@ export const FORAGE = {
   childRange: 0.55,    // and how far from the fire they will go
   ringFeeds: 14,       // people the 95 m ring round a fire feeds with food to spare
   ringMax: 2.5,        // and how many times that far a big band will walk
+  /* What a fed band still does. Foraging and hunting are the daily round of
+     people who live off the land, not an emergency: they go out whether the
+     store is full or not, and hunger sends more of them. With nothing but
+     hunger behind them, a band whose fields and flock kept the store full
+     spent its days knapping and sitting at the fire — 14% of its errands were
+     foraging and 7% hunting, against 41% knapping and 38% at the fire. */
+  routine: 0.28,       // foraging's weight when nobody is hungry
+  huntRoutine: 0.14,   // and hunting's
 };
 
 /* What a child's hands are worth against an adult's, rising with age. It was
@@ -651,12 +659,14 @@ export function chooseJob(p, day) {
          pace that costs anything, so somebody with nothing left can still walk
          out and pick — it is the one useful thing they can still do, and it was
          the thing tiredness was suppressing. */
-      ['gather', (0.10 + 0.62 * hunger) * (0.3 + 0.7 * rested + 0.7 * hunger)],
+      ['gather', (FORAGE.routine + 0.54 * hunger) * (0.3 + 0.7 * rested + 0.7 * hunger)],
       /* Hunting still wants a rested body, because it is a jog and a throw —
          but a starving band will try it anyway rather than not eat. */
-      ['hunt', (0.05 + 0.37 * hunger) * Math.max(rested * rested, 0.25 * hunger)],
+      ['hunt', (FORAGE.huntRoutine + 0.28 * hunger) * Math.max(rested * rested, 0.25 * hunger)],
       ['craft', 0.30 * (1 - hunger)],
-      ['tend', 0.06 + 0.22 * (1 - hunger) + 0.5 * restWorth],
+      /* Less of the fed afternoon at the fire than there was: that time goes
+         to the daily round above. */
+      ['tend', 0.06 + 0.12 * (1 - hunger) + 0.5 * restWorth],
       /* Sitting with whoever is ill. Weighted by how many of them there are
          and how much is in the store — a band with nothing to eat cannot spare
          anybody to nurse, which is the same band the sickness is worst in. */
