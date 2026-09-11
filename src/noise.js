@@ -82,18 +82,37 @@ export let hOffset = 0;   // slides the island so spawn always sits above the wa
    smooth mound. 0.0045 puts ~7 hill cells across 1600 units; the range mask at
    0.0019 gives about three mountain regions. Retuning any of these is the
    fastest way to change what the world looks like. */
+export const LAND = {
+  plain: 5,            // metres above the sea the open country lies at
+  roll: 6,             // and how far it rolls, top to bottom, over a few hundred metres
+  floor: 2.5,          // the lowest inland ground: above the sea, so none of it is under water
+  soft: 1.5,           // metres over which the floor eases in, so a valley bottom is not a shelf
+};
+
 export function rawHeight(x, z) {
   const s = P.seed;
-  const hills = (fbm(x * 0.0045, z * 0.0045, 5, s) - 0.45) * 90;
-  const range = smoothstep(0.44, 0.66, fbm(x * 0.0019 + 31.7, z * 0.0019 - 12.4, 3, s + 900));
+  /* Mostly open country: a plain that rolls a few metres, with the hills kept
+     to a few regions of their own (`hilly`) rather than everywhere, and the
+     mountain ranges a little rarer than they were. */
+  const hilly = smoothstep(0.55, 0.75, fbm(x * 0.0016 - 7.3, z * 0.0016 + 19.1, 3, s + 1300));
+  const hills = (fbm(x * 0.0045, z * 0.0045, 5, s) - 0.45) * 90 * hilly;
+  const range = smoothstep(0.54, 0.74, fbm(x * 0.0019 + 31.7, z * 0.0019 - 12.4, 3, s + 900));
   const mountains = ridged(x * 0.0026, z * 0.0026, 4, s + 400) * 170 * range;
-  const detail = (fbm(x * 0.020, z * 0.020, 3, s + 1700) - 0.5) * 3.4;
+  const roll = (fbm(x * 0.0030, z * 0.0030, 3, s + 2100) - 0.5) * LAND.roll;
+  const detail = (fbm(x * 0.020, z * 0.020, 3, s + 1700) - 0.5) * 1.6;
 
   // A calm meadow around the origin: somewhere to stand and watch the grass.
   const d = Math.hypot(x, z);
   const calm = smoothstep(40, 280, d);
 
-  let h = hills * (0.25 + 0.75 * calm) + mountains * calm + detail;
+  let h = LAND.plain + roll + hills * (0.25 + 0.75 * calm) + mountains * calm + detail + hOffset;
+  /* No sea in the middle of the island. A hollow in the hills used to fill to
+     sea level and leave a pond or an inland sea wherever the noise dipped: a
+     quarter of the middle of one island was water. Now the lowest inland
+     ground is a flat valley floor above the water, eased in (a soft maximum) so
+     there is no shelf where it starts. The only water inland is where a creek
+     ends in a lake, which creeks.js carves, and the only sea is past the coast. */
+  h = LAND.floor + LAND.soft * Math.log1p(Math.exp((h - LAND.floor) / LAND.soft));
 
   /* The island falloff, so the map ends in sea rather than at a cliff — and in
      fractions of the map's own half-width, not in metres.
@@ -118,7 +137,7 @@ export function rawHeight(x, z) {
      the same fall is spread over more metres. */
   const half = WORLD / 2;
   h -= smoothstep(half * 0.78, half * 1.12, d) * 95;
-  return h + hOffset;
+  return h;
 }
 
 /* The height *field*: sampled once at terrain resolution, then everything else

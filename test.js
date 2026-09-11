@@ -5525,6 +5525,37 @@ check('the map still ends in water rather than at a cliff',
   islands.every((r) => r.rim < 0.25),
   islands.map((r) => `${r.w}: ${pct(r.rim)} of the rim is land`).join(' · '));
 
+/* Mostly open country, and no sea in the middle of it: a hollow in the hills
+   used to fill to sea level, and a quarter of the middle of one island was
+   water. The only inland water is where a creek ends in a lake, and those are
+   carved later (creeks.js), not in the height field. */
+function surveyMiddle(seed, WORLD = 1600, N = 80) {
+  const t = makeTerrain({ seed }, WORLD);
+  t.settle();
+  const half = WORLD / 2, e = WORLD / N / 2;
+  let middle = 0, wet = 0, land = 0, flat = 0;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const x = -half + (i + 0.5) * WORLD / N, z = -half + (j + 0.5) * WORLD / N;
+      const h = t.rawHeight(x, z);
+      if (Math.hypot(x, z) < half * 0.7) { middle++; if (h <= 0) wet++; }
+      if (h <= 0) continue;
+      land++;
+      const slope = Math.hypot(t.rawHeight(x + e, z) - t.rawHeight(x - e, z), t.rawHeight(x, z + e) - t.rawHeight(x, z - e)) / (2 * e);
+      if (slope < 0.12) flat++;
+    }
+  }
+  return { wet: wet / middle, flat: flat / land };
+}
+const middles = [1, 3, 20260906].map((seed) => ({ seed, ...surveyMiddle(seed) }));
+check('no sea in the middle of the island', middles.every((m) => m.wet === 0),
+  middles.map((m) => `seed ${m.seed}: ${pct(m.wet)} of the middle is water`).join(' · '));
+check('and most of the land is open, flat country', middles.every((m) => m.flat > 0.6),
+  middles.map((m) => `seed ${m.seed}: ${pct(m.flat)} flat`).join(' · '));
+check('the lowest inland ground is a floor above the water, eased in',
+  /h = LAND\.floor \+ LAND\.soft \* Math\.log1p\(Math\.exp\(\(h - LAND\.floor\) \/ LAND\.soft\)\);/.test(moduleSource('noise.js'))
+  && /floor: ([\d.]+),/.test(moduleSource('noise.js')) && Number(moduleSource('noise.js').match(/floor: ([\d.]+),/)[1]) > 0);
+
 /* Asserted on the line itself rather than on the absence of the old one: the
    comment above it quotes `smoothstep(540, 820, d)` to say what it used to be,
    and a check that greps the whole file for that string fails on the
