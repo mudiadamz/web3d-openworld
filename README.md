@@ -1641,7 +1641,8 @@ whichever heading gets them there soonest. Worn paths get used, and get deeper.
 
 The land is mostly open, flat country: a plain that rolls a few metres, with
 hills kept to a few regions and the mountain ranges rarer. There is no sea in
-the middle of the island. The lowest inland ground is a valley floor above the
+the middle of the island, and the sea's swell dies before the coast, so no
+wave stands up through the plains. The lowest inland ground is a valley floor above the
 water, so the only water inland is a lake where a creek ends.
 
 The big map has a Creeks layer: every creek, from the spring or glacier it

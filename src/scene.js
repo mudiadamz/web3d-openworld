@@ -343,7 +343,15 @@ export const waterUniforms = {
   uTime: windUniforms.uTime,        // the same clock as the wind that raises it
   uWaves: { value: 1 },
   uRipple: { value: 1 },
+  /* Where the swell dies: the sea plane lies under the whole island, and the
+     open country is only a few metres above it (noise.js). A swell of up to
+     3.3 m, crest over trough, standing through the plains read as the land
+     being under water. So it is calm inside SWELL_CALM of the island's
+     half-width, where there is no sea any more, and builds to its full height
+     by SWELL_FULL: off the coast, the way a swell dies on a beach. */
+  uIslandHalf: { value: WORLD / 2 },
 };
+export const SWELL_CALM = 0.80, SWELL_FULL = 0.95;
 
 /* Swell in the vertex shader, ripples in the fragment.
 
@@ -364,6 +372,7 @@ export function applyWaterShader(material, { swell = false, flow = false } = {})
         #include <common>
         uniform float uTime;
         uniform float uWaves;
+        uniform float uIslandHalf;
         uniform vec2  uWindDir;
         uniform float uWindStrength;
         varying vec2 vWorldXZ;
@@ -374,7 +383,8 @@ export function applyWaterShader(material, { swell = false, flow = false } = {})
         ${swell ? `
         vec2 wd = normalize(uWindDir + vec2(1e-4));
         vec2 wc = vec2(-wd.y, wd.x);
-        float amp = uWaves * (0.35 + uWindStrength * 1.5);
+        float offshore = smoothstep(uIslandHalf * ${SWELL_CALM.toFixed(2)}, uIslandHalf * ${SWELL_FULL.toFixed(2)}, length(position.xz));
+        float amp = uWaves * (0.35 + uWindStrength * 1.5) * offshore;
         float k1 = 0.042, k2 = 0.068, k3 = 0.115;
         vec2 d2 = normalize(wd * 0.7 + wc * 0.7);
         float p1 = dot(position.xz, wd) * k1 - uTime * 0.9;

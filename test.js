@@ -7901,6 +7901,18 @@ group('creeks on the map');
     /put\('creeks', path\[0\]\.x, path\[0\]\.z, creekWords\(path\)/.test(mp) && /creeks: \{ icon: 'spring'/.test(mp) && Boolean(ICON_PATHS?.spring));
 }
 
+group('the sea stays at sea');
+{
+  const sc = moduleSource('scene.js'), no = moduleSource('noise.js');
+  const calm = Number((sc.match(/SWELL_CALM = ([\d.]+)/) || [, 0])[1]);
+  const inland = Number((no.match(/h -= smoothstep\(half \* ([\d.]+), half \* 1\.12, d\) \* 95;/) || [, 1])[1]);
+  check('the swell dies before the coast, so no crest stands up through the plains',
+    /float amp = uWaves \* \(0\.35 \+ uWindStrength \* 1\.5\) \* offshore;/.test(sc)
+    && /smoothstep\(uIslandHalf \* \$\{SWELL_CALM\.toFixed\(2\)\}, uIslandHalf \* \$\{SWELL_FULL\.toFixed\(2\)\}, length\(position\.xz\)\)/.test(sc));
+  check('and it is calm everywhere the land is still at its inland height', calm > 0 && calm >= inland,
+    `calm inside ${calm} of the half-width, the land starts down to the sea at ${inland}`);
+}
+
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);
