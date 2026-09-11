@@ -16,6 +16,7 @@ import {
   renderTribes, runId, setBornCount, setDiedCount, setSimDay, simDay, skillTier, updateEconomy
 } from './life.js';
 import { setLastClock, updateHud } from './main.js';
+import { packLessons, unpackLessons } from './lessons.js';
 
 /* -------------------------------------------------------------------------
    Keeping your place
@@ -52,6 +53,8 @@ export function snapshot() {
       toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0,
       stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0), dh: r2(c.ditchDug || 0),
       fl: c.field ? [r2(c.field.x), r2(c.field.z)] : undefined,
+      // What it remembers (lessons.js), and the ground that paid (move.js).
+      ls: packLessons(c.lessons), pt: c.patches?.length ? c.patches.map((q) => [Math.round(q.x), Math.round(q.z), r2(q.worth)]) : undefined,
       // Where its explorers found good ground (explore.js): where it will settle next.
       fd: c.finds?.length ? c.finds.map((f) => [Math.round(f.x), Math.round(f.z), r2(f.worth)]) : undefined,
       // A village taken by another tribe: its code now, its name then (life.js, conquer).
@@ -267,6 +270,11 @@ export function applySavedLife(st) {
     camps[i].fieldPin = Array.isArray(c.fl) ? { x: Number(c.fl[0]), z: Number(c.fl[1]) } : null;
     camps[i].field = null;
     camps[i].fieldAt = null;
+    // What it remembers, and the ground that paid; an older save has neither.
+    camps[i].lessons = unpackLessons(c.ls);
+    camps[i].patches = Array.isArray(c.pt)
+      ? c.pt.filter((q) => Array.isArray(q) && q.length >= 3).map((q) => ({ x: Number(q[0]), z: Number(q[1]), worth: Number(q[2]) || 0 }))
+      : [];
   });
 
   setLineage(Array.isArray(st.lineage) ? st.lineage : []);

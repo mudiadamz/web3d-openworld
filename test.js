@@ -7349,6 +7349,75 @@ check('and comes back to the farmland it took after a reload',
   /fl: c\.field \? \[r2\(c\.field\.x\), r2\(c\.field\.z\)\] : undefined/.test(html)
   && /camps\[i\]\.fieldPin = Array\.isArray\(c\.fl\)/.test(html)
   && /pick = sites\.find\(\(s\) => Math\.abs\(s\.x - pin\.x\) < 1 && Math\.abs\(s\.z - pin\.z\) < 1\) \|\| null;/.test(farmSrc));
+
+/* -------------------------------------------------------------------------
+   What a band remembers
+
+   A death is a lesson the band keeps, and it fades like a story does.
+   ------------------------------------------------------------------------- */
+group('what a band remembers');
+const lessonSrc = moduleSource('lessons.js');
+const lessonFn = (name) => {
+  const at = lessonSrc.indexOf('function ' + name + '(');
+  const close = lessonSrc.slice(at).match(/\r?\n\}\r?\n/);
+  return lessonSrc.slice(at, at + close.index + close[0].length);
+};
+check('every death is a lesson, taken before the dead are gone',
+  /learnFrom\(p, cause\);[^\n]*\n  recordDeath\(p, cause\);/.test(html));
+check('each cause teaches what would have stopped it',
+  /cause === 'hunger'\) \{\s*takeLesson\(camp, 'famine', 1\);\s*practise\(camp, 'drying', LESSON\.skill\);/.test(lessonSrc)
+  && /markBadPlace\(camp, p\);\s*practise\(camp, 'fire', LESSON\.skill\);/.test(lessonSrc)
+  && /practise\(camp, 'herbs', LESSON\.skill\);/.test(lessonSrc)
+  && /if \(p\.job === 'raid'\) takeLesson\(camp, 'raiding', 1\);\s*else practise\(camp, 'war', LESSON\.skill\);/.test(lessonSrc));
+check('a lesson fades by half in LESSON.half years, and slower in a band that keeps its rites', (() => {
+  const make = (day) => new Function('LESSON', 'P', 'simDay', lessonFn('heldNow') + '\nreturn heldNow;')(
+    { half: 12, rites: 2 }, { yearLength: 10 }, day);
+  const fresh = make(0)({ skill: {} }, { w: 1, day: 0 });
+  const half = make(120)({ skill: {} }, { w: 1, day: 0 });
+  const kept = make(120)({ skill: { rites: 1 } }, { w: 1, day: 0 });
+  return fresh === 1 && Math.abs(half - 0.5) < 1e-9 && kept > 0.75 ? true : JSON.stringify({ fresh, half, kept });
+})() === true);
+check('foragers keep off where a tiger took one of them, and off nowhere else', (() => {
+  const dread = new Function('LESSON', 'P', 'simDay', lessonFn('heldNow') + lessonFn('dreadOf') + '\nreturn dreadOf;')(
+    { half: 12, rites: 2, dread: 70 }, { yearLength: 10 }, 0);
+  const camp = { skill: {}, lessons: { places: [{ x: 0, z: 0, w: 1, day: 0 }] } };
+  const at = dread(camp, 0, 0), edge = dread(camp, 60, 0), away = dread(camp, 200, 0), none = dread({ skill: {} }, 0, 0);
+  return at < 0.2 && edge > at && edge < 1 && away === 1 && none === 1 ? true : JSON.stringify({ at, edge, away, none });
+})() === true);
+check('a band that remembers a famine works harder for food while its store is short; lost raiders, it raids less', (() => {
+  const mix = new Function('LESSON', 'P', 'simDay', 'FOOD',
+    lessonFn('heldNow') + lessonFn('lessonOf') + lessonFn('lessonMix') + '\nreturn lessonMix;')(
+    { half: 12, rites: 2, stock: 25, store: 0.8, wary: 0.6, nursing: 0.8, resting: 0.5 }, { yearLength: 10 }, 0, { comfortable: 20 });
+  const wise = { skill: {}, need: 10, food: 100, lessons: { famine: { w: 1, day: 0 }, raiding: { w: 1, day: 0 }, places: [] } };
+  const full = { ...wise, food: 600 };
+  const green = { skill: {}, need: 10, food: 100 };
+  const got = [mix(wise, 'gather'), mix(full, 'gather'), mix(green, 'gather'), mix(wise, 'raid'), mix(wise, 'craft')];
+  return got[0] > 1.3 && got[1] === 1 && got[2] === 1 && got[3] < 0.7 && got[4] === 1 ? true : JSON.stringify(got);
+})() === true);
+check('and it moves the day\'s work, the forager\'s reckoning, and the care of the young',
+  /w\[1\] \*= jobMix\(p\.camp, w\[0\], hunger\) \* lessonMix\(p\.camp, w\[0\]\);/.test(html)
+  && /\* known \* dreadOf\(camp, x, z\)/.test(html)
+  && /infancy: age < 5 \? 0\.03 \* \(1 - age \/ 5\) \* infantCare\(p\?\.camp\) : 0,/.test(html));
+check('but births still run flat out: the store is what the lesson changes, not the breeding',
+  !/restraint|lessonOf|infantCare/.test(html.slice(html.indexOf('const plenty = '), html.indexOf('const plenty = ') + 200)));
+check('a daughter band takes its mother\'s memories; the card lists them',
+  /history: \[\], lessons: inheritLessons\(parent\),/.test(html)
+  && /\+ memoryRows\(camp\);/.test(moduleSource('chronicle.js')));
+check('memories, and the ground that paid, are kept across a reload',
+  /ls: packLessons\(c\.lessons\)/.test(html) && /camps\[i\]\.lessons = unpackLessons\(c\.ls\);/.test(html)
+  && /pt: c\.patches\?\.length \?/.test(html) && /camps\[i\]\.patches = Array\.isArray\(c\.pt\)/.test(html));
+check('a saved memory comes back as it was, and an old save remembers nothing', (() => {
+  const keep = (lessonSrc.match(/const keep2 = [^\n]*\n/) || [''])[0];
+  const [pack, unpack] = new Function('LESSON_WORDS', keep + lessonFn('packLessons') + lessonFn('unpackLessons')
+    + '\nreturn [packLessons, unpackLessons];')({ famine: [], infants: [] });
+  const back = unpack(JSON.parse(JSON.stringify(pack({
+    famine: { w: 1.5, day: 12.345, told: true }, places: [{ x: 10.4, z: -3.6, w: 0.8, day: 5 }],
+  }))));
+  const none = unpack(undefined);
+  return back.famine.w === 1.5 && back.famine.day === 12.35 && back.famine.told === true && !back.infants
+    && back.places.length === 1 && back.places[0].x === 10 && back.places[0].z === -4
+    && none.places.length === 0 && !none.famine ? true : JSON.stringify({ back, none });
+})() === true);
 check('a crop follows the season, and the island\'s ABUNDANCE', /\* forageSeason \* P\.abundance;/.test(farmSrc));
 check('the job is chosen, sent, worked and told like the others',
   /\['farm', farmWeight\(p, hunger, rested\)\]/.test(html)
@@ -7502,7 +7571,7 @@ check('the day\'s work shifts with the stage, across a year, and hunger undoes i
     && Math.abs(starving - 1) < 1e-9 && farmCity > 1 ? true : JSON.stringify({ settled, fresh, starving, band, farmCity });
 })() === true);
 check('and the job list is leaned by it before anything is rolled',
-  /for \(const w of weights\) w\[1\] \*= jobMix\(p\.camp, w\[0\], hunger\);\n    let roll/.test(moduleSource('move.js')));
+  /for \(const w of weights\) w\[1\] \*= jobMix\(p\.camp, w\[0\], hunger\) \* lessonMix\(p\.camp, w\[0\]\);\n    let roll/.test(moduleSource('move.js')));
 check('a settlement holds more before it splits as it climbs',
   /c\.pop >= SPLIT\.at \* STAGES\[c\.stage \|\| 0\]\.split/.test(html)
   && (() => { const s = [...socSrc.matchAll(/split: ([\d.]+),/g)].map((m) => Number(m[1]));

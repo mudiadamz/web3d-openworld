@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { infantCare, inheritLessons, learnFrom } from './lessons.js';
 
 import { MAP_SCALE, P, SEA, SNOW, WORLD } from './params.js';
 import { clamp, fbm, flatnessAt, lerp, mulberry32, sampleHeight, clearOfCreeks } from './noise.js';
@@ -1161,7 +1162,7 @@ export function splitCamp(parent) {
     skill: emptySkills(),
     told: emptySkills(),
     toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 },
-    born: 0, peak: 0, founded: simDay, gone: false, history: [],
+    born: 0, peak: 0, founded: simDay, gone: false, history: [], lessons: inheritLessons(parent),
   };
   camp.chief = chief.id;
   camps.push(camp);
@@ -1563,7 +1564,7 @@ export function hazards(p, age, hunger) {
   return {
     age: LIFE.baseMortality * Math.exp(Math.max(0, age - LIFE.agingFrom) / LIFE.agingScale),
     // Being small is dangerous in its own right before about five.
-    infancy: age < 5 ? 0.03 * (1 - age / 5) : 0,
+    infancy: age < 5 ? 0.03 * (1 - age / 5) * infantCare(p?.camp) : 0,
     hunger: LIFE.hungerMortality * hunger * hunger,
   };
 }
@@ -1636,6 +1637,7 @@ export function killPerson(i, cause) {
   practise(p.camp, 'rites', SKILL.perBurial);
   p.camp.lost = (p.camp.lost || 0) + 1;
   p.camp.toll[cause] = (p.camp.toll[cause] || 0) + 1;
+  learnFrom(p, cause);                  // what the band takes from it (lessons.js)
   recordDeath(p, cause);
   people.splice(i, 1);
   diedCount++;

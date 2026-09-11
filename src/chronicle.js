@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { memoryRows } from './lessons.js';
 
 import { P, SEA, WORLD } from './params.js';
 import { clamp, flatnessAt, sampleHeight } from './noise.js';
@@ -294,7 +295,7 @@ export function renderTribeCard() {
     + `<div><span>${camp.born} born · `
     + `most they were was ${camp.peak}${toll.length
         ? ` · lost ${toll.reduce((n, [, k]) => n + k, 0)}: `
-          + toll.map(([k, n]) => `${n} ${TOLL_WORDS[k]}`).join(', ') : ''}</span></div>`;
+          + toll.map(([k, n]) => `${n} ${TOLL_WORDS[k]}`).join(', ') : ''}</span></div>` + memoryRows(camp);
 
   $('tribeNow').className = tribeTab === 'now' ? 'on' : '';
   $('tribeWas').className = tribeTab === 'was' ? 'on' : '';

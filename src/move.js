@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { dreadOf, lessonMix } from './lessons.js';
 
 import { P, QUALITY, SEA, WORLD } from './params.js';
 import {
@@ -471,7 +472,7 @@ export function pickForage(p, camp, range) {
        close second sometimes does, which is the difference between a band that
        works a hillside and a band that works one bush. */
     const guess = 0.78 + luck() * 0.44;
-    const value = ((FOOD.gather * forageRichness(x, z) + fruit) * (1 - theirs) * known
+    const value = ((FOOD.gather * forageRichness(x, z) + fruit) * (1 - theirs) * known * dreadOf(camp, x, z)
       - (away / 100) * FORAGE.farCost) * guess;
     if (value > best) { best = value; bx = x; bz = z; found = true; }
   };
@@ -747,7 +748,7 @@ export function chooseJob(p, day) {
     /* And the stage the settlement has reached leans it again (society.js):
        fewer foraging, more at the fields, the workshop, the neighbours and the
        war band as it climbs — unless it is hungry, which undoes all of it. */
-    for (const w of weights) w[1] *= jobMix(p.camp, w[0], hunger);
+    for (const w of weights) w[1] *= jobMix(p.camp, w[0], hunger) * lessonMix(p.camp, w[0]);
     let roll = luck() * weights.reduce((a, w) => a + w[1], 0);
     p.job = weights.find(([, w]) => (roll -= w) <= 0)?.[0] || 'gather';
   }
