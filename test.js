@@ -7857,6 +7857,19 @@ group('where the fish are, and the farms');
   check('with a picture of their own', Boolean(ICON_PATHS?.farm));
 }
 
+group('creeks on the map');
+{
+  const mp = moduleSource('map.js');
+  check('the full map draws every creek live, a layer you can put away',
+    /if \(mapShows\.creeks\) drawCreekLayer\(\);/.test(mp) && /data-layer="creeks" aria-pressed="true"/.test(html));
+  check('as wide as the water at any zoom, never thinner than a line',
+    /Math\.max\(CREEK_MIN \* MK, \(\(a\.width \+ b\.width\) \/ 2\) \* k\)/.test(mp));
+  check('and not baked into the relief as well, where hiding the layer could not reach it',
+    !/ctx\.strokeStyle = 'rgba\(104, 166, 196/.test(bodyOf('renderMapBase') || '') && /plainCtx\.stroke\(\);/.test(bodyOf('renderMapBase') || ''));
+  check('each creek is marked where it rises, with where it goes',
+    /put\('creeks', path\[0\]\.x, path\[0\]\.z, creekWords\(path\)/.test(mp) && /creeks: \{ icon: 'spring'/.test(mp) && Boolean(ICON_PATHS?.spring));
+}
+
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);

@@ -1639,6 +1639,10 @@ People walk slower through grass and scrub than on a trodden path, and faster
 still on a road. So a walker takes a path when one near enough runs their way:
 whichever heading gets them there soonest. Worn paths get used, and get deeper.
 
+The big map has a Creeks layer: every creek, from the spring or glacier it
+rises at to the sea, lake or creek it ends in, drawn as wide as the water and
+widening downstream, sharp at any zoom, with a mark at each source.
+
 The big map marks where the food comes from, fields and fish included: each
 band's farm from the day it starts digging the ditch, and the best water off
 every coast, sized by how rich it is today (deep, in season, not fished out),

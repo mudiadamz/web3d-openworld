@@ -237,23 +237,20 @@ export function renderMapBase() {
   ctx.putImageData(img, 0, 0);
   plainCtx.putImageData(plain, 0, 0);
 
-  // The creeks are thinner than a map pixel in places, so they are drawn as
-  // lines rather than left to the terrain shading to imply.
-  ctx.strokeStyle = 'rgba(104, 166, 196, 0.95)';
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  /* The creeks on the corner map. On the full map they are a layer of their
+     own, drawn live over the relief (drawCreekLayer), so they stay sharp at
+     any zoom and can be put away. */
   plainCtx.strokeStyle = 'rgba(40, 84, 112, 1)';
   plainCtx.lineCap = 'round';
+  plainCtx.lineJoin = 'round';
   for (const path of streams) {
-    for (const c of [ctx, plainCtx]) {
-      c.beginPath();
-      for (let i = 0; i < path.length; i++) {
-        const [px, py] = worldToMap(path[i].x, path[i].z);
-        if (i) c.lineTo(px, py); else c.moveTo(px, py);
-      }
-      c.lineWidth = 1.5 * MK;
-      c.stroke();
+    plainCtx.beginPath();
+    for (let i = 0; i < path.length; i++) {
+      const [px, py] = worldToMap(path[i].x, path[i].z);
+      if (i) plainCtx.lineTo(px, py); else plainCtx.moveTo(px, py);
     }
+    plainCtx.lineWidth = 1.5 * MK;
+    plainCtx.stroke();
   }
   // The lakes the creeks end in, and the springs they rise at, as water.
   for (const lake of lakes) {
@@ -285,6 +282,48 @@ export function renderMapBase() {
    ------------------------------------------------------------------------- */
 export let pathLayer = null;
 let drawnPaths = -1, nextPathDraw = 0;
+
+/* -------------------------------------------------------------------------
+   Creeks
+
+   Every creek from where it rises to where it ends, drawn over the relief
+   rather than baked into it: a line in the relief is a smear once you zoom in,
+   and a creek is the thing on a map you follow with your finger. As wide as
+   the water is, at any zoom, but never thinner than a line, so the trickle at
+   the top is still there. It widens downstream the way the water does. A dark
+   edge under the blue keeps it off the greens and the sea-coloured lakes.
+   ------------------------------------------------------------------------- */
+export const CREEK_MIN = 1.2;          // map pixels, times MK: the thinnest a creek is drawn
+function drawCreekLayer() {
+  const k = MAP_N / mapView.span;
+  mapCtx.lineCap = 'round';
+  mapCtx.lineJoin = 'round';
+  for (const [edge, color] of [[1.3, 'rgba(14, 38, 58, 0.75)'], [0, 'rgba(118, 190, 228, 1)']]) {
+    mapCtx.strokeStyle = color;
+    for (const path of streams) {
+      for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1], b = path[i];
+        const [ax, ay] = worldToMap(a.x, a.z), [bx, by] = worldToMap(b.x, b.z);
+        if (Math.max(ax, bx) < -4 || Math.max(ay, by) < -4 || Math.min(ax, bx) > MAP_N + 4 || Math.min(ay, by) > MAP_N + 4) continue;
+        mapCtx.lineWidth = Math.max(CREEK_MIN * MK, ((a.width + b.width) / 2) * k) + edge * MK;
+        mapCtx.beginPath();
+        mapCtx.moveTo(ax, ay);
+        mapCtx.lineTo(bx, by);
+        mapCtx.stroke();
+      }
+    }
+  }
+}
+
+/** How long a creek runs, in metres, and what it ends in, for its mark. */
+export function creekWords(path) {
+  let run = 0;
+  for (let i = 1; i < path.length; i++) run += Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z);
+  const from = path.source === 'glacier' ? 'the melt off a glacier' : 'a spring';
+  const to = path.end === 'sea' ? 'the sea' : path.end === 'join' ? 'another creek' : 'a lake';
+  const far = run >= 1000 ? `${(run / 1000).toFixed(1)} km` : `${Math.round(run / 10) * 10} m`;
+  return `A creek rises here, from ${from}, and runs ${far} to ${to}`;
+}
 
 export function buildPathLayer(now) {
   if (!pathLayer) {
@@ -349,7 +388,7 @@ export function updateScaleBar() {
    you like to read the map, not a fact about the world, so it is not in the
    save and it does not travel with a seed.
    ------------------------------------------------------------------------- */
-export const MAP_LAYERS = ['camps', 'people', 'animals', 'paths', 'barrows', 'fruit', 'forage', 'farms', 'fish', 'rafts', 'stores',
+export const MAP_LAYERS = ['camps', 'people', 'animals', 'paths', 'creeks', 'barrows', 'fruit', 'forage', 'farms', 'fish', 'rafts', 'stores',
   'stone', 'iron', 'bronze', 'silver', 'gold'];
 export const MAP_LAYERS_STORE = 'openworld.mapLayers';
 export const mapShows = Object.fromEntries(MAP_LAYERS.map((k) => [k, true]));
@@ -414,6 +453,7 @@ export function closeMapLayers() {
 export const MARK_KINDS = {
   fruit: { icon: 'fruit', color: '#f08497' },
   forage: { icon: 'gather', color: '#a3d672' },
+  creeks: { icon: 'spring', color: '#76bee4' },
   farms: { icon: 'farm', color: '#e2c35a' },
   fish: { icon: 'fish', color: '#76c8f0' },
   rafts: { icon: 'raft', color: '#c9a36b' },
@@ -486,6 +526,8 @@ function gatherMarks(now) {
   /* Foraging: the berry thickets — where the food is on the ground, and what
      E forages at. The richest first, which is the order they are laid out in,
      and no more than a handful in view, like the fruit. */
+  // Where each creek rises: follow the blue line from here to where it ends.
+  if (mapShows.creeks) for (const path of streams) if (path.length) put('creeks', path[0].x, path[0].z, creekWords(path), undefined, 3.4);
   if (mapShows.forage) {
     let shown = 0;
     for (const t of thickets) {
@@ -628,6 +670,7 @@ export function drawMap(now) {
   const sz = ((mapView.z - mapView.span / 2 + WORLD / 2) / WORLD) * MAP_N;
   mapCtx.drawImage(mapBase, sx, sz, src, src, 0, 0, MAP_N, MAP_N);
   if (mapShows.paths) drawPathLayer();
+  if (mapShows.creeks) drawCreekLayer();
 
   // Animals first and faintest: they are context, not the point.
   mapCtx.fillStyle = 'rgba(226, 240, 205, 0.55)';
