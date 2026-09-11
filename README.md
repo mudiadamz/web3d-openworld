@@ -1639,6 +1639,11 @@ People walk slower through grass and scrub than on a trodden path, and faster
 still on a road. So a walker takes a path when one near enough runs their way:
 whichever heading gets them there soonest. Worn paths get used, and get deeper.
 
+The big map marks where the food comes from, fields and fish included: each
+band's farm from the day it starts digging the ditch, and the best water off
+every coast, sized by how rich it is today (deep, in season, not fished out),
+noting when a band has no raft to reach it.
+
 What the food is kept in climbs too: a band's granary on stilts, a village's
 timber storehouse on staddle stones, a city's cluster of domed brick silos.
 

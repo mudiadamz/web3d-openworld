@@ -17,7 +17,8 @@ import { daysOfFood } from './life.js';
 import { ICON_PATHS } from './icons.js';
 import { ORES, deposits } from './quarries.js';
 import { ripeWord, thickets } from './thickets.js';
-import { dockOf } from './larder.js';
+import { dockOf, fishGrounds } from './larder.js';
+import { ditchOf, fieldSize } from './farming.js';
 import { raftBusy } from './rafts.js';
 
 /* -------------------------------------------------------------------------
@@ -348,7 +349,7 @@ export function updateScaleBar() {
    you like to read the map, not a fact about the world, so it is not in the
    save and it does not travel with a seed.
    ------------------------------------------------------------------------- */
-export const MAP_LAYERS = ['camps', 'people', 'animals', 'paths', 'barrows', 'fruit', 'forage', 'fish', 'rafts', 'stores',
+export const MAP_LAYERS = ['camps', 'people', 'animals', 'paths', 'barrows', 'fruit', 'forage', 'farms', 'fish', 'rafts', 'stores',
   'stone', 'iron', 'bronze', 'silver', 'gold'];
 export const MAP_LAYERS_STORE = 'openworld.mapLayers';
 export const mapShows = Object.fromEntries(MAP_LAYERS.map((k) => [k, true]));
@@ -401,9 +402,9 @@ export function closeMapLayers() {
    Where the food is
 
    The full map said where everybody was and nothing about what they were all
-   walking to. So it marks the four places food comes from: fruit on the trees,
-   the ground each band has found worth foraging, the water each band fishes,
-   and the granaries it ends up in. Each is a badge you can click to go and
+   walking to. So it marks the places food comes from: fruit on the trees,
+   the ground each band has found worth foraging, each band's field, the water
+   off every coast where the fish are, and the granaries it all ends up in. Each is a badge you can click to go and
    look, drawn with the same pictures as the bubbles over the people doing the
    work.
 
@@ -413,6 +414,7 @@ export function closeMapLayers() {
 export const MARK_KINDS = {
   fruit: { icon: 'fruit', color: '#f08497' },
   forage: { icon: 'gather', color: '#a3d672' },
+  farms: { icon: 'farm', color: '#e2c35a' },
   fish: { icon: 'fish', color: '#76c8f0' },
   rafts: { icon: 'raft', color: '#c9a36b' },
   stores: { icon: 'granary', color: '#ecc870' },
@@ -493,10 +495,26 @@ function gatherMarks(now) {
   }
   for (const c of camps) {
     if (c.gone) continue;
-    // The fish are out in deep water, off the dock, and only for a band with a raft.
-    const dock = mapShows.fish && c.raft ? dockOf(c) : null;
-    if (dock) {
-      put('fish', dock.mx + Math.sin(dock.a) * 70, dock.mz + Math.cos(dock.a) * 70, `${c.name} fish out here, from their raft`);
+    /* Where the fish are: the best water off every band's coast (larder.js),
+       the mark as big as the water is rich today. Out in deep water, which only
+       a raft reaches, so a band without one is told what it is missing. */
+    if (mapShows.fish && c.shore) {
+      for (const g of fishGrounds(c)) {
+        const word = g.taken > 0.5 ? 'fished out' : g.worth > 0.6 ? 'rich' : g.worth > 0.3 ? 'fair' : 'thin';
+        put('fish', g.x, g.z, `Fish: ${word} water, ${Math.round(g.depth)} m deep — `
+          + (c.raft ? `${c.name} fish here from their raft` : `${c.name} would need a raft to reach it`),
+        undefined, clamp(3.2 + 4 * g.worth, 3.2, 7));
+      }
+    }
+    /* And the farms: each band's field, from the day it starts digging the
+       ditch to it, marked as big as it has grown (farming.js). */
+    if (mapShows.farms && c.field && ((c.ditchDug || 0) > 0 || (c.skill?.irrigation || 0) >= 0.1)) {
+      const s = fieldSize(c), d = ditchOf(c);
+      const flock = c.stock >= 1 ? `, ${Math.floor(c.stock)} head penned` : '';
+      const label = s.rows > 0
+        ? `${c.name}'s field: ${s.rows} rows, ${Math.round(s.grown * 100)}% grown${flock}`
+        : `${c.name}'s field: digging the ditch, ${Math.min(Math.round(c.ditchDug || 0), Math.round(d?.length || 0))} of ${Math.round(d?.length || 0)} m`;
+      put('farms', c.field.x, c.field.z, label, undefined, clamp(3.6 + Math.sqrt(s.rows * s.len) / 12, 3.6, 7.6));
     }
     /* And the raft itself, wherever it is: tied up at the dock, or out on the
        water with whoever took it. */

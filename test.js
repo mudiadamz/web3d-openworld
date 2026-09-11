@@ -7843,6 +7843,20 @@ group('going by the path');
     /if \(p\.onRaft \|\| p\.led \|\| p\.panic > 0 \|\| p\.prey \|\| p\.hiding \|\| dist < TREAD\.near\) p\.swerve = 0;/.test(mv));
 }
 
+group('where the fish are, and the farms');
+{
+  const la = moduleSource('larder.js'), mp = moduleSource('map.js');
+  check('the fish are wherever the water is deep, for the map, raft or none',
+    /function fishAt\(x, z\)/.test(la) && /if \(!camp\?\.raft\) return 0;\s*return fishAt\(x, z\);/.test(la));
+  check('each coast shows its best few stretches of water, apart, as rich as they are today',
+    /for \(const g of fishGrounds\(c\)\)/.test(mp) && /Math\.hypot\(o\.x - w\.x, o\.z - w\.z\) >= FISH_GROUNDS\.between/.test(la)
+    && /worth: fishAt\(w\.x, w\.z\)/.test(la));
+  check('and says when a band has no raft to reach them', /would need a raft to reach it/.test(mp));
+  check('the farms are on the big map, from the first day of digging', /mapShows\.farms && c\.field/.test(mp)
+    && /farms: \{ icon: 'farm'/.test(mp) && /data-layer="farms" aria-pressed="true"/.test(html));
+  check('with a picture of their own', Boolean(ICON_PATHS?.farm));
+}
+
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);

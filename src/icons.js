@@ -35,6 +35,9 @@ export const ICON_PATHS = {
   fruit: { stroke: [ring(8, 9.6, 4.1), 'M8 5.5V2.8', 'M8 4.2c1.1-1.5 2.9-1.8 4.1-1.2-.9 1.5-2.6 2-4.1 1.2z'] },
   // The granary itself, on its stilts: where the food is kept.
   granary: { stroke: ['M2.6 7.4 8 3.2l5.4 4.2', 'M4.3 7.4v4.1h7.4V7.4', 'M5.2 11.5v2.3', 'M10.8 11.5v2.3'] },
+  // Furrows and a sprout: a band's field.
+  farm: { stroke: ['M2.4 13.4h11.2', 'M2.4 10.6h11.2', 'M8 10.6V5.4', 'M8 7.2C6.4 7.2 5 6.2 4.6 4.6 6.2 4.6 7.6 5.6 8 7.2z',
+    'M8 6.2c1.6 0 3-1 3.4-2.6-1.6 0-3 1-3.4 2.6z'] },
   // A compass: somebody gone to see what is over the hill.
   explore: { stroke: [ring(8, 8, 5.6), 'M8 4.2l1.7 3.8L8 11.8 6.3 8z'] },
   // An axe in a log: cutting wood.

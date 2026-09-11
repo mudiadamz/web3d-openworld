@@ -224,10 +224,47 @@ export function dockOf(camp) {
 export function fishRichness(x, z, camp) {
   // No raft, no fish: they are out in deep water, and nobody swims for them.
   if (!camp?.raft) return 0;
+  return fishAt(x, z);
+}
+
+/** What the water here holds, whoever can reach it: the depth, the season,
+    less what has lately been taken. */
+export function fishAt(x, z) {
   const h = sampleHeight(x, z);
   const deep = Math.max(0, Math.min(1, (SEA - h - FISH.shallow) / FISH.deep));
+  if (deep <= 0) return 0;
   const season = seasonName === 'winter' ? FISH.winter : 1;
   return FISH.yield * deep * season * (1 - pickedAt(x, z));
+}
+
+/* Where the fish are off a band's coast, for the map: the water a raft goes
+   out to (the same fan off the dock that pickFishing draws from), its best few
+   stretches, at least FISH_GROUNDS.between from each other. The depth is the
+   ground and is found once a dock. What the water holds today changes with the
+   season and the fishing, and is read fresh every time. */
+export const FISH_GROUNDS = { spread: 0.8, near: 35, far: 130, between: 30, best: 3 };
+export function fishGrounds(camp) {
+  const dock = dockOf(camp);
+  if (!dock) return [];
+  if (camp.fishWater?.of !== dock) {
+    const water = [];
+    for (let k = -4; k <= 4; k++) {
+      const a = dock.a + (k / 4) * FISH_GROUNDS.spread;
+      for (let r = FISH_GROUNDS.near; r <= FISH_GROUNDS.far; r += 19) {
+        const x = dock.mx + Math.sin(a) * r, z = dock.mz + Math.cos(a) * r;
+        if (SEA - sampleHeight(x, z) > FISH.shallow) water.push({ x, z });
+      }
+    }
+    camp.fishWater = { of: dock, water };
+  }
+  const rated = camp.fishWater.water.map((w) => ({ ...w, worth: fishAt(w.x, w.z), depth: SEA - sampleHeight(w.x, w.z),
+    taken: pickedAt(w.x, w.z) })).filter((w) => w.worth > 0.02).sort((a, b) => b.worth - a.worth);
+  const out = [];
+  for (const w of rated) {
+    if (out.length >= FISH_GROUNDS.best) break;
+    if (out.every((o) => Math.hypot(o.x - w.x, o.z - w.z) >= FISH_GROUNDS.between)) out.push(w);
+  }
+  return out;
 }
 
 /** For the boot check: how far the foraging has spread over the island. */
