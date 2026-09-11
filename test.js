@@ -768,6 +768,78 @@ const widths = gentle.map((p, i) => halfWidth(p,
 check('a gently curving creek keeps its full width',
   widths.slice(1, -1).every((w) => w === 2.5), `${Math.min(...widths.slice(1, -1))} of 2.5`);
 
+/* A creek that looks like water rather than a ribbon laid on the ground. */
+const creekSrc = moduleSource('creeks.js');
+check('a creek is drawn through curves, not a chain of six-metre straights',
+  /(?:const|let) pts = smoothPath\(path\);/.test(creekSrc)
+  && /function smoothPath\(path\)[\s\S]*?for \(let round = 0; round < 2; round\+\+\)/.test(creekSrc));
+/* A zigzag no creek makes: each step turning back more than a right angle.
+   Rounded alone it only spreads over more points and folds the ribbon worse;
+   the point that doubles back is dropped first. Run, not read. */
+check('and it never doubles back on itself', (() => {
+  const at = creekSrc.indexOf('function smoothPath(path)');
+  const end = at + creekSrc.slice(at).search(/\r?\n\}\r?\n/);
+  let smoothPath;
+  try {
+    smoothPath = new Function('sampleHeight', 'STREAM_DROP', creekSrc.slice(at, end + 2) + '\nreturn smoothPath;')(() => 99, 0.02);
+  } catch (err) { return 'smoothPath would not load: ' + err.message; }
+  const zig = [];
+  for (let i = 0; i < 30; i++) zig.push({ x: i * 3 + (i % 2 ? 6 : 0), z: i * 0.8, level: 50 - i * 0.1, width: 0 });
+  const out = smoothPath(zig);
+  let back = 0;
+  for (let i = 1; i < out.length - 1; i++) {
+    const a = out[i - 1], p = out[i], b = out[i + 1];
+    if ((p.x - a.x) * (b.x - p.x) + (p.z - a.z) * (b.z - p.z) < 0) back++;
+  }
+  const downhill = out.every((p, i) => i === 0 || p.level < out[i - 1].level);
+  return back === 0 && downhill ? true : `${back} turns back, downhill ${downhill}`;
+})() === true);
+check('and after smoothing it still only runs downhill, and never above the ground',
+  /level: Math\.min\(pts\[i\]\.level, sampleHeight\(pts\[i\]\.x, pts\[i\]\.z\), below\)/.test(creekSrc));
+check('narrow at the spring, wider downstream, and never a ruled width',
+  /q\.width = \(head \+ 8\.4 \* Math\.sqrt\(f\)\) \* wander \* pool;/.test(creekSrc)
+  && /head = src\.kind === 'glacier' \? 2\.6 : 1\.6;/.test(creekSrc) && !/width = 4\.5 \+ 5\.5/.test(creekSrc));
+check('with narrows, broad reaches, and now and then a pool',
+  /const wander = 0\.55 \+ 0\.9 \* fbm\(/.test(creekSrc) && /const pool = 1 \+ 0\.7 \* smoothstep\(/.test(creekSrc));
+/* Two banks, not one ruled twice — and each only ever a share of what the
+   bend allows, so an uneven bank can never fold the water. */
+check('and two uneven banks, each its own, the water and the channel alike',
+  /q\.bankL = 0\.55 \+ 0\.45 \* fbm\(/.test(creekSrc) && /q\.bankR = 0\.55 \+ 0\.45 \* fbm\(/.test(creekSrc)
+  && /const reach = half \* \(side > 0 \? \(p\.bankR \?\? 1\) : \(p\.bankL \?\? 1\)\);/.test(creekSrc)
+  && /const lean = p\.width \* \(\(p\.bankR \?\? 1\) - \(p\.bankL \?\? 1\)\) \* 0\.5;/.test(creekSrc));
+/* Water comes from somewhere and goes somewhere. */
+check('every creek ends in water: the sea, a creek it runs into, or a lake it pools into',
+  /if \(level <= SEA \+ 0\.3\) \{ end = 'sea'; break; \}/.test(creekSrc)
+  && /met = meetWater\(nx, nz, next\);[\s\S]*?end = 'join';/.test(creekSrc)
+  && /let end = 'lake', met = null;/.test(creekSrc)
+  && /if \(end === 'lake'\) \{[\s\S]*?lakes\.push\(/.test(creekSrc)
+  && !/const seep/.test(creekSrc));
+check('and water runs into water only at or below its own level',
+  /if \(lake\.spring \|\| lake\.level > level \+ 0\.3\) continue;/.test(creekSrc)
+  && /if \(q\.level > level \+ 0\.3\) continue;/.test(creekSrc));
+check('it rises under a glacier or at a spring, and a spring wells up in a pool',
+  /return \{ x, z, kind: 'glacier' \};/.test(creekSrc) && /return \{ x, z, kind: 'spring' \};/.test(creekSrc)
+  && /if \(src\.kind === 'spring'\) \{\s*lakes\.push\(/.test(creekSrc)
+  && /const src = pickSource\(rng, ice\) \|\| pickSource\(rng, !ice\);/.test(creekSrc));
+check('a glacier only where there is snow above it to melt', (() => {
+  const at = creekSrc.indexOf('function pickSource(rng, ice)');
+  const body = creekSrc.slice(at, at + 1400);
+  return /if \(h < SNOW - 14 \|\| h > SNOW \+ 4\) continue;/.test(body) && /> SNOW \+ 6\) snowAbove = true;/.test(body)
+    && /if \(h > SNOW - 14\) continue;/.test(body);
+})());
+check('a lake has a shore, not a circle, and a basin under it and a bank round it',
+  /return lake\.r \* \(0\.78 \+ 0\.44 \* fbm\(/.test(creekSrc)
+  && /const floor = lake\.level - depth \* \(1 - t \* t\) - 0\.1;/.test(creekSrc)
+  && /const hold = lake\.level \+ 0\.6 \* \(1 - \(d - shore\) \/ berm\);/.test(creekSrc));
+check('and the creek stops at the shore rather than running on under the lake',
+  /function trimInto\(pts, lake\)/.test(creekSrc) && /if \(into\) pts = trimInto\(pts, into\);/.test(creekSrc));
+check('still water, not the sea\'s swell or a creek\'s flow', /lakeMaterial \|\|= applyWaterShader\(new THREE\.MeshPhongMaterial\(\{[\s\S]*?depthWrite: false,[\s\S]*?\}\)\);/.test(creekSrc));
+check('and the map shows the lakes as water', /for \(const lake of lakes\) \{[\s\S]*?const a = \(k \/ 32\) \* Math\.PI \* 2, r = lakeRadius\(lake, a\);/.test(moduleSource('map.js')));
+check('the water thins to nothing at its banks',
+  /gl_FragColor\.a \*= smoothstep\(0\.0, 0\.3, vFlowUv\.x\) \* smoothstep\(1\.0, 0\.7, vFlowUv\.x\);/.test(html));
+check('and the ground along it is darker, on the terrain, the grass and the map alike',
+  (html.match(/tintBank\((?:x, z, c|wx, wz, _c|x, z, col)\);/g) || []).length === 3);
+
 /* -------------------------------------------------------------------------
    Pace and energy
 
@@ -1177,21 +1249,21 @@ check('and nothing else clones the scratch matrix before filling it', (() => {
 })() === true);
 
 check('an errand either takes you out or it does not',
-  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
+  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
 /* Standing at the stones happens outdoors, and it is the one job that has
    nowhere indoors to be mistaken for. */
 check('and going to the stones or the rocks takes you out too',
-  /'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
+  /'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
 /* The one job whose name says where it happens. It was on the indoor side, so
    somebody "at the fire" was hidden inside a tent — the caption said one thing
    and the camp showed another — and with a full store it is better than a third
    of a band, which is most of the people who were never drawn. */
 check('and sitting at the fire is not one of them',
-  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
+  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
 /* Nor is somebody you are walking about by hand, or they wink out the moment
    you lead them into their own camp. */
 check('and neither is somebody you are leading',
-  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood'\]\);/.test(html));
+  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
 /* Between the stones and the tents: the huts stand 6.5m out and are about two
    metres across, so their inner edge is near 4.1m, and the fire ring is 1.15m. */
 check('somebody at the fire sits between the stones and the tents', (() => {
@@ -1420,12 +1492,15 @@ check('but how far apart two fires must be does not', (() => {
    GROUND.range, which is the ground one band works. */
 check('and the spacings are still real distances', (() => {
   const apart = Number((html.match(/CAMPS_APART = (\d+);/) || [, 0])[1]);
-  const away = Number((html.match(/minAway: (\d+),/) || [, 0])[1]);
   const room = Number((html.match(/apart: (\d+),/) || [, 0])[1]);
   const range = Number((html.match(/range: (\d+),/) || [, 0])[1]);
-  return apart > range && away > range && room > range
+  /* A new band is the exception, on purpose: it keeps clear of the next
+     settlement's tents, outskirts or streets by a clearing's width, and may
+     pitch beside a village or a city (clearOfCamps, in explore.js). */
+  const gap = Number((html.match(/gap: (\d+),\s*\/\/ metres clear of another settlement/) || [, 0])[1]);
+  return apart > range && room > range && gap > 0 && gap < range
     ? true
-    : `apart ${apart}, minAway ${away}, room ${room} vs a band's own ground ${range}`;
+    : `apart ${apart}, room ${room}, gap ${gap} vs a band's own ground ${range}`;
 })() === true);
 /* A reference to the old hut is a person walking to where their house was. */
 check('and everybody gets a hut in the new camp',
@@ -5379,8 +5454,17 @@ check('and nothing refuses a birth for want of room: the room is made',
   && /if \(people\.length >= peopleCapacity\) growPeople\(people\.length \+ 1\);\s*recordPerson\(child\);\s*people\.push\(child\);/.test(html));
 check('and a saved world comes back at the size it was',
   /growPeople\(st\.people\.length\);\s*for \(const r of st\.people\) people\.push\(personFromRecord\(r\)\);/.test(html));
-check('and a split, somewhere to put the fire',
-  /if \(camps\.length >= campCapacity\) return false;/.test(html));
+check('and a split, somewhere to put the fire: never refused, the room is made',
+  /if \(camps\.length >= campCapacity\) growCamps\(camps\.length \+ 1\);/.test(html)
+  && !/if \(camps\.length >= campCapacity\) return false;/.test(html));
+check('growing the camps copies what was drawn and parks the rest',
+  /function growCamps\(need\)/.test(html) && /m\.instanceMatrix\.array\.set\(old\.instanceMatrix\.array\);/.test(bodyOf('growCamps') || '')
+  && /if \(!per \|\| old\.instanceMatrix\.count !== campCapacity \* per\) continue;/.test(bodyOf('growCamps') || '')
+  && /campCapacity = room;/.test(bodyOf('growCamps') || '') && /buildGraves\(\);/.test(bodyOf('growCamps') || '')
+  && /buildSmoke\(\);/.test(bodyOf('growCamps') || ''));
+check('and the docks and the woodpiles have no ceiling either',
+  /while \(raftRoom < camps\.length\) raftRoom \*= 2;/.test(moduleSource('rafts.js'))
+  && /while \(pileCamps < camps\.length\) pileCamps \*= 2;/.test(moduleSource('wood.js')));
 
 /* -------------------------------------------------------------------------
    How much of the map is land
@@ -6759,6 +6843,83 @@ check('the card says what a band has worth taking',
    eaten out of it. A coast was the one piece of ground worth standing on for a
    reason nothing in the simulation could see.
    ------------------------------------------------------------------------- */
+group('explorers');
+
+/* The boldest go far, into empty country, and look the place over; a band
+   that splits settles where they found good ground, so bands spread over the
+   island instead of piling up where they began. */
+{
+  const ex = moduleSource('explore.js');
+  check('only the bold go exploring, and the bolder the more',
+    /if \(bold < EXPLORE\.bold\) return 0;/.test(ex) && /\(1 \+ \(bold - EXPLORE\.bold\) \* 4\)/.test(ex)
+    && /\['explore', exploreWeight\(p, hunger, rested\)\]/.test(html));
+  check('about one in five of them', (() => {
+    const bold = Number(ex.match(/bold: ([\d.]+),/)?.[1]);
+    const spread = Number(html.match(/TRAIT_SPREAD = ([\d.]+);/)?.[1]);
+    // A first generation's boldness is spread evenly over 1 ± TRAIT_SPREAD.
+    const share = (1 + spread - bold) / (2 * spread);
+    return share > 0.1 && share < 0.35 ? true : (share * 100).toFixed(0) + '%';
+  })() === true);
+  check('they go far, to the emptiest ground, and not where they have looked already',
+    /const r = WORLD \* \(EXPLORE\.near \+ luck\(\) \* \(EXPLORE\.far - EXPLORE\.near\)\);/.test(ex)
+    && /const value = empty \* seen \*/.test(ex) && /if \(p\.job === 'explore'\) \{ if \(pickFar\(p, camp, luck\)\) return true;/.test(html));
+  check('and are not afraid of the dark: dusk does not call them home',
+    /p\.job !== 'tend' && p\.job !== 'explore' && p\.state !== 'return'/.test(html));
+  check('a place is weighed by food, water, stone, room and flat ground',
+    /return ground \+ water \+ stone \+ room \+ \(flat - EXPLORE\.flat\) \* 2;/.test(ex)
+    && /if \(!clearOfCamps\(x, z\)\) return 0;/.test(ex));
+  check('a new band may settle beside a village or a city, but not in its streets',
+    /let reach = Math\.max\(CAMP_CLEARING, c\.reach \|\| 0\);/.test(ex)
+    && /if \(\(c\.stage \|\| 0\) >= CITY_AT\) reach = Math\.max\(reach, CITY_REACH\);/.test(ex)
+    && /if \(Math\.hypot\(c\.x - x, c\.z - z\) < reach \+ SPLIT\.gap\) return false;/.test(ex)
+    && /if \(!clearOfCamps\(x, z\) \|\| !clearOfCreeks\(x, z, 0\)\) continue;/.test(bodyOf('newCampSite') || ''));
+  check('and knows a city by the same numbers the city is built by', (() => {
+    const city = html.match(/export const CITY = \{ at: (\d+),[^}]*reach: (\d+),/) || html.match(/const CITY = \{ at: (\d+),[^}]*reach: (\d+),/);
+    const mine = ex.match(/const CITY_REACH = (\d+), CITY_AT = (\d+);/);
+    return city && mine && city[1] === mine[2] && city[2] === mine[1] ? true : JSON.stringify([city?.slice(1), mine?.slice(1)]);
+  })() === true);
+  check('what is worth it goes on the band\'s short list, and the best is news',
+    /if \(p\.job === 'explore'\) surveyDone\(p\);/.test(html)
+    && /if \(camp\.finds\.length > EXPLORE\.keep\) camp\.finds\.length = EXPLORE\.keep;/.test(ex)
+    && /logEvent\('find', /.test(ex));
+  check('and a band that splits settles at the best of them',
+    /const site = foundSite\(parent\) \|\| newCampSite\(rng\);/.test(html));
+  check('and remembers them over a reload',
+    /fd: c\.finds\?\.length/.test(moduleSource('save.js')) && /camps\[i\]\.finds = Array\.isArray\(c\.fd\)/.test(moduleSource('save.js')));
+}
+
+group('water');
+
+/* Wading is slow, and nothing is built standing in water. */
+{
+  const noiseSrc = moduleSource('noise.js');
+  check('crossing a creek or a lake is wading, and slower than any ground',
+    /if \(inCreek\(x, z\)\) return TREAD\.wade;/.test(bodyOf('groundPace') || '')
+    && Number(html.match(/wade: ([\d.]+),/)?.[1]) < Number(html.match(/rough: ([\d.]+),/)?.[1]));
+  check('the creeks tell the field where the water is, as they carve it',
+    /setWaterCells\(wet\);/.test(moduleSource('creeks.js')) && /function inWater\(x, z\)/.test(noiseSrc)
+    && /return sampleHeight\(x, z\) < SEA \|\| inCreek\(x, z\);/.test(noiseSrc));
+  check('no granary, tent of the outskirts, city house or hall in the water',
+    /if \(inWater\(x, z\) \|\| inWater\(fx, fz\)\) return false;/.test(bodyOf('storeGround') || '')
+    && /if \(inWater\(x, z\)\) return false;/.test(bodyOf('outerGround') || '')
+    && /if \(inWater\(q\.x, q\.z\) \|\| inWater\(sx, sz\)\) return false;/.test(bodyOf('cityGround') || ''));
+  check('and a tent in the water is moved round its ring, without a draw off the stream',
+    /for \(let k = 1; k <= 20 && inWater\(fire\.x \+ Math\.cos\(a\) \* r, fire\.z \+ Math\.sin\(a\) \* r\); k\+\+\) \{\s*a \+= \(k % 2 \? 1 : -1\) \* k \* 0\.16;/.test(html));
+  /* A preference, not a wall: an island threaded with water whose every flat
+     spot is within twenty metres of a creek had no camp on it at all, and no
+     people. Beside a creek is allowed when nothing else is; in one never is. */
+  check('no camp is pitched in a creek, and off them wherever the island allows',
+    /if \(inWater\(x, z\)\) continue;\s*const flat = flatnessAt\(x, z\) \* \(clearOfCreeks\(x, z, 22\) \? 1 : 0\.5\);/.test(bodyOf('chooseCampSites') || '')
+    && /const flat = flatnessAt\(x, z\) \* \(clearOfCreeks\(x, z, 22\) \? 1 : 0\.5\);/.test(bodyOf('newCampSite') || '')
+    && /if \(!clearOfCreeks\(x, z, 0\)\) continue;/.test(bodyOf('moveCampAway') || '')
+    && /- \(clearOfCreeks\(x, z, 22\) \? 0 : 400\)/.test(bodyOf('moveCampAway') || '')
+    && /if \(!clearOfCreeks\(x, z, 22\)\) return 0;/.test(moduleSource('explore.js')));
+  check('nor a graveyard, a field or a woodpile',
+    /if \(!clearOfCreeks\(x, z, 8\)\) continue;/.test(html)
+    && (moduleSource('farming.js').match(/clearOfCreeks\(x, z, 12\)/g) || []).length >= 1
+    && /if \(!inWater\(x, z\) \|\| side < 0\) return/.test(moduleSource('wood.js')));
+}
+
 group('loading over a slow link');
 
 /* Over a tunnel every file is a round trip of half a second or more. The page
@@ -7147,10 +7308,47 @@ group('fields and flocks');
 const farmSrc = moduleSource('farming.js');
 check('irrigation comes first: nothing is sown until a band can water the ground',
   /const learning = \(camp\.skill\.irrigation \|\| 0\) < FARM\.irrigateFirst;/.test(farmSrc)
-  && /if \(learning\) return;/.test(farmSrc)
+  && /if \(learning \|\| !watered\) return;/.test(farmSrc)
   && farmSrc.indexOf("practise(camp, 'irrigation'") < farmSrc.indexOf("practise(camp, 'farming'"));
-check('the field is by a creek when there is one, and watered by hand when not',
-  /for \(const path of streams\)/.test(farmSrc) && /\(f\.wet \? 1 : FARM\.dry\)/.test(farmSrc));
+check('the field is on farmland by water, and watered by a ditch dug to it',
+  /for \(const path of streams\)/.test(farmSrc) && /const watered = ditchDone\(camp\);/.test(farmSrc)
+  && !/FARM\.dry/.test(farmSrc));
+check('the ditch comes from upstream: water higher than the field, through no rise it cannot cut',
+  /if \(level < ground \+ 0\.3\) return false;/.test(farmSrc)
+  && /> level \+ DITCH\.rise\) return false;/.test(farmSrc)
+  && /for \(const l of lakes\)/.test(bodyOf('fromLake') || ''));
+check('it is dug a stretch a session, from the water end, and its finishing is news',
+  /camp\.ditchDug = Math\.min\(d\.length, \(camp\.ditchDug \|\| 0\) \+ FARM\.dig \* \(1 \+ \(camp\.skill\.irrigation \|\| 0\)\)\);/.test(farmSrc)
+  && /dug a ditch to their field, and the water runs in it/.test(farmSrc)
+  && /if \(\(camp\.ditchDug \|\| 0\) < d\.length\) \{\s*const q = d\.path\[/.test(bodyOf('farmSite') || ''));
+check('and a band with no water to dig from cannot farm',
+  /if \(!ditchOf\(p\.camp\)\?\.path\) return 0;/.test(bodyOf('farmWeight') || ''));
+check('the ditch is drawn as far as it is dug, and the water runs in it once it is',
+  /g\.trench\.geometry\.setDrawRange\(0, quads \* 6\);/.test(farmSrc) && /g\.water\.visible = dug >= d\.length;/.test(farmSrc)
+  && /dh: r2\(c\.ditchDug \|\| 0\)/.test(html) && /camps\[i\]\.ditchDug = Number\(c\.dh\) \|\| 0;/.test(html));
+check('a band that farms leans its day to its field, and away from the hillside and the hunt',
+  /return FARM\.chance \* pull \* rested \* \(1 \+ FARM\.lean \* skill\);/.test(farmSrc)
+  && /return farmed > 0 \? mixed \* \(1 - SOCIETY\.farmAway \* farmed\) : mixed;/.test(moduleSource('society.js')));
+check('farmland is found for the island: fertile, flat, and worth more the shorter its ditch',
+  /const worth = soil \* \(0\.4 \+ 0\.6 \/ \(1 \+ length \/ 40\)\) \* \(0\.5 \+ 0\.5 \* flat\);/.test(farmSrc)
+  && /0\.55 \+ fbm\(x \* 0\.010, z \* 0\.010, 2, P\.seed \+ 707\)/.test(bodyOf('soilAt') || '')
+  && /if \(q\.level < ground \+ 0\.3\) continue;/.test(bodyOf('surveyFarmland') || ''));
+check('a band walks past poor ground at home to good ground off, but not across the island, nor onto another\'s', (() => {
+  const src = moduleSource('farming.js');
+  const at = src.indexOf('function chooseSite(');
+  const close = src.slice(at).match(/\r?\n\}\r?\n/);
+  const choose = new Function('FARM', src.slice(at, at + close.index + close[0].length) + '\nreturn chooseSite;')(
+    { siteReach: 450, walk: 300 });
+  const camp = { x: 0, z: 0 };
+  const near = { x: 60, z: 0, worth: 0.2 }, far = { x: 300, z: 0, worth: 0.9 }, across = { x: 900, z: 0, worth: 5 };
+  const sites = [near, far, across];
+  const free = choose(camp, sites, []), claimed = choose(camp, sites, [{ x: 300, z: 0, r: 40 }]);
+  return free === far && claimed === near ? true : JSON.stringify({ free, claimed });
+})() === true);
+check('and comes back to the farmland it took after a reload',
+  /fl: c\.field \? \[r2\(c\.field\.x\), r2\(c\.field\.z\)\] : undefined/.test(html)
+  && /camps\[i\]\.fieldPin = Array\.isArray\(c\.fl\)/.test(html)
+  && /pick = sites\.find\(\(s\) => Math\.abs\(s\.x - pin\.x\) < 1 && Math\.abs\(s\.z - pin\.z\) < 1\) \|\| null;/.test(farmSrc));
 check('a crop follows the season, and the island\'s ABUNDANCE', /\* forageSeason \* P\.abundance;/.test(farmSrc));
 check('the job is chosen, sent, worked and told like the others',
   /\['farm', farmWeight\(p, hunger, rested\)\]/.test(html)
@@ -7248,27 +7446,31 @@ check('a conquest is worth telling', /'conquest',   \/\/ a band took another's v
 
 /* A field grows with the band that works it, wider and longer both, and is
    never planted in the creek or on the camp's trampled ground. */
-check('a field grows wider and longer with the band and its farming', (() => {
+check('a field grows with the band and its farming, and has no largest', (() => {
   const src = moduleSource('farming.js');
   const at = src.indexOf('function fieldSize(camp)');
-  const size = new Function('FARM', 'FIELD', 'CAMP_PIECES',
-    src.slice(at, src.indexOf('\n}\n', at) + 2) + '\nreturn fieldSize;')(
-    { fullBand: 30 }, { spacing: 1.6, minLen: 9.5, maxLen: 26, step: 1.4 }, { rows: 20, crops: 360 });
+  const close = src.slice(at).match(/\r?\n\}\r?\n/);
+  const FIELD = { spacing: 1.6, minLen: 9.5, perHead: 30, step: 1.4 };
+  const size = new Function('FIELD', src.slice(at, at + close.index + close[0].length) + '\nreturn fieldSize;')(FIELD);
   const patch = size({ pop: 6, skill: { irrigation: 0.5, farming: 0.1 } });
   const field = size({ pop: 40, skill: { irrigation: 1, farming: 1 } });
+  const city = size({ pop: 400, skill: { irrigation: 1, farming: 1 } });
   const none = size({ pop: 40, skill: { irrigation: 0, farming: 0 } });
-  return field.rows > patch.rows && field.len > patch.len && none.rows === 0 && field.rows === 20
-    && field.perRow <= 18 ? true : JSON.stringify({ patch, field, none });
+  const area = (s) => s.rows * FIELD.spacing * s.len;
+  return field.rows > patch.rows && field.len > patch.len && none.rows === 0
+    && city.rows > field.rows * 2.5 && Math.abs(area(city) / area(field) - 10) < 2.5
+    ? true : JSON.stringify({ patch, field, city, none });
 })() === true);
 check('and is never planted in the creek or on the camp\'s trampled ground',
   /sampleHeight\(x, z\) > SEA \+ 0\.6 && Math\.hypot\(x - camp\.x, z - camp\.z\) > CAMP_CLEARING/.test(moduleSource('farming.js')));
-check('and the meshes have room for the largest one', (() => {
-  const rows = Number((html.match(/^\s*rows: (\d+),/m) || [, 0])[1]);
-  const crops = Number((html.match(/^\s*crops: (\d+),/m) || [, 0])[1]);
-  const maxLen = Number((html.match(/maxLen: ([\d.]+),/) || [, 0])[1]);
-  const step = Number((html.match(/^\s*step: ([\d.]+),\s*\/\/ metres between plants/m) || [, 0])[1]);
-  return crops / rows >= Math.floor(maxLen / step) ? true : `${crops / rows} places a row for ${Math.floor(maxLen / step)} plants`;
-})() === true);
+check('and its rows and plants are drawn into meshes that grow, not a camp\'s slots',
+  /while \(size < need\) size \*= 2;/.test(bodyOf('roomFor') || '')
+  && /rowMesh = roomFor\(rowMesh, rowsNeed, farmGeo\.rows, 'field-rows'\);/.test(farmSrc)
+  && /rows: 0,\s*crops: 0,/.test(moduleSource('people.js'))
+  && /updateFields\(\);/.test(moduleSource('main.js')));
+check('and it grows round the tents, the granaries and the water rather than over them',
+  /&& !inWater\(x, z\) && !taken\(x, z\) && !sownAt\(x, z\);/.test(farmSrc) && /for \(const h of camp\.city\?\.homes \|\| \[\]\)/.test(farmSrc)
+  && (moduleSource('settlement.js').match(/const most = fieldReach\(camp\);/g) || []).length === 2);
 
 /* -------------------------------------------------------------------------
    From band to city

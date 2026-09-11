@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
 import { P, SEA } from './params.js';
-import { flatnessAt, mulberry32, sampleHeight } from './noise.js';
+import { flatnessAt, mulberry32, sampleHeight, inWater } from './noise.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, treeSpots } from './world.js';
-import { FIELD } from './farming.js';
+import { FIELD, fieldReach } from './farming.js';
 import { CITYHALL_TOP, civicGeometries, houseGeometry, storeGeometry, tentMaterial, tentStyle } from './village.js';
 import { pathEpoch, paveDisc, paveRoad } from './paths.js';
 import {
@@ -83,13 +83,14 @@ function outerSlot(camp, s) {
    (FIELD, farming.js), and clear of every other village's ground. */
 function outerGround(camp, x, z) {
   if (sampleHeight(x, z) < SEA + 1.5 || flatnessAt(x, z) < 0.8) return false;
+  if (inWater(x, z)) return false;                             // nor in a creek or a lake
   if (camp.barrow) {
     const ring = Math.ceil((Math.sqrt(Math.max(1, (camp.buried || 0) + 100)) - 1) / 2);
     const half = (ring + 0.5) * GRAVE_SPACING + 0.3;
     if (Math.hypot(x - camp.barrow.x, z - camp.barrow.z) < half * 1.6 + 6 + TENT_REACH) return false;
   }
   if (camp.field) {
-    const most = FIELD.maxLen / 2 + (CAMP_PIECES.rows * FIELD.spacing) / 2 + 4;
+    const most = fieldReach(camp);           // as far as the field has come (farming.js)
     if (Math.hypot(x - camp.field.x, z - camp.field.z) < most + TENT_REACH) return false;
   }
   for (const c of camps) {
@@ -231,13 +232,14 @@ function cityCandidates(camp) {
 function cityGround(camp, q, trees) {
   const sx = q.x + q.fx * 3.2, sz = q.z + q.fz * 3.2;
   if (sampleHeight(q.x, q.z) < SEA + 1.2 || sampleHeight(sx, sz) < SEA + 1 || flatnessAt(q.x, q.z) < 0.72) return false;
+  if (inWater(q.x, q.z) || inWater(sx, sz)) return false;     // a city is not built in its creeks
   if (camp.barrow) {
     const ring = Math.ceil((Math.sqrt(Math.max(1, (camp.buried || 0) + 100)) - 1) / 2);
     const half = (ring + 0.5) * GRAVE_SPACING + 0.3;
     if (Math.hypot(q.x - camp.barrow.x, q.z - camp.barrow.z) < half * 1.6 + 4) return false;
   }
   if (camp.field) {
-    const most = FIELD.maxLen / 2 + (CAMP_PIECES.rows * FIELD.spacing) / 2 + 4;
+    const most = fieldReach(camp);           // as far as the field has come (farming.js)
     if (Math.hypot(q.x - camp.field.x, q.z - camp.field.z) < most + 3) return false;
   }
   for (const s of camp.storeSpots || []) if (Math.hypot(q.x - s.x, q.z - s.z) < 4.2) return false;

@@ -41,7 +41,7 @@ export const RAFT = {
   reach: 4,            // metres from the landing that E takes it out from
   dockDeck: 0.55,      // the planks, above the water
 };
-const RAFT_MAX = 96;
+let raftRoom = 96;                     // docks the meshes hold; doubled past it, like the camps
 
 /** How far up off the ground somebody standing on a raft here is. */
 export function afloat(x, z) { return Math.max(0, SEA + RAFT.deck - sampleHeight(x, z)); }
@@ -157,7 +157,7 @@ function buildRaftMeshes() {
   for (const [x, z] of [[-0.65, 2], [0.65, 2], [-0.65, DOCK.len - 0.3], [0.65, DOCK.len - 0.3]]) {
     dock.push(new THREE.CylinderGeometry(0.08, 0.1, 3.4, 6).translate(x, -1.65, z));
   }
-  dockMesh = new THREE.InstancedMesh(joinGeometries(dock), new THREE.MeshLambertMaterial({ color: 0x75573a }), RAFT_MAX);
+  dockMesh = new THREE.InstancedMesh(joinGeometries(dock), new THREE.MeshLambertMaterial({ color: 0x75573a }), raftRoom);
   // The raft: five logs lashed across two bars.
   const logs = [];
   for (let k = 0; k < 5; k++) {
@@ -165,7 +165,7 @@ function buildRaftMeshes() {
   }
   logs.push(new THREE.BoxGeometry(1.8, 0.08, 0.14).translate(0, 0.16, 0.95));
   logs.push(new THREE.BoxGeometry(1.8, 0.08, 0.14).translate(0, 0.16, -0.95));
-  raftMesh = new THREE.InstancedMesh(joinGeometries(logs), new THREE.MeshLambertMaterial({ color: 0x8c6b43 }), RAFT_MAX);
+  raftMesh = new THREE.InstancedMesh(joinGeometries(logs), new THREE.MeshLambertMaterial({ color: 0x8c6b43 }), raftRoom);
   for (const m of [dockMesh, raftMesh]) {
     m.count = 0;
     m.frustumCulled = false;
@@ -181,11 +181,17 @@ export function updateRafts() {
   let any = false;
   for (const c of camps) if (c.raft && !c.gone && c.shore) { any = true; break; }
   if (!any) { if (dockMesh) { dockMesh.count = 0; raftMesh.count = 0; } return; }
+  // More camps than the meshes hold: made again, bigger. There is no ceiling on camps.
+  if (dockMesh && camps.length > raftRoom) {
+    for (const m of [dockMesh, raftMesh]) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); m.dispose(); }
+    dockMesh = raftMesh = null;
+    while (raftRoom < camps.length) raftRoom *= 2;
+  }
   if (!dockMesh) buildRaftMeshes();
   const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
   let i = 0;
   for (const c of camps) {
-    if (i >= RAFT_MAX) break;
+    if (i >= raftRoom) break;
     if (!c.raft || c.gone) continue;
     const d = dockOf(c);
     if (!d) continue;

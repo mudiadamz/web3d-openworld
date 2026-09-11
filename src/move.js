@@ -35,6 +35,7 @@ import {
 } from './quarries.js';
 import { BAG, bagAdd, bagKind, bagWords, carryCap, emptyBag, hasLoad, loadOf, loadPace, putIn, takeOut } from './bag.js';
 import { chopDone, pickTree, storeWood, woodWant } from './wood.js';
+import { exploreWeight, pickFar, surveyDone } from './explore.js';
 import { pileWords, putDown, removeDrop } from './drops.js';
 import { takeCarcass, throwSpear } from './spear.js';
 import { boardRaft, landRaft, moorRaft, raftBusy, raftStep, raftTrip } from './rafts.js';
@@ -552,6 +553,8 @@ export function pickWork(p) {
     }
     p.job = 'craft';                      // nothing within reach: something else
   }
+  // Far out into the emptiest country they can see (explore.js).
+  if (p.job === 'explore') { if (pickFar(p, camp, luck)) return true; p.job = 'gather'; }
   // A tree, for wood (wood.js): to the foot of it.
   if (p.job === 'wood') {
     const t = pickTree(camp, luck);
@@ -718,6 +721,7 @@ export function chooseJob(p, day) {
       /* Out for wood: with a raft to build, or the stack by the granaries low.
          Not while hungry, like the rocks — a log does not feed anybody today. */
       ['wood', !p.child ? woodWant(p.camp) * (1 - 0.7 * hunger) * rested : 0],
+      ['explore', exploreWeight(p, hunger, rested)],       // the bold, far out (explore.js)
       /* To the field (farming.js): ditches and water until the band can
          irrigate, then a crop — something a fed band learns and a hungry one
          leans on once it pays. */
@@ -859,7 +863,7 @@ export const MOURN = { chance: 0.10 };
    anybody will go for a stone. */
 export const QUARRY_TRIP = { chance: 0.12, reach: 220 };
 
-const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood']);
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore']);
 
 /* Where somebody at the fire actually sits: inside the ring of tents and
    outside the ring of stones. The huts stand 6.5-9.1m out and are a couple of
@@ -1139,6 +1143,7 @@ export function updatePeople(dt, day) {
           }
           // Logs off a tree, onto the shoulder (wood.js).
           if (p.job === 'wood') chopDone(p);
+          if (p.job === 'explore') surveyDone(p);
           // A field: ditches until the band can water it, then a crop (farming.js).
           if (p.job === 'farm') farmDone(p);
           // A morning at the market: the band a little better at dealing.
@@ -1206,7 +1211,7 @@ export function updatePeople(dt, day) {
        they are sent straight back out to a fresh point beside the fire they are
        already standing at, and nobody ever idles long enough to choose a night
        job. A whole band walked in circles round its own camp all night. */
-    if (!p.led && day < 0.25 && p.job !== 'sleep' && p.job !== 'tend' && p.state !== 'return') {
+    if (!p.led && day < 0.25 && p.job !== 'sleep' && p.job !== 'tend' && p.job !== 'explore' && p.state !== 'return') {
       if (Math.hypot(p.x - homeFire(p).x, p.z - homeFire(p).z) > 12) {
         p.state = 'return';
         aimHome(p, 5);

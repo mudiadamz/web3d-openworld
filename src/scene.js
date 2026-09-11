@@ -416,7 +416,14 @@ export function applyWaterShader(material, { swell = false, flow = false } = {})
         float f1 = sin(vWorldXZ.x * 1.05 + uTime * 2.1) * cos(vWorldXZ.y * 0.87 - uTime * 1.7);
         float f2 = sin(dot(vWorldXZ, vec2(0.72, -0.69)) * 2.3 + uTime * 3.1);
         vec3 rip = vec3(f1, 0.0, f2) * uRipple * 0.16;`}
-        normal = normalize(normal + (viewMatrix * vec4(rip, 0.0)).xyz);`);
+        normal = normalize(normal + (viewMatrix * vec4(rip, 0.0)).xyz);`)
+      .replace('#include <dithering_fragment>', `
+        #include <dithering_fragment>
+        ${flow ? `
+        /* Soft banks: a creek thins to nothing at its edges, so the ground shows
+           through where the water meets its bank instead of stopping at a ruled
+           line down each side. */
+        gl_FragColor.a *= smoothstep(0.0, 0.3, vFlowUv.x) * smoothstep(1.0, 0.7, vFlowUv.x);` : ''}`);
   };
   material.customProgramCacheKey = () => `water-${swell}-${flow}`;
   return material;

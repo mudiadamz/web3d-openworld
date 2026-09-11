@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import { CAMP_CEILING, MAP_SCALE, P, PEOPLE_ROOM, QUALITY, SEA, SNOW } from './params.js';
-import { clamp, flatnessAt, mulberry32, sampleHeight } from './noise.js';
+import { clamp, flatnessAt, mulberry32, sampleHeight, clearOfCreeks, inWater } from './noise.js';
 import { faunaMaterial, rockMaterial } from './scene.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, stats, treeSpots, world } from './world.js';
 import { recordPerson, setLineage, tribeVoice, uniqueName, usedCodes, usedNames } from './wildlife.js';
@@ -138,7 +138,12 @@ export function chooseCampSites(count) {
          plain metres — so scaling GROUND.apart beside it was inconsistent with
          its own neighbour in the same object. */
       if (camps.some((c) => Math.hypot(c.x - x, c.z - z) < CAMPS_APART)) continue;
-      const flat = flatnessAt(x, z);
+      /* Off the creeks if it can be — its tents and fires spread twenty metres
+         round the middle — but on an island threaded with water, beside one
+         rather than nowhere: the tents step round it (layoutCamp), and nothing
+         is built in it. Never in the water itself. */
+      if (inWater(x, z)) continue;
+      const flat = flatnessAt(x, z) * (clearOfCreeks(x, z, 22) ? 1 : 0.5);
       if (flat > bestFlat) { bestFlat = flat; best = { x, z }; }
       if (flat > 0.985) break;                    // good enough, stop looking
     }
@@ -601,8 +606,11 @@ export const CAMP_PIECES = {
      nothing may cross that while either is loading. `sheep` is FARM.stockMax;
      rows and crops are room for the largest field (FIELD, in farming.js): twenty
      rows, eighteen plants to a row of twenty-six metres. */
-  rows: 20,
-  crops: 360,
+  /* A field's rows and plants are not a camp's to keep slots for: a field has
+     no largest, and they are drawn into meshes of their own that grow
+     (farming.js). None here. */
+  rows: 0,
+  crops: 0,
   pen: 10,
   sheep: 12,
   /* No `fires` here, and the crash that put this comment in is the reason:
@@ -981,6 +989,7 @@ export function storeCandidates(camp) {
    side runs into the sea keeps its food in fewer of them. */
 export function storeGround(camp, x, z, fx, fz) {
   if (sampleHeight(x, z) < SEA + 1.5 || sampleHeight(fx, fz) < SEA + 1.5) return false;
+  if (inWater(x, z) || inWater(fx, fz)) return false;          // nor in a creek or a lake
   if (flatnessAt(x, z) < STORE_FLAT) return false;
   const roof = STORE_ROOF * STORE_SCALE;
   for (let f = 0; f < HEARTHS; f++) {
@@ -1041,6 +1050,7 @@ export function layoutCamp(camp, index) {
     const x = camp.x + Math.cos(a) * r, z = camp.z + Math.sin(a) * r;
     if (sampleHeight(x, z) < SEA + 1.5) continue;
     if (flatnessAt(x, z) < 0.88) continue;
+    if (!clearOfCreeks(x, z, 8)) continue;       // the dead are not buried in a creek
     camp.barrow = { x, z, y: sampleHeight(x, z), a };
   }
   // Nowhere flat and dry within reach: keep them close rather than nowhere.
@@ -1058,8 +1068,14 @@ export function layoutCamp(camp, index) {
     const mine = (i / HUTS_PER_HEARTH) | 0;
     const seat = i % HUTS_PER_HEARTH;
     const fire = hearthAt(camp, mine);
-    const a = (seat / HUTS_PER_HEARTH) * Math.PI * 2 + rng() * 0.5;
+    let a = (seat / HUTS_PER_HEARTH) * Math.PI * 2 + rng() * 0.5;
     const r = 6.5 + rng() * 2.6;
+    /* Never standing in water: round its own ring, a little either way at a
+       time, to the first dry ground. No draw off the stream for it, which the
+       rest of the camp's layout is still reading. */
+    for (let k = 1; k <= 20 && inWater(fire.x + Math.cos(a) * r, fire.z + Math.sin(a) * r); k++) {
+      a += (k % 2 ? 1 : -1) * k * 0.16;
+    }
     const x = fire.x + Math.cos(a) * r, z = fire.z + Math.sin(a) * r;
     const sc = 0.85 + rng() * 0.4;
     camp.huts.push({ x, z });
@@ -1467,6 +1483,69 @@ export function growPeople(need) {
   }
   growLooks(room);
   setPeopleCapacity(room);
+}
+
+/* -------------------------------------------------------------------------
+   No ceiling on camps, either
+
+   A band that splits needs somewhere to put its tents, and there was room for
+   so many camps and no more — a number fixed when the world was built, which
+   is running out of huts rather than of island. So the camps do what the
+   people do: past the room there is, every mesh that keeps a slot per camp is
+   made again at twice the size, everything already drawn is copied across, and
+   the new slots are parked out of sight until a band is laid out in them.
+   Nothing is laid out again: a camp's tents come off its own stream, which has
+   moved on, so drawing it twice would move them. The meshes settlement.js
+   makes as they fill grow by themselves (packed), and are left to.
+   ------------------------------------------------------------------------- */
+export function growCamps(need) {
+  if (!campParts || need <= campCapacity) return;
+  let room = Math.max(campCapacity, 1);
+  while (room < need) room *= 2;
+  for (const key of Object.keys(campParts)) {
+    const old = campParts[key];
+    if (!old?.isInstancedMesh) continue;
+    const house = Boolean(old.name?.startsWith('camp-'));
+    const per = key in CAMP_PIECES ? CAMP_PIECES[key] : key === 'fire' ? HEARTHS : house ? CAMP_PIECES.huts : 0;
+    if (!per || old.instanceMatrix.count !== campCapacity * per) continue;
+    const m = new THREE.InstancedMesh(old.geometry, old.material, room * per);
+    m.name = old.name;
+    m.castShadow = old.castShadow;
+    m.receiveShadow = old.receiveShadow;
+    m.frustumCulled = false;
+    m.instanceMatrix.array.set(old.instanceMatrix.array);
+    if (old.instanceColor) {
+      m.setColorAt(0, _c.setHex(0xffffff));
+      m.instanceColor.array.set(old.instanceColor.array);
+    }
+    for (let i = old.instanceMatrix.count; i < room * per; i++) {
+      m.setMatrixAt(i, HIDDEN);
+      // A house's own tint, off its slot, as makeHouses (settlement.js) gives every one.
+      if (house) {
+        const t = ((i * 2654435761) >>> 0) / 4294967296;
+        m.setColorAt(i, _c.setRGB(0.88 + t * 0.12, 0.86 + t * 0.12, 0.84 + t * 0.12));
+      }
+    }
+    m.count = old.count >= old.instanceMatrix.count ? room * per : old.count;
+    tribeGroup.remove(old);
+    old.dispose();                    // its own buffers; the geometry is shared
+    tribeGroup.add(m);
+    campParts[key] = m;
+  }
+  campCapacity = room;
+  // What bands raise over their dead stands in a slot per camp too.
+  if (graveMesh) {
+    tribeGroup.remove(graveMesh);
+    graveMesh.geometry.dispose();
+    graveMesh.dispose();
+    buildGraves();
+  }
+  // And a column of smoke for every camp there could be.
+  if (smoke) {
+    tribeGroup.remove(smoke);
+    smoke.geometry.dispose();
+    buildSmoke();
+  }
 }
 
 /** The whole band, after anything that could have moved somebody's slot. */

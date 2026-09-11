@@ -798,7 +798,7 @@ export function releaseLead(announce = true, natural = true) {
 /* What you can tell somebody to do. The last two are errands a grown band has
    and a new one does not: there is nowhere to quarry until somebody has found
    the rocks, and nowhere to stand until somebody has been buried. */
-export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit', 'quarry', 'mourn', 'raid', 'fish', 'wood', 'farm'];
+export const ORDERS = ['gather', 'hunt', 'craft', 'tend', 'sleep', 'visit', 'quarry', 'mourn', 'raid', 'fish', 'wood', 'farm', 'explore'];
 
 /* Too heavy to walk is too heavy to be sent anywhere: an order, the walk home
    or being let go to carry on would all have them walking off with it — the
@@ -1241,6 +1241,7 @@ export const JOB_WORDS = {
   raid: 'taking it',
   fish: 'fishing',
   wood: 'cutting wood',
+  explore: 'exploring',
   farm: 'working the fields',
   market: 'trading at the market',
   visit: 'walking to the next band',
@@ -1259,6 +1260,7 @@ export const CAME_WORDS = {
   hunt: ', back from a hunt',
   quarry: ', back from the rocks',
   wood: ', back with wood',
+  explore: ', back from exploring',
   farm: ', back from the fields',
   market: ', back from the market',
   mourn: ', back from the stones',
@@ -1278,6 +1280,7 @@ export const GOING_WORDS = {
   raid: 'going to take it',
   fish: 'walking down to the water',
   wood: 'walking out for wood',
+  explore: 'off exploring',
   farm: 'walking out to the fields',
   market: 'off to the market',
   craft: 'off to sit and knap',

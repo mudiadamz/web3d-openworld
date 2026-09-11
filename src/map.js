@@ -8,7 +8,7 @@ import { packs } from './wildlife.js';
 import { camps, people } from './people.js';
 import { PATH, forEachWorn, pathVersion } from './paths.js';
 import { recountBlades } from './move.js';
-import { streams } from './creeks.js';
+import { lakeRadius, lakes, streams, tintBank } from './creeks.js';
 import { _fwd, openTribe, setViewMode, syncLookFromCamera } from './chronicle.js';
 import { $, persistState } from './save.js';
 import { toast } from './ui.js';
@@ -217,6 +217,7 @@ export function renderMapBase() {
         col.copy(MAP_WATER).lerp(MAP_DEEP, smoothstep(0, -45, h));
       } else {
         groundColorAt(x, z, h, flatnessAt(x, z), col);
+        tintBank(x, z, col);
         /* Hillshade. A west-facing slope rises toward +x, so dx > 0 means the
            surface turns toward the light and brightens; same for dz and north.
            Getting that sign backwards inverts every valley into a ridge. */
@@ -251,6 +252,19 @@ export function renderMapBase() {
       }
       c.lineWidth = 1.5 * MK;
       c.stroke();
+    }
+  }
+  // The lakes the creeks end in, and the springs they rise at, as water.
+  for (const lake of lakes) {
+    for (const c of [ctx, plainCtx]) {
+      c.beginPath();
+      for (let k = 0; k <= 32; k++) {
+        const a = (k / 32) * Math.PI * 2, r = lakeRadius(lake, a);
+        const [px, py] = worldToMap(lake.x + Math.cos(a) * r, lake.z + Math.sin(a) * r);
+        if (k) c.lineTo(px, py); else c.moveTo(px, py);
+      }
+      c.fillStyle = c === ctx ? 'rgba(62, 116, 150, 1)' : 'rgba(40, 84, 112, 1)';
+      c.fill();
     }
   }
   nextMapDraw = 0;

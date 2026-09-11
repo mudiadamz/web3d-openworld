@@ -37,6 +37,7 @@ export const SOCIETY = {
   hold: 1.5,          // sim-years the next rung's marks must hold before it is reached
   slip: 3,            // sim-years of failing its own rung before a settlement falls back
   blend: 1,           // sim-years over which the day's work shifts after a step
+  farmAway: 0.55,     // how much less a band that farms forages and hunts, at mastery
 };
 
 /* `split` multiplies SPLIT.at. `mix` leans each errand against the others; an
@@ -138,5 +139,10 @@ export function jobMix(camp, job, hunger) {
   const t = camp.stageSince == null ? 1 : Math.min(1, (simDay - camp.stageSince) / (SOCIETY.blend * P.yearLength));
   const a = from[job] ?? 1, b = to[job] ?? 1;
   const m = a + (b - a) * t;
-  return m + (1 - m) * Math.min(1, Math.max(0, hunger));
+  const mixed = m + (1 - m) * Math.min(1, Math.max(0, hunger));
+  /* And a band that has taken to farming walks the hillside and hunts the less
+     for it, the better it farms — which hunger undoes as well, like the rest. */
+  const farmed = job === 'gather' || job === 'hunt'
+    ? (camp.skill?.farming || 0) * (1 - Math.min(1, Math.max(0, hunger))) : 0;
+  return farmed > 0 ? mixed * (1 - SOCIETY.farmAway * farmed) : mixed;
 }

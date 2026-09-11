@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import { SEA, TILE, WORLD } from './params.js';
-import { sampleHeight } from './noise.js';
+import { sampleHeight, inCreek } from './noise.js';
 
 /* -------------------------------------------------------------------------
    Footpaths
@@ -226,6 +226,7 @@ export function wearAt(x, z) {
    ------------------------------------------------------------------------- */
 export const TREAD = {
   rough: 0.82,          // pace off any path, of a walk on one
+  wade: 0.42,           // and through a creek or a lake, up to the knees in it
   road: 1.12,           // and on a paved road
   look: 4,              // metres ahead a walker judges the ground
   swerve: [0.35, 0.7],  // radians off the straight line they will consider
@@ -236,6 +237,8 @@ export const TREAD = {
 
 /** How fast the ground here lets somebody walk, as a share of a walk on a path. */
 export function groundPace(x, z) {
+  // Wading is slow whatever path runs down to the water: a ford is still a ford.
+  if (inCreek(x, z)) return TREAD.wade;
   const w = wearAt(x, z);
   if (w >= 0.94) return TREAD.road;
   return TREAD.rough + (1 - TREAD.rough) * Math.min(1, w / PATH.bare);

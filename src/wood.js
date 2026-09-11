@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { sampleHeight } from './noise.js';
+import { sampleHeight, inWater } from './noise.js';
 import { scene } from './scene.js';
 import { treeSpots } from './world.js';
 import { camps, dressCamp } from './people.js';
@@ -99,7 +99,7 @@ export function storeWood(camp, n) {
 /* ---- the stack, drawn ---- */
 
 const PILE_MAX = 15;                   // logs drawn on a stack: five, four, three, two, one
-const PILE_CAMPS = 96;
+let pileCamps = 96;                    // camps the stacks mesh holds; doubled past it
 let pileMesh = null, pileKey = '';
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -113,7 +113,11 @@ function pileSpot(c) {
   const s = c.storeSpots?.[0];
   if (!s) return { x: c.x + 8, z: c.z, a: 0 };
   const dx = s.x - c.x, dz = s.z - c.z, d = Math.hypot(dx, dz) || 1;
-  return { x: s.x + (dx / d) * 3.4 + (dz / d) * 1.8, z: s.z + (dz / d) * 3.4 - (dx / d) * 1.8, a: Math.atan2(dx, dz) };
+  // To one side of it — the other side, if that one is in the water.
+  for (const side of [1, -1]) {
+    const x = s.x + (dx / d) * 3.4 + side * (dz / d) * 1.8, z = s.z + (dz / d) * 3.4 - side * (dx / d) * 1.8;
+    if (!inWater(x, z) || side < 0) return { x, z, a: Math.atan2(dx, dz) };
+  }
 }
 
 /** Every frame the world is drawn, and only rewritten when a stack changes. */
@@ -122,10 +126,19 @@ export function updateWoodpiles() {
   for (const c of camps) key += (c.gone ? 0 : Math.min(PILE_MAX, Math.floor(c.wood || 0))) + ',';
   if (key === pileKey) return;
   pileKey = key;
+  // More camps than the mesh holds: made again, bigger. There is no ceiling on camps.
+  if (pileMesh && camps.length > pileCamps) {
+    scene.remove(pileMesh);
+    pileMesh.geometry.dispose();
+    pileMesh.material.dispose();
+    pileMesh.dispose();
+    pileMesh = null;
+    while (pileCamps < camps.length) pileCamps *= 2;
+  }
   if (!pileMesh) {
     if (!/[1-9]/.test(key)) return;
     const geo = new THREE.CylinderGeometry(0.12, 0.13, 1.5, 7).rotateZ(Math.PI / 2);
-    pileMesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0x7a5a3a }), PILE_MAX * PILE_CAMPS);
+    pileMesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0x7a5a3a }), PILE_MAX * pileCamps);
     pileMesh.frustumCulled = false;
     pileMesh.castShadow = true;
     pileMesh.receiveShadow = true;
@@ -133,7 +146,7 @@ export function updateWoodpiles() {
   }
   let n = 0;
   camps.forEach((c, ci) => {
-    if (ci >= PILE_CAMPS || c.gone) return;
+    if (ci >= pileCamps || c.gone) return;
     const logs = Math.min(PILE_MAX, Math.floor(c.wood || 0));
     if (!logs) return;
     const at = pileSpot(c), ground = sampleHeight(at.x, at.z);

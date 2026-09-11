@@ -28,7 +28,7 @@ import { ICON_PATHS } from './icons.js';
    ------------------------------------------------------------------------- */
 export const BUBBLE = {
   gather: 0, hunt: 1, craft: 2, tend: 3, sleep: 4, visit: 5, quarry: 6,
-  fish: 7, raid: 8, mourn: 9, store: 10, rest: 11, nurse: 12, wood: 13,
+  fish: 7, raid: 8, mourn: 9, store: 10, rest: 11, nurse: 12, wood: 13, explore: 14,
 };
 /* And the word each one says beside its icon. One word, because a bubble is a
    glance and not a caption — the caption is still there for the person you are
@@ -37,7 +37,7 @@ export const BUBBLE_SAYS = {
   gather: 'foraging', hunt: 'hunting', craft: 'knapping', tend: 'tending',
   sleep: 'sleeping', visit: 'trading', quarry: 'quarrying', fish: 'fishing',
   raid: 'raiding', mourn: 'mourning', store: 'storing', rest: 'resting',
-  nurse: 'nursing', wood: 'chopping',
+  nurse: 'nursing', wood: 'chopping', explore: 'exploring',
 };
 export const BUBBLE_RANGE = 70;      // metres from the camera past which nothing is said
 /* Nearer than this a bubble carries its word; further out, the icon alone.

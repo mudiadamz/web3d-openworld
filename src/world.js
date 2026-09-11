@@ -11,7 +11,7 @@ import { clearFauna, pick } from './wildlife.js';
 import { clearTribe, inCamp, setGraveMesh, setGraves, setNearParts, tribeGroup } from './people.js';
 import { PATH, PATH_EARTH, clearPaths, takeWornTiles, tileFromKey, wearAt } from './paths.js';
 import { setWet } from './creeks.js';
-import { isWet, streams } from './creeks.js';
+import { isWet, streams, tintBank } from './creeks.js';
 import { updateHud } from './main.js';
 
 /* -------------------------------------------------------------------------
@@ -115,6 +115,7 @@ export function buildTerrain(seg) {
     // number the grass and the trees will ask for, so the rock colour and the
     // "too steep to grow" test can never disagree.
     groundColorAt(x, z, h, flatnessAt(x, z), c);
+    tintBank(x, z, c);                     // wet, dark ground along a creek
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     green[i] = lastGreen;
   }
@@ -350,6 +351,7 @@ export function fillTile(tile, ix, iz) {
     mesh.setMatrixAt(i2, _m4.compose(_v, _q, _s));
 
     groundColorAt(wx, wz, h, flat, _c);
+    tintBank(wx, wz, _c);
     // Blades read brighter and a little more saturated than the soil.
     _c.lerp(C_GRASS_B, 0.35).multiplyScalar(0.85 + rng() * 0.45);
     // And browner the more they have been walked on.

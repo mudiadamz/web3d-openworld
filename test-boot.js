@@ -2126,6 +2126,50 @@ if (measuring('survive')) {
   const SP = await import(pathToFileURL(join(stubDir, 'spear.js')).href);
   const LD = await import(pathToFileURL(join(stubDir, 'larder.js')).href);
   const WO = await import(pathToFileURL(join(stubDir, 'wood.js')).href);
+  const EX = await import(pathToFileURL(join(stubDir, 'explore.js')).href);
+  const CK = await import(pathToFileURL(join(stubDir, 'creeks.js')).href);
+  const FM = await import(pathToFileURL(join(stubDir, 'farming.js')).href);
+  /* Every band that can farm has a ditch to dig, from water higher up than its
+     field; and the fields draw, whatever size they have come to. */
+  {
+    const bad = [];
+    let ditches = 0;
+    for (const c of PP.camps) {
+      const d = FM.ditchOf(c);
+      if (!d?.path) continue;
+      ditches++;
+      const f = FM.fieldOf(c), end = d.path[d.path.length - 1];
+      if (Math.hypot(end.x - f.x, end.z - f.z) > 0.5) bad.push(c.code + ' ends away from its field');
+    }
+    let threw = null;
+    try { FM.updateFields(); } catch (err) { threw = `${err.constructor.name}: ${err.message}`; }
+    check('every ditch runs to its field, and the fields draw', bad.length === 0 && !threw,
+      threw || `${FM.surveyFarmland().length} farmland sites, ${ditches} ditches${bad.length ? ': ' + bad.join(', ') : ''}`);
+  }
+  /* Water comes from somewhere and goes somewhere: on this island, every creek
+     rises at a glacier or a spring, and ends in the sea, in another creek, or
+     in a lake — and a lake is really there where one ends. */
+  {
+    const ends = CK.streams.map((s) => s.end), from = CK.streams.map((s) => s.source);
+    const lakeAtEnd = (s) => CK.lakes.some((l) => !l.spring
+      && Math.hypot(l.x - s[s.length - 1].x, l.z - s[s.length - 1].z) < l.r * 1.5);
+    check('every creek ends in water: the sea, another creek, or a lake',
+      CK.streams.length > 0 && CK.streams.every((s) => s.end === 'sea' || s.end === 'join' || (s.end === 'lake' && lakeAtEnd(s))),
+      `${CK.streams.length} creeks: ${ends.join(' ')}`);
+    /* And nothing built stands in water: every tent and every granary of every
+       camp on this island is on dry ground. */
+    const wetHuts = [], wetStores = [];
+    for (const c of PP.camps) {
+      for (const h of c.huts || []) if (NZ.inWater(h.x, h.z)) wetHuts.push(c.code);
+      for (const s of c.storeSpots || []) if (NZ.inWater(s.x, s.z)) wetStores.push(c.code);
+    }
+    check('no tent or granary on this island stands in water',
+      wetHuts.length === 0 && wetStores.length === 0, `tents in water: ${wetHuts.length}, granaries: ${wetStores.length}`);
+    check('and rises at a glacier or a spring, and a spring has its pool',
+      CK.streams.every((s) => s.source === 'glacier' || s.source === 'spring')
+      && CK.lakes.filter((l) => l.spring).length === from.filter((k) => k === 'spring').length,
+      `${from.join(' ')}, ${CK.lakes.filter((l) => l.spring).length} spring pools`);
+  }
 
   // Behind somebody first; R left the camera in Orbit.
   pressKey('KeyF');
@@ -2492,13 +2536,25 @@ if (measuring('survive')) {
             p.hiding = true;
             a.x = p.x + 6; a.z = p.z; a.state = 'graze'; a.speed = 0; a.timer = 99;
             for (let i = 0; i < 6; i++) stepFrame(16);
-            check('down low, a grazing animal six metres off does not notice them', a.state !== 'flee', a.state);
+            /* Read off the list a herd flees from, not off one deer: whether some
+               other hunter or a tiger happens to be walking past is the island's
+               business, and it made this check depend on who was nearby. */
+            WL.collectThreats();
+            const seenAt = [];
+            for (let t = 0; t < WL.threats.length; t += 2) seenAt.push(Math.hypot(WL.threats[t] - p.x, WL.threats[t + 1] - p.z));
+            check('down low, nothing grazing notices them: they are not on the list a herd flees from',
+              !seenAt.some((d) => d < 0.5), `${seenAt.filter((d) => d < 20).length} threats within 20 m, deer ${a.state}`);
             const aim = CH.whatHere(p);
-            const pointWas = SP.THROW.point;
+            /* Certain means both numbers: the chance is capped at THROW.most, so
+               a point of 100 alone still missed one throw in twenty — and did,
+               the day a different island handed this check a different roll. */
+            const pointWas = SP.THROW.point, mostWas = SP.THROW.most;
             SP.THROW.point = 100;
+            SP.THROW.most = 1;
             pressKey('KeyE');
             for (let i = 0; i < 6; i++) stepFrame(16);
             SP.THROW.point = pointWas;
+            SP.THROW.most = mostWas;
             check('E throws, and a hit brings it down where it stood rather than into the basket',
               aim?.kind === 'hunt' && a.dead === true && Boolean(a.carcass) && p.threw?.hit === true && !(p.bag?.game > 0),
               `${aim?.kind} dead=${a.dead} carcass=${Boolean(a.carcass)} game=${p.bag?.game}`);
@@ -2572,6 +2628,33 @@ if (measuring('survive')) {
           /* Wood: at a tree, cutting puts logs on the shoulder; put away at the
              granaries they go on the camp's stack — and on a coast, a stack one
              load short of a raft becomes one. */
+          /* An explorer's find: good ground far from any fire goes on the band's
+             list, and a band splitting takes the best of it for its new camp. */
+          {
+            const home = p.camp, findsWas = home.finds, at = [p.x, p.z];
+            let spot = null;
+            for (let k = 0; k < 400 && !spot; k++) {
+              const a = k * 2.399, r = PM.WORLD * (0.1 + (k % 20) * 0.017);
+              const x = home.x + Math.cos(a) * r, z = home.z + Math.sin(a) * r;
+              if (EX.siteWorth(x, z) > 0) spot = { x, z };
+            }
+            if (spot) {
+              home.finds = [];
+              p.x = spot.x; p.z = spot.z;
+              EX.surveyDone(p);
+              check('an explorer who finds good ground puts it on the band\'s list',
+                home.finds.length === 1 && Math.hypot(home.finds[0].x - spot.x, home.finds[0].z - spot.z) < 2,
+                JSON.stringify(home.finds));
+              const site = EX.foundSite(home);
+              check('and a band splitting settles there', Boolean(site) && Math.hypot(site.x - spot.x, site.z - spot.z) < 2
+                && home.finds.length === 0, JSON.stringify(site));
+            } else check('there is good ground somewhere to find', false, 'no spot on the island scored above nothing');
+            home.finds = findsWas;
+            p.x = at[0]; p.z = at[1];
+          }
+
+          // Whatever they were last doing finished first: an act is not started over another.
+          for (let i = 0; i < 600 && p.acting; i++) stepFrame(16);
           const tree = DG.treeNear(p.x, p.z, 1e6);
           if (tree) {
             p.x = tree.x + 1.2; p.z = tree.z; p.leadX = p.x; p.leadZ = p.z;
@@ -3737,6 +3820,25 @@ console.log(`  quarries: ${quarryReport}`);
     check('there were two people with tents to put bubbles over', false,
       `module=${!!B} camera=${!!cameraRef}`);
   }
+}
+/* No ceiling on camps: past the room there is, every mesh with a slot per camp
+   is made again bigger, and what was drawn in the old one is in the new. Last,
+   and after every check that does not, because it allocates — and allocating
+   moves every random number after it. */
+{
+  const PPm = await import(pathToFileURL(join(stubDir, 'people.js')).href);
+  const room = PPm.campCapacity, huts = PPm.campParts?.huts;
+  if (huts) {
+    const before = Array.from(huts.instanceMatrix.array.slice(0, 64));
+    let threw = null;
+    try { PPm.growCamps(room + 1); } catch (err) { threw = `${err.constructor.name}: ${err.message}`; }
+    const grown = PPm.campParts.huts;
+    check('past the room there is for camps, the meshes grow rather than refusing a band',
+      !threw && PPm.campCapacity >= room * 2 && grown !== huts
+      && grown.instanceMatrix.count === PPm.campCapacity * PPm.CAMP_PIECES.huts
+      && before.every((v, i) => v === grown.instanceMatrix.array[i]),
+      threw || `${room} -> ${PPm.campCapacity}, ${grown.instanceMatrix.count} hut slots`);
+  } else check('there are camp meshes to grow', false, 'no huts');
 }
 console.log(`  forage: ${forageReport}`);
 console.log(`  face: ${faceReport}`);

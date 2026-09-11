@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import { MAP_SCALE, P, SEA, SNOW, WORLD } from './params.js';
-import { clamp, fbm, flatnessAt, lerp, mulberry32, sampleHeight } from './noise.js';
+import { clamp, fbm, flatnessAt, lerp, mulberry32, sampleHeight, clearOfCreeks } from './noise.js';
 import { forageSeason, seasonName, seasonUniforms } from './scene.js';
 import { ORCHARD_BUCKET, HIDDEN, _c, orchard, stats } from './world.js';
 import {
@@ -15,9 +15,10 @@ import {
 } from './skills.js';
 import { FISH, forageRichness, nearestShore } from './larder.js';
 import { bagAdd } from './bag.js';
+import { clearOfCamps, foundSite } from './explore.js';
 import { restHeal } from './vitals.js';
 import {
-  BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, dressStores, drawGraves, growPeople, layoutCamp, paintPeople, people, personParts, storesFor
+  BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, dressStores, drawGraves, growCamps, growPeople, layoutCamp, paintPeople, people, personParts, storesFor
 } from './people.js';
 import { PATH, fadePaths } from './paths.js';
 import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
@@ -882,17 +883,17 @@ export const SPLIT = {
      Six is FOOD.comfortable, the store above which nobody worries — past the
      squeeze that starved that third band, and reached often enough to happen. */
   needFood: 6,         // days of store before anybody can be spared to walk
-  minAway: 300,        // metres from every existing camp. Plain metres: a
-                       // bigger island holds more bands rather than the same
-                       // number further apart.
+  gap: 45,             // metres clear of another settlement's tents, outskirts or
+                       // streets: room for a band's own clearing and a little
+                       // more. A new band may pitch beside a village or a city.
   everyYears: 1.5,     // no camp splits twice in quick succession
   pairs: 3,            // fertile adults of each sex who go, at most
   keepPairs: 2,        // and who must be left behind, at least
 };
 
-/* Somewhere far enough from every fire already burning. Deliberately stricter
-   than the original placement — a band that has just walked away from crowding
-   should not pitch within sight of what it left. */
+/* Somewhere clear of every settlement already standing — its tents, its
+   outskirts, a city's streets — with room for a clearing between. Right beside
+   a village or a city is allowed: bands settle by the big places too. */
 /* -------------------------------------------------------------------------
    Ground
 
@@ -977,8 +978,9 @@ export function moveCampAway(camp) {
       nearest = Math.min(nearest, Math.hypot(x - c.x, z - c.z));
     }
     if (nearest < GROUND.apart) continue;
-    // Room first, then ground worth foraging.
-    const score = nearest + forageRichness(x, z) * 120;
+    if (!clearOfCreeks(x, z, 0)) continue;       // not in the water itself
+    // Room first, then ground worth foraging — and off the creeks, if it can be.
+    const score = nearest + forageRichness(x, z) * 120 - (clearOfCreeks(x, z, 22) ? 0 : 400);
     if (score > bestScore) { bestScore = score; best = { x, z }; }
   }
   if (!best) return false;
@@ -1015,8 +1017,9 @@ export function newCampSite(rng) {
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const h = sampleHeight(x, z);
     if (h < SEA + 4 || h > SNOW - 25) continue;
-    if (camps.some((c) => Math.hypot(c.x - x, c.z - z) < SPLIT.minAway)) continue;
-    const flat = flatnessAt(x, z);
+    // Never in the water; off the creeks if it can be (chooseCampSites, people.js).
+    if (!clearOfCamps(x, z) || !clearOfCreeks(x, z, 0)) continue;
+    const flat = flatnessAt(x, z) * (clearOfCreeks(x, z, 22) ? 1 : 0.5);
     if (flat > bestFlat) { bestFlat = flat; best = { x, z }; }
     if (flat > 0.985) break;
   }
@@ -1126,14 +1129,16 @@ export function pickLeavers(parent, chief) {
 }
 
 export function splitCamp(parent) {
-  if (camps.length >= campCapacity) return false;
+  // No ceiling: past the room there is, the camps' meshes grow (people.js).
+  if (camps.length >= campCapacity) growCamps(camps.length + 1);
   const chief = pickChief(parent);
   if (!chief) return false;
   /* Checked before a camp is built rather than after, because a split that
      cannot be made viable should leave no trace at all. */
   if (!pickLeavers(parent, chief)) return false;
   const rng = mulberry32((P.seed ^ 0x5b1f7) + camps.length * 7717 + Math.floor(simDay));
-  const site = newCampSite(rng);
+  // The best place the band's explorers found, or the old way (explore.js).
+  const site = foundSite(parent) || newCampSite(rng);
   if (!site) return false;
 
   const voice = tribeVoice(rng);

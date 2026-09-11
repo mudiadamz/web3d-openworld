@@ -33,6 +33,7 @@ import { updateDrops } from './drops.js';
 import { updateHunt } from './hunt.js';
 import { updateRafts } from './rafts.js';
 import { updateWoodpiles } from './wood.js';
+import { updateFields } from './farming.js';
 import { onMapResize, drawMap } from './map.js';
 import {
   codeChip, ensureCurrentWorld, hhmm, setRate, syncLabels, toast, tribeChips, updateToast
@@ -493,6 +494,8 @@ export function tick() {
   updateRafts();
   // And the wood each band has cut, stacked by its granaries.
   updateWoodpiles();
+  // And the fields, redrawn when any band's has grown or been dug to.
+  updateFields();
   updateCamps(dt, elapsed, daylight);
   updateTimeOfDay();
   updateAudio();

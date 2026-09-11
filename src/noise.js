@@ -1,4 +1,4 @@
-import { P, WORLD } from './params.js';
+import { P, SEA, WORLD } from './params.js';
 
 /* -------------------------------------------------------------------------
    Noise. Seeded value noise is plenty at this scale and it is deterministic,
@@ -161,3 +161,42 @@ export function flatnessAt(x, z) {
   return 1 / Math.sqrt(1 + dx * dx + dz * dz);
 }
 
+/* -------------------------------------------------------------------------
+   Where the water is
+
+   The creeks and lakes are carved into this field (creeks.js marks their beds
+   as it cuts them), and anything that places a thing on the ground has to know
+   where they are: nothing is built standing in water, and wading is slow. Kept
+   here, beside the field it was carved into, so everything that places things
+   can ask without loading the creeks — every module already loads this one.
+   ------------------------------------------------------------------------- */
+let waterCells = null;
+export function setWaterCells(v) { waterCells = v; }
+
+/** In a creek's bed or a lake (not the sea). */
+export function inCreek(x, z) {
+  if (!waterCells) return false;
+  const i = Math.round(clamp((x + WORLD / 2) / fieldCell, 0, fieldSeg));
+  const j = Math.round(clamp((z + WORLD / 2) / fieldCell, 0, fieldSeg));
+  return waterCells[j * (fieldSeg + 1) + i] === 1;
+}
+
+/** In any water at all: the sea, a creek or a lake. Nothing is built here. */
+export function inWater(x, z) {
+  return sampleHeight(x, z) < SEA || inCreek(x, z);
+}
+
+/** No creek or lake within r metres: the middle, and rings at a third, two
+    thirds and the whole of it. For a camp, whose tents and fires spread out
+    round the middle. The sea is left to the height checks every camp already
+    makes: a band by the sea is a band with a shore, and wants one. */
+export function clearOfCreeks(x, z, r) {
+  if (inCreek(x, z)) return false;
+  for (const k of [1 / 3, 2 / 3, 1]) {
+    for (let t = 0; t < 8; t++) {
+      const a = (t / 8) * Math.PI * 2 + k;
+      if (inCreek(x + Math.cos(a) * r * k, z + Math.sin(a) * r * k)) return false;
+    }
+  }
+  return true;
+}

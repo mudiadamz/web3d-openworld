@@ -50,7 +50,10 @@ export function snapshot() {
     camps: camps.map((c) => ({ name: c.name, food: r2(c.food), history: c.history,
       skill: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, r2(c.skill[k] || 0)])),
       toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0,
-      stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0),
+      stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0), dh: r2(c.ditchDug || 0),
+      fl: c.field ? [r2(c.field.x), r2(c.field.z)] : undefined,
+      // Where its explorers found good ground (explore.js): where it will settle next.
+      fd: c.finds?.length ? c.finds.map((f) => [Math.round(f.x), Math.round(f.z), r2(f.worth)]) : undefined,
       // A village taken by another tribe: its code now, its name then (life.js, conquer).
       cd: c.code, vn: c.villageName || undefined, pc: c.pastCodes?.length ? c.pastCodes : undefined,
       ca: c.conqueredAt,
@@ -258,6 +261,12 @@ export function applySavedLife(st) {
     camps[i].history = Array.isArray(c.history) ? c.history : [];
     // The flock (farming.js). Older saves have none, and no band had one.
     camps[i].stock = Number(c.st) || 0;
+    // How far the ditch to its field is dug (farming.js).
+    camps[i].ditchDug = Number(c.dh) || 0;
+    // And the farmland it took, which need not be near its tents: found again on the next look.
+    camps[i].fieldPin = Array.isArray(c.fl) ? { x: Number(c.fl[0]), z: Number(c.fl[1]) } : null;
+    camps[i].field = null;
+    camps[i].fieldAt = null;
   });
 
   setLineage(Array.isArray(st.lineage) ? st.lineage : []);
@@ -297,6 +306,7 @@ export function applySavedLife(st) {
     camps[i].stone = Number(c.stone) || 0;
     camps[i].raft = Boolean(c.raft) && Boolean(camps[i].shore);
     camps[i].wood = Number(c.wd) || 0;
+    camps[i].finds = Array.isArray(c.fd) ? c.fd.map(([x, z, worth]) => ({ x, z, worth })) : [];
     camps[i].ores = c.ores && typeof c.ores === 'object' ? { ...c.ores } : {};
   });
   /* What is left in the ground. Only when the island is the one it was dug on:
