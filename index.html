@@ -637,16 +637,43 @@
      ordinary ways for it to never start: no network, or a browser that refuses
      module imports from a file:// page. Say which, instead of sitting on
      "building the world…" forever. */
+  /* Slow is not broken. Over a tunnel every file is a round trip of half a
+     second or more, and the page is forty-odd of them plus the world to build,
+     so the six seconds this used to allow said "could not start" about a page
+     that was still arriving. Now: what actually went wrong, the moment it goes
+     wrong; "still loading" while it is only slow; and the old advice after a
+     minute of nothing. */
   window.__booted = false;
-  setTimeout(function () {
-    if (window.__booted) return;
-    document.getElementById('fallback').innerHTML =
-      'Could not start.<br><br>' +
-      'three.js loads from a CDN, so this page needs a network connection — and some ' +
-      'browsers refuse ES modules on a <code>file://</code> page.<br><br>' +
-      'Serve the folder instead:<br><code>python3 -m http.server 8000</code><br>' +
-      'then open <code>http://localhost:8000</code>';
-  }, 6000);
+  window.__bootError = null;
+  (function () {
+    function note(text) { if (!window.__booted && !window.__bootError) window.__bootError = String(text); }
+    // A module that fails to load or throws while it runs, or a promise nobody caught.
+    addEventListener('error', function (e) {
+      note(e.message || (e.target && (e.target.src || e.target.href) ? 'could not load ' + (e.target.src || e.target.href) : 'a script failed'));
+    }, true);
+    addEventListener('unhandledrejection', function (e) { note(e.reason && e.reason.message ? e.reason.message : e.reason); });
+    function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+    function say(html) { var el = document.getElementById('fallback'); if (el) el.innerHTML = html; }
+    var seconds = 0;
+    (function check() {
+      if (window.__booted) return;
+      if (window.__bootError) {
+        say('Could not start.<br><br><code>' + esc(window.__bootError) + '</code>');
+        return;
+      }
+      seconds++;
+      if (seconds === 6) say('building the world…<br><br>still loading — over a slow connection this can take a while');
+      if (seconds >= 60) {
+        say('Could not start.<br><br>' +
+          'three.js loads from a CDN, so this page needs a network connection — and some ' +
+          'browsers refuse ES modules on a <code>file://</code> page.<br><br>' +
+          'Serve the folder instead:<br><code>python3 -m http.server 8000</code><br>' +
+          'then open <code>http://localhost:8000</code>');
+        return;
+      }
+      setTimeout(check, 1000);
+    })();
+  })();
 </script>
 
 <div id="ui" class="hidden collapsed">
@@ -914,6 +941,58 @@
   }
 }
 </script>
+
+<!-- Every module, named up front. The browser only learns what a module imports
+     once that module has arrived, so on its own it fetches the page in three
+     rounds, and over a tunnel each round is half a second or more a file. Named
+     here, it asks for all of them at once. After the import map, never before
+     it: a module fetched before the map is read would ignore the map. test.js
+     checks this list against src/. -->
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/controls/OrbitControls.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/objects/Sky.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/loaders/GLTFLoader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/utils/BufferGeometryUtils.js">
+<link rel="modulepreload" href="node_modules/humans-threejs/human-parts.js">
+<link rel="modulepreload" href="src/audio.js">
+<link rel="modulepreload" href="src/bag.js">
+<link rel="modulepreload" href="src/bubbles.js">
+<link rel="modulepreload" href="src/chronicle.js">
+<link rel="modulepreload" href="src/clock.js">
+<link rel="modulepreload" href="src/creeks.js">
+<link rel="modulepreload" href="src/danger.js">
+<link rel="modulepreload" href="src/drops.js">
+<link rel="modulepreload" href="src/farming.js">
+<link rel="modulepreload" href="src/hunt.js">
+<link rel="modulepreload" href="src/icons.js">
+<link rel="modulepreload" href="src/kin.js">
+<link rel="modulepreload" href="src/larder.js">
+<link rel="modulepreload" href="src/life.js">
+<link rel="modulepreload" href="src/looks.js">
+<link rel="modulepreload" href="src/main.js">
+<link rel="modulepreload" href="src/map.js">
+<link rel="modulepreload" href="src/move.js">
+<link rel="modulepreload" href="src/noise.js">
+<link rel="modulepreload" href="src/orchard.js">
+<link rel="modulepreload" href="src/params.js">
+<link rel="modulepreload" href="src/paths.js">
+<link rel="modulepreload" href="src/people.js">
+<link rel="modulepreload" href="src/quarries.js">
+<link rel="modulepreload" href="src/rafts.js">
+<link rel="modulepreload" href="src/reach.js">
+<link rel="modulepreload" href="src/save.js">
+<link rel="modulepreload" href="src/scene.js">
+<link rel="modulepreload" href="src/settlement.js">
+<link rel="modulepreload" href="src/skills.js">
+<link rel="modulepreload" href="src/society.js">
+<link rel="modulepreload" href="src/spear.js">
+<link rel="modulepreload" href="src/thickets.js">
+<link rel="modulepreload" href="src/ui.js">
+<link rel="modulepreload" href="src/village.js">
+<link rel="modulepreload" href="src/vitals.js">
+<link rel="modulepreload" href="src/wildlife.js">
+<link rel="modulepreload" href="src/wood.js">
+<link rel="modulepreload" href="src/world.js">
 
 <script type="module" src="src/main.js"></script>
 

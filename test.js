@@ -6759,6 +6759,27 @@ check('the card says what a band has worth taking',
    eaten out of it. A coast was the one piece of ground worth standing on for a
    reason nothing in the simulation could see.
    ------------------------------------------------------------------------- */
+group('loading over a slow link');
+
+/* Over a tunnel every file is a round trip of half a second or more. The page
+   names every module up front so the browser asks for them together, rather
+   than learning each from the one before; a module left off the list still
+   loads, one round later, which is exactly the slowness this is for. */
+{
+  const idx = readFileSync(INDEX_HTML, 'utf8');
+  const listed = [...idx.matchAll(/<link rel="modulepreload" href="src\/([\w-]+\.js)">/g)].map((m) => m[1]);
+  check('every module is preloaded, and nothing that is not one',
+    srcFiles.every((f) => listed.includes(f)) && listed.every((f) => srcFiles.includes(f)),
+    `missing ${srcFiles.filter((f) => !listed.includes(f)).join(' ') || 'none'}, stale ${listed.filter((f) => !srcFiles.includes(f)).join(' ') || 'none'}`);
+  check('and after the import map, or the map would be ignored',
+    idx.indexOf('type="importmap"') > 0 && idx.indexOf('type="importmap"') < idx.indexOf('rel="modulepreload"'));
+  /* Slow is not broken: six seconds said "could not start" about a page that
+     was still arriving over a tunnel. */
+  check('the start-up screen says what went wrong, and a slow load is not a failure',
+    /addEventListener\('error', function \(e\) \{/.test(idx) && /if \(seconds >= 60\) \{/.test(idx)
+    && !/\}, 6000\);/.test(idx));
+}
+
 group('fishing');
 
 const larderSrc = moduleSource('larder.js');
