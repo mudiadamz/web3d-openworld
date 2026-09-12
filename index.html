@@ -679,12 +679,34 @@
   @media (max-width: 720px) {
     #map:not(.full) { left: 12px; right: auto; top: 68px; bottom: auto; }
   }
+  /* The first thing anybody sees. It was a black rectangle with a line of grey
+     text in the middle, which says nothing about what is being built. An island
+     at dusk now, in flat polygons like the world itself - markup and a gradient,
+     so it paints on the first frame with nothing to fetch and no module to wait
+     for, which is the one thing a splash screen has to do. */
   #loading {
-    position: fixed; inset: 0; display: grid; place-items: center;
-    background: #05070a; color: var(--muted); z-index: 10; letter-spacing: 0.06em;
+    position: fixed; inset: 0; display: grid; place-items: center; overflow: hidden;
+    background: linear-gradient(#070d16 0%, #0c1a26 38%, #14303a 58%, #0b1a1c 100%);
+    color: var(--muted); z-index: 10; letter-spacing: 0.06em;
   }
   #loading.done { display: none; }
-  #fallback { max-width: 34em; text-align: center; line-height: 1.7; }
+  /* Out of the grid, so the words stay in the middle of the screen. */
+  #loadArt { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* The sun breathes and the haze drifts. Deliberately not a progress bar:
+     nothing here knows how far along the build is, and a bar that does not
+     know is a bar that is lying. */
+  #loadSun { animation: loadGlow 4.5s ease-in-out infinite alternate; }
+  #loadHaze { animation: loadDrift 24s ease-in-out infinite alternate; }
+  @keyframes loadGlow { from { opacity: 0.5; } to { opacity: 0.95; } }
+  @keyframes loadDrift { from { transform: translateX(-34px); } to { transform: translateX(34px); } }
+  @media (prefers-reduced-motion: reduce) { #loadSun, #loadHaze { animation: none; } }
+  /* Still the slot the boot script writes its diagnosis into, so it has to
+     stay readable with a paragraph and a code block in it, not just a line. */
+  #fallback {
+    position: relative; max-width: 34em; text-align: center; line-height: 1.7;
+    padding: 0 22px; color: #d3e6da; text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
+  }
+  #fallback code { background: rgba(0, 0, 0, 0.5); border-radius: 4px; padding: 1px 5px; }
   @media (max-width: 720px) {
     #help { display: none; }
     #ui { width: calc(100vw - 24px); }
@@ -695,7 +717,19 @@
 
 <canvas id="view"></canvas>
 
-<div id="loading"><div id="fallback">building the world…</div></div>
+<div id="loading">
+  <svg id="loadArt" viewBox="0 0 240 135" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <circle id="loadSun" cx="176" cy="60" r="15" fill="#e3a961"/>
+    <g id="loadHaze">
+      <rect x="-70" y="70" width="380" height="2" fill="#8fc2d0" opacity="0.22"/>
+      <rect x="-70" y="77" width="380" height="1" fill="#8fc2d0" opacity="0.15"/>
+    </g>
+    <polygon points="0,84 30,70 58,80 88,62 118,78 148,66 182,80 212,68 240,78 240,135 0,135" fill="#173039"/>
+    <polygon points="0,96 34,84 68,94 100,80 132,92 164,82 198,94 226,86 240,92 240,135 0,135" fill="#12252a"/>
+    <polygon points="0,110 40,100 78,108 110,98 144,108 178,98 212,108 240,102 240,135 0,135" fill="#0c181a"/>
+  </svg>
+  <div id="fallback">building the world…</div>
+</div>
 
 <script>
   /* three.js comes from a CDN and this page is an ES module, so there are two
