@@ -153,7 +153,8 @@ const _up = new THREE.Vector3(0, 1, 0);
 function buildRaftMeshes() {
   // The dock: a deck of planks out along +z from the landing, on four posts.
   const deckLen = DOCK.len + 0.6;
-  const dock = [new THREE.BoxGeometry(1.5, 0.1, deckLen).translate(0, 0, deckLen / 2 - 0.6)];
+  // Geometries, not boxes: the deck is a box and the posts are cylinders.
+  const dock: THREE.BufferGeometry[] = [new THREE.BoxGeometry(1.5, 0.1, deckLen).translate(0, 0, deckLen / 2 - 0.6)];
   for (const [x, z] of [[-0.65, 2], [0.65, 2], [-0.65, DOCK.len - 0.3], [0.65, DOCK.len - 0.3]]) {
     dock.push(new THREE.CylinderGeometry(0.08, 0.1, 3.4, 6).translate(x, -1.65, z));
   }

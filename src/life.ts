@@ -19,6 +19,7 @@ import { bagAdd } from './bag.js';
 import { clearOfCamps, foundSite } from './explore.js';
 import { restHeal } from './vitals.js';
 import {
+  type Camp, type Person,
   BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, dressStores, drawGraves, growCamps, growPeople, layoutCamp, paintPeople, people, personParts, storesFor
 } from './people.js';
 import { PATH, fadePaths } from './paths.js';
@@ -217,8 +218,9 @@ export function renderTribes(now = 0) {
    of one drawn for a tribe of eighty. */
 export function drawTribeChart(cv = $('tribeChart'), only = '') {
   if (!cv) return;
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
+  const canvas = cv as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
   if (!camps.length) return;
 
@@ -1187,7 +1189,7 @@ export function splitCamp(parent) {
     told: emptySkills(),
     toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 },
     born: 0, peak: 0, founded: simDay, gone: false, history: [], lessons: inheritLessons(parent),
-  };
+  } as Camp;
   camp.chief = chief.id;
   camps.push(camp);
   layoutCamp(camp, camp.index);
@@ -1584,7 +1586,7 @@ export function applyAge(p) {
 /* One hazard per cause rather than one number, so that when somebody dies the
    chronicle can say what of. They are competing risks: the total is what decides
    whether they die, and which one fired decides what killed them. */
-export function hazards(p, age, hunger) {
+export function hazards(p, age, hunger): { age: number; infancy: number; hunger: number; sickness?: number } {
   return {
     age: LIFE.baseMortality * Math.exp(Math.max(0, age - LIFE.agingFrom) / LIFE.agingScale),
     // Being small is dangerous in its own right before about five.
@@ -1618,10 +1620,11 @@ export const DEATH_WORDS = {
 
 /** Removes them, says what of, and keeps the follow camera off a ghost. */
 /* Sorted, worst first, and only the causes that actually happened. */
-export function tollOf(camp) {
+/* A cause and how many it took, said to be that pair: entries alone give unknowns. */
+export function tollOf(camp): [string, number][] {
   return Object.entries(camp.toll || {})
-    .filter(([, n]) => n > 0)
-    .sort((a, b) => b[1] - a[1]);
+    .filter(([, n]) => (n as number) > 0)
+    .sort((a, b) => (b[1] as number) - (a[1] as number)) as [string, number][];
 }
 
 export const TOLL_WORDS = {
@@ -1798,7 +1801,7 @@ export function newPerson(camp, rng, ageYears) {
     garment: GARMENT[(rng() * GARMENT.length) | 0],
     garmentShade: 0.85 + rng() * 0.3,
     hairColor: HAIR[(rng() * HAIR.length) | 0],
-  };
+  } as Person;
   p.line = p.name;
   applyAge(p);
   return p;

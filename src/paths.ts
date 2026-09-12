@@ -89,7 +89,7 @@ export const pathUniforms = {
    ------------------------------------------------------------------------- */
 export const ROAD = 255;
 export const TRAIL_MAX = 230;
-const roads = new Set();
+const roads = new Set<number>();
 /* Bumped whenever the field is thrown away, so whatever lays roads knows the
    ones it laid are gone. */
 export let pathEpoch = 0;
@@ -104,7 +104,7 @@ let cell = PATH.cell;                // metres, after the ceiling is applied
    a 3200 m island the field is four and a half million cells and the paths are
    a few thousand of them, and a fade that costs the island rather than the
    paths would be paid every simulated day forever. */
-let live = new Set();
+let live = new Set<number>();
 let dirty = false;
 /* Bumped by every change to the field. Anything that draws the paths keeps the
    number it last drew and rebuilds when it no longer matches. */
@@ -113,7 +113,7 @@ export let pathVersion = 0;
    changes what grows, so that — rather than every step — is what asks for a
    tile to be scattered again. Once a path is bare it stops crossing anything
    and stops asking. */
-const worn = new Set();
+const worn = new Set<number>();
 
 const EMPTY = new THREE.DataTexture(new Uint8Array(1), 1, 1, THREE.RedFormat);
 EMPTY.needsUpdate = true;

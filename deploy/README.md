@@ -114,3 +114,15 @@ again after pulling. The service runs `node server.js`, which never fetches
 anything, so the deployed copy stays on the model its lockfile names until you
 do. `npm run model` moves it to the newest; `service:restart` puts it on the
 island. A checkout without it says so when the server starts.
+
+## What the service runs is built
+
+`server.js` is compiled from `server.ts` and is not in the repository, so a
+fresh checkout has nothing for the service to run until something builds it.
+`install` does: it compiles the page into `dist/` and the server beside its
+source, and stops with the errors rather than installing a service that cannot
+start. It is deliberately not done in `run.cmd`, because a build that failed at
+boot would leave the service unable to start at all — worse than coming back up
+on the build it already had.
+
+`restart` does **not** build. After pulling, install again.

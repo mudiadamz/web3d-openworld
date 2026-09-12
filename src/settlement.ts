@@ -605,8 +605,9 @@ export function dressCivic() {
       }
     }
   }
+  // A name and the list drawn under it, said to be a pair.
   for (const [key, list] of [['civHall', halls], ['civStall', stalls], ['civWell', wells], ['civWall', walls], ['civTower', towers],
-    ['civCityHall', cityHalls]]) {
+    ['civCityHall', cityHalls]] as [string, any[]][]) {
     const m = packed(key, list.length, civicMesh(key));
     if (!m) continue;
     list.forEach((it, i) => {
@@ -641,7 +642,8 @@ export function layRoads() {
     + camps.filter((v) => !v.gone && v !== c && v.code === c.code).map((v) => v.index).join('.')).join('|');
   if (key === roadsFor) return;
   roadsFor = key;
-  const edge = (from, to) => {
+  // Four numbers — two ends of a road — spread into paveRoad, so: a tuple.
+  const edge = (from, to): [number, number, number, number] => {
     // From the edge of one place to the edge of the other; inside, the streets.
     const dx = to.x - from.x, dz = to.z - from.z, d = Math.hypot(dx, dz) || 1;
     const a = Math.min(campReach(from), d / 2) / d, b = Math.min(campReach(to), d / 2) / d;
@@ -650,7 +652,7 @@ export function layRoads() {
   for (const c of cities) {
     paveDisc(c.x, c.z, CITY.plaza - 1);
     const th = c.hearthTurn || 0, ux = Math.cos(th), uz = Math.sin(th), vx = -uz, vz = ux;
-    const at = (u, v) => [c.x + ux * u + vx * v, c.z + uz * u + vz * v];
+    const at = (u, v): [number, number] => [c.x + ux * u + vx * v, c.z + uz * u + vz * v];
     let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
     for (const h of c.city.homes.slice(0, c.cityShown)) {
       const street = h.v + h.side * 4.0;           // the middle of the street the house faces

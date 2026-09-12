@@ -6,12 +6,15 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node dev.js",
-    "serve": "node server.js",
+    "start": "tsc -p tsconfig.node.json && node dev.js",
+    "serve": "npm run build && node server.js",
     "model": "npm install --no-audit --no-fund humans-threejs@github:mudiadamz/humans-threejs#main",
-    "test": "node test.js && node test-boot.js",
+    "build": "tsc && tsc -p tsconfig.node.json",
+    "build:watch": "tsc --watch --preserveWatchOutput",
+    "types": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test": "npm run build && node test.js && node test-boot.js",
     "boot": "node test-boot.js",
-    "reset": "node reset.js",
+    "reset": "tsc -p tsconfig.node.json && node reset.js",
     "service": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/service.ps1",
     "service:install": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/service.ps1 install",
     "service:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/service.ps1 restart",
@@ -22,5 +25,11 @@
   },
   "dependencies": {
     "humans-threejs": "github:mudiadamz/humans-threejs#main"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "@types/three": "^0.169.0",
+    "three": "^0.169.0",
+    "typescript": "^7.0.2"
   }
 }

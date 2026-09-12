@@ -1382,7 +1382,7 @@ disc 2.5 times wider than its own spacing holds the same handful of sites howeve
 you multiply the pair, so a 6400 m island held exactly as many bands as a 1600 m
 one and merely spread them thinner. Asking for forty camps got you seven on
 every map in the game, and `.env.example` documented `CAMPS 0-5` because that is
-what actually happened, while `config.js` allowed 0-40.
+what actually happened, while `config.ts` allowed 0-40.
 
 So the placement radii still scale and the three spacings — `CAMPS_APART`,
 `SPLIT.minAway`, `GROUND.apart` — are plain metres. `GROUND.range`, the ground
@@ -2527,7 +2527,7 @@ goes through a setter that module exports — `setGraves([])` rather than
 write at once, which an import cannot be.
 
 **The tests read the source, so they had to be told where it went.** Both
-harnesses now concatenate `src/*.js`, strip the `export ` keyword off
+harnesses now concatenate `src/*.ts`, strip the `export ` keyword off
 declarations, and carry on checking exactly what they checked before — the
 module boundary is not what those 713 checks are about. The ordering check
 became per-file, which is the only scope in which file order still means
@@ -2535,15 +2535,24 @@ anything.
 
 ```
 index.html      the page — markup, styles, importmap
-server.js       serves it with the environment's defaults injected
-db.js           the chronicle, in SQLite
-config.js       the variable schema, .env parsing, validation
+src/*.ts        the page's own modules, compiled into dist/
+server.ts       serves it with the environment's defaults injected
+db.ts           the chronicle, in SQLite
+config.ts       the variable schema, .env parsing, validation
 test.js         npm test — 782 checks: config, shaders, clock, grass, bodies, life
-reset.js        npm run reset — empties every table
-dev.js          npm start — restarts the server on a change and reloads the page
+reset.ts        npm run reset — empties every table
+dev.ts          npm start — restarts the server on a change and reloads the page
 test-boot.js    boots the page for real against a mocked DOM
 .env.example    every variable, documented
 ```
+
+Everything above is TypeScript except the two test harnesses, which read the
+others as text and are the thing that proves a change did not move any of it.
+`npm run build` compiles `src/` into `dist/`, which is what the browser loads,
+and the five at the root into `.js` beside their sources, which is what `node`
+runs. Both outputs are gitignored: the `.js` you see next to a `.ts` is built,
+and the `.ts` is the one to edit. Imports keep naming `.js` — that is the file
+the browser will fetch, and tsc never rewrites a specifier.
 
 Both test files take **`INDEX_HTML`**, a path to read the page from instead of
 `index.html`. `test-boot.js` takes **`QUICK=1`**, which skips the measurement
@@ -3201,7 +3210,7 @@ even with `E` held, that switching modes drifts the heading by 0.0°, and that
 dragging right turns right.
 
 The configuration layer has its own suite — `npm test`, 113 checks. Most of it
-guards against drift rather than against bugs: `config.js` declares ranges that
+guards against drift rather than against bugs: `config.ts` declares ranges that
 only mean anything while they match the panel's sliders, so the test reads the
 sliders out of the HTML and compares them, and it fails when they disagree
 (verified by deliberately breaking one). It also checks that `.env.example`

@@ -26,7 +26,9 @@ export function linButton(id, name) {
 /* One relative: their name to click through, their band, and alive or how
    they ended. `name` is what the child's record called them, for a parent the
    record itself has lost. */
-function kin(id, name) {
+// `name` is only passed for a parent the record itself has lost; everyone
+// reached by id is looked up. The `|| 'not remembered'` below is the other case.
+function kin(id, name?) {
   const r = id ? lineOf(id) : null;
   if (!r) return `<span class="unk">${name || 'not remembered'}</span>`;
   const living = r.d > 0 ? null : people.find((q) => q.id === r.i);

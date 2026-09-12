@@ -1,0 +1,51 @@
+{
+  "//": [
+    "The page has always been served straight out of src/ with no build. It is",
+    "built now: src/*.ts is compiled to dist/*.js, and dist is what the browser",
+    "loads. Every module in src/ is TypeScript; the move is done.",
+    "",
+    "Imports still name .js — './noise.js', not './noise.ts'. That is not a",
+    "leftover. tsc never rewrites a module specifier, and dist/ is loaded by the",
+    "browser as plain ES modules, so a specifier has to name the file that will",
+    "be fetched. '.ts' is rejected outright; bare './noise' would compile under",
+    "moduleResolution bundler and then fail to resolve in the browser.",
+    "",
+    "allowJs and checkJs are what made the move survivable one file at a time: a",
+    "module not yet renamed still compiled and still landed in dist/, so the page",
+    "kept working with forty .js files and one .ts, and none of them was type-",
+    "checked while it waited its turn. Nothing in src/ is .js any more, so both",
+    "are no-ops today and can go whenever.",
+    "",
+    "three is a devDependency for its types alone. At runtime it still comes",
+    "from the CDN through the import map in index.html, which is why the paths",
+    "below point three/addons/* at the same examples/jsm the import map does."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true,
+
+    "allowJs": true,
+    "checkJs": false,
+
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* three comes from the CDN at runtime, through the import map in
+       index.html; these point tsc at the types for that same version. `three`
+       itself needs no help — it resolves through @types/three. The addons do:
+       the import map's `three/addons/` is three's own examples/jsm, which is
+       plain JavaScript, and the types for it live beside it in @types/three. */
+    "paths": {
+      "three/addons/*": ["./node_modules/@types/three/examples/jsm/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}

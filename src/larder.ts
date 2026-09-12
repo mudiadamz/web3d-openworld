@@ -60,7 +60,7 @@ let picked = null, pickedCols = 0;
    patches. Walking all of it was twenty-three million iterations over three
    years to move a few hundred numbers — most of a fast-forward, spent on
    ground nobody had touched. */
-let worked = new Set();
+let worked = new Set<number>();
 
 export function buildForaged() {
   pickedCols = Math.max(1, Math.ceil(WORLD / FORAGED.cell));

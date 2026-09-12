@@ -185,7 +185,8 @@ function paintAtlas() {
   canvas.height = ATLAS_CELL * ATLAS_ROWS;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const cell = (i) => [(i % ATLAS_COLS) * ATLAS_CELL, Math.floor(i / ATLAS_COLS) * ATLAS_CELL];
+  // A pair, said to be a pair: it is spread into calls that take an x and a y.
+  const cell = (i): [number, number] => [(i % ATLAS_COLS) * ATLAS_CELL, Math.floor(i / ATLAS_COLS) * ATLAS_CELL];
   ICONS.forEach((icon, i) => {
     paintRound(ctx, icon, ...cell(i));
     paintPill(ctx, icon, WORDS[i], ...cell(i + WORD_AT));

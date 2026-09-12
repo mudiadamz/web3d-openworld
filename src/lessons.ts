@@ -180,7 +180,11 @@ export function inheritLessons(parent) {
 
 /** A row for the band's card: what they remember, strongest first. */
 export function memoryRows(camp) {
-  const held = Object.keys(LESSON_WORDS).map((k) => [k, lessonOf(camp, k)]).filter(([, w]) => w >= 0.25)
+  /* A pair, said to be a pair: a bare [k, lessonOf(...)] is an array of "string
+     or number" to a compiler, and then neither the comparison nor the sort
+     means anything. */
+  const held = Object.keys(LESSON_WORDS).map((k) => [k, lessonOf(camp, k)] as [string, number])
+    .filter(([, w]) => w >= 0.25)
     .sort((a, b) => b[1] - a[1]).map(([k, w]) => LESSON_WORDS[k][0] + (w < 1 ? ' <em>(fading)</em>' : ''));
   const places = (camp.lessons?.places || []).filter((b) => heldNow(camp, b) >= 0.25).length;
   if (places) held.push(`${places} ${places === 1 ? 'place' : 'places'} where the tiger struck`);
@@ -194,7 +198,8 @@ const keep2 = (v) => Math.round(v * 100) / 100;
 /** A band's memories, small enough to save. */
 export function packLessons(L) {
   if (!L) return undefined;
-  const out = {};
+  // Keyed by lesson, plus `pl` for the places: written by name, so it is said to be.
+  const out: Record<string, unknown> = {};
   for (const k of Object.keys(LESSON_WORDS)) if (L[k]?.w > 0) out[k] = [keep2(L[k].w), keep2(L[k].day || 0), L[k].told ? 1 : 0];
   if (L.places?.length) out.pl = L.places.map((b) => [Math.round(b.x), Math.round(b.z), keep2(b.w), keep2(b.day || 0)]);
   return Object.keys(out).length ? out : undefined;

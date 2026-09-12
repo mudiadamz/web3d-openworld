@@ -4,7 +4,10 @@ import { SEA } from './params.js';
 import { sampleHeight } from './noise.js';
 import { scene } from './scene.js';
 import { camps, inStoreArea } from './people.js';
-import { ORES, depositRadius, deposits } from './quarries.js';
+import { ORES, depositRadius, deposits, quarryInReach } from './quarries.js';
+import { SKILL, raidTarget } from './life.js';
+import { ditchOf } from './farming.js';
+import { worldClock } from './clock.js';
 import { predatorNear, preyNear } from './spear.js';
 import { fruitNear, nearestRipeFruit } from './orchard.js';
 import { bagWords, hasLoad } from './bag.js';
@@ -17,6 +20,34 @@ import { dockOf, fishRichness } from './larder.js';
 import { RAFT, raftBusy } from './rafts.js';
 
 export { thicketNear } from './thickets.js';
+
+/* Which errands a band could go on at all: somewhere to mourn, rock worth
+   digging, a raft, a ditch, somebody worth raiding. Each asks the question the
+   simulation already asks itself when it chooses for them (move.ts), so the row
+   of buttons and the band's own reasoning cannot drift apart.
+
+   Only what is impossible, never what is merely unlikely. A hungry band would
+   not choose to quarry, but telling them to anyway is what an order is for, so
+   that button stays. One goes only when there is nowhere to go at all.
+
+   Half a second's cache rather than an answer per frame: raidTarget walks every
+   camp and quarryInReach every deposit, and this is asked while the world is
+   being drawn. */
+let gateAt = -1, gateCamp = null;
+let gateCan = { mourn: true, quarry: true, fish: true, farm: true, raid: true };
+export function ordersPossible(camp) {
+  if (camp === gateCamp && worldClock - gateAt < 0.5) return gateCan;
+  gateAt = worldClock;
+  gateCamp = camp;
+  gateCan = {
+    mourn: (camp.buried || 0) > 0,
+    quarry: quarryInReach(camp, (camp.stone || 0) >= SKILL.stoneMax),
+    fish: Boolean(camp.raft),
+    farm: Boolean(ditchOf(camp)?.path),
+    raid: Boolean(raidTarget(camp)),
+  };
+  return gateCan;
+}
 
 /* -------------------------------------------------------------------------
    What is within reach

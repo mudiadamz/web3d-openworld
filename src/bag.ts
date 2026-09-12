@@ -18,7 +18,10 @@ export const BAG = {
   veg: 0.05,           // food in a vegetable: a session in the field is a basket of them
 };
 
-export function bagAdd(p, kind, n, what) {
+/* `what` is only given for the two kinds that have one — the animal a kill was,
+   the rock a quarry trip came out of — so it is optional, and saying so is what
+   lets the dozen callers that add berries or logs keep calling with three. */
+export function bagAdd(p, kind, n, what?) {
   if (!(n > 0)) return;
   const bag = p.bag
     || (p.bag = { fruit: 0, berries: 0, fish: 0, game: 0, animal: null, ore: 0, oreKind: null });
@@ -159,7 +162,7 @@ export function takeOut(p) {
     out = { kind: 'wood', n: 1, food: 0 };
     bag.wood--;
   } else {
-    for (const [kind, worth] of [['fish', BAG.fish], ['vegetables', BAG.veg], ['fruit', LOAD.fruit], ['berries', BAG.berry]]) {
+    for (const [kind, worth] of [['fish', BAG.fish], ['vegetables', BAG.veg], ['fruit', LOAD.fruit], ['berries', BAG.berry]] as [string, number][]) {
       if (!(bag[kind] > 0)) continue;
       const n = Math.min(DROP_UNIT[kind], bag[kind]);
       bag[kind] -= n;
@@ -197,7 +200,7 @@ export function eatFromBag(p, want) {
   const items = bag ? (bag.berries || 0) + (bag.fruit || 0) + (bag.fish || 0) + (bag.vegetables || 0) + (bag.game || 0) : 0;
   let ate = 0;
   if (items) {
-    for (const [kind, worth] of [['berries', BAG.berry], ['vegetables', BAG.veg], ['fruit', LOAD.fruit], ['fish', BAG.fish]]) {
+    for (const [kind, worth] of [['berries', BAG.berry], ['vegetables', BAG.veg], ['fruit', LOAD.fruit], ['fish', BAG.fish]] as [string, number][]) {
       while (ate < want - 1e-9 && bag[kind] > 0) { bag[kind]--; ate += worth; }
     }
     // Off the animal: its meat is what the haul holds past the basket.

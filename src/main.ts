@@ -195,7 +195,7 @@ export function stopAhead() {
   if (!ahead || ahead.left <= 0) return;
   ahead.left = 0;
   $('aheadNote').textContent = 'stopping…';
-  $('aheadStop').disabled = true;
+  ($('aheadStop') as HTMLButtonElement).disabled = true;
 }
 
 export function ago(seconds) {
@@ -272,7 +272,7 @@ function fillAheadTribes() {
   sel.innerHTML = '<option value="">every tribe</option>' + [...byCode.values()]
     .sort((x, y) => x.code.localeCompare(y.code))
     .map((c) => `<option value="${c.code}">${c.code} ${c.name}${c.gone ? ' (gone)' : ''}</option>`).join('');
-  sel.value = aheadOnly;
+  (sel as HTMLSelectElement).value = aheadOnly;
 }
 
 export function drawAhead() {
@@ -326,7 +326,7 @@ export function runAhead() {
   if (ahead.left <= 0) {
     ahead.closing = true;
     $('ahead').hidden = true;
-    $('aheadStop').disabled = false;
+    ($('aheadStop') as HTMLButtonElement).disabled = false;
   }
 }
 
@@ -520,16 +520,16 @@ export function tick() {
     updateHud();
     const rate = Math.round(frames / fpsTime);
     const el = $('fps');
-    if (el) el.textContent = rate;
+    if (el) el.textContent = String(rate);
     /* And again beside the clock, which is the copy that survives H hiding the
        world panel — these two are the numbers you want while looking at
        something else. Written here rather than in renderTribes because this is
        the half-second the frame rate is measured over, and a head count is one
        property read. */
     const hf = $('hudFps');
-    if (hf) hf.textContent = rate;
+    if (hf) hf.textContent = String(rate);
     const hp = $('hudPop');
-    if (hp) hp.textContent = people.length;
+    if (hp) hp.textContent = String(people.length);
     frames = 0; fpsTime = 0;
   }
 }
@@ -548,7 +548,7 @@ setRate(rateIndex);
 readSavedState().then((saved) => {
   applySavedWorld(saved);
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    window.__booted = true;
+    (window as any).__booted = true;
     /* Everything that used to happen as a module loaded, now that they all
        have. The order is the order the one long script did it in. */
     wireWorld();

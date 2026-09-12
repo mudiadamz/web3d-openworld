@@ -54,10 +54,43 @@ const SRC = process.env.SRC_DIR || join(ROOT, 'src');
    plumbing in front of `const QUALITY = {` should not be the difference between
    a check that works and one that does not. What the modules actually export is
    checked separately, below. */
-const moduleSource = (f) => readFileSync(join(SRC, f), 'utf8')
+/* Two readings of the same module, because these checks do two different
+   things with it.
+
+   Most of them quote the code they are about, and what they must read is what
+   somebody wrote: `moduleSource` is the file on disk. A module written as
+   TypeScript is asked for by its old name — `moduleSource('society.js')` —
+   and found as society.ts, because a check is about the module, not about its
+   extension.
+
+   The rest do not quote the code, they run it (`new Function`). Those cannot
+   read source: `paceDay: null as number | null` is a syntax error in node
+   exactly as it is in a browser. They read `built` instead — the same code
+   with the types taken off, which is also what the page loads. It is not
+   interchangeable with the source: tsc reindents what it emits and drops most
+   blank lines, so a check that quoted the build would be quoting tsc. */
+const sourceName = (f) => {
+  const ts = f.replace(/\.js$/, '.ts');
+  return existsSync(join(SRC, ts)) ? ts : f;
+};
+const moduleSource = (f) => readFileSync(join(SRC, sourceName(f)), 'utf8')
   .replace(/^export (?=(?:async )?function |class |const |let )/gm, '');
+
+const BUILD = process.env.BUILD_DIR || join(ROOT, 'dist');
+const built = (f) => readFileSync(join(BUILD, f.replace(/\.ts$/, '.js')), 'utf8')
+  .replace(/^export (?=(?:async )?function |class |const |let )/gm, '');
+
+/** The text on disk, `export` keywords and all — for the checks that are about
+    the module boundary itself. Asked for by the module's name rather than by
+    where it sits in a list, because a rename moves it in the list. */
+const rawSource = (f) => readFileSync(join(SRC, sourceName(f)), 'utf8');
+/* Either extension. The modules are moving to TypeScript one file at a time,
+   and these checks read whichever a module is today — they are about the code
+   as it is written, and .ts is where it is written. The build (dist/*.js) is
+   what the page loads and what the boot check imports; this half never reads
+   it, or a check would be asserting on tsc's output rather than on the code. */
 const srcFiles = existsSync(SRC)
-  ? readdirSync(SRC).filter((f) => f.endsWith('.js')).sort()
+  ? readdirSync(SRC).filter((f) => f.endsWith('.js') || f.endsWith('.ts')).sort()
   : [];
 const sources = srcFiles.map(moduleSource);
 /* The same files with the `export` keywords left on, for the few checks that
@@ -73,8 +106,13 @@ const example = readFileSync(join(ROOT, '.env.example'), 'utf8');
    that used to. Pinning the literal meant the day MAP made the extent a setting,
    this slice ran off the end of the settings and swallowed every module after
    them, imports and all. */
-const settingsBlock = html.slice(html.indexOf('const P = {'), html.indexOf('const WORLD ='))
-  .replace('applyInjectedConfig();\napplyUrlOverrides();\n', '')
+/* Out of the build rather than out of the page's text. params is TypeScript
+   now, and this block is not read here — it is run, and `null as number |
+   null` does not run. The build is the same settings with the types taken
+   off. */
+const paramsBuilt = built('params.js');
+const settingsBlock = paramsBuilt.slice(paramsBuilt.indexOf('const P = {'), paramsBuilt.indexOf('const WORLD ='))
+  .replace(/applyInjectedConfig\(\);\s*applyUrlOverrides\(\);\s*/, '')
   .replace(/function applyUrlOverrides\(\)[\s\S]*?\n\}\n/, '');
 const makePage = new Function('window', 'location',
   `${settingsBlock}; return { P, QUALITY, applyInjectedConfig };`).bind(null);
@@ -186,6 +224,38 @@ for (const name of Object.keys(SERVER_SCHEMA)) check(`${name} is documented`, do
 for (const name of documented) {
   check(`${name} is a real variable`, name in SCHEMA || name in SERVER_SCHEMA);
 }
+
+/* ---- a screen with no keys ----
+   Every errand is already a button on the order row, so a phone could tap them
+   — except the row was display:none under 720px, along with the prompt, and
+   getting behind somebody to see it at all was the F key. A phone had the
+   world, the panel and nothing to press. */
+group('touch controls');
+check('a drag on the world turns the camera rather than scrolling the page',
+  /canvas \{ display: block; width: 100%; height: 100%; touch-action: none; \}/.test(html));
+check('the order row stays on a phone, and every button is a thumb wide',
+  /#orders:not\(\[hidden\]\) \{ display: flex; flex-wrap: wrap;/.test(html)
+  && /#orders \.btn\.icon \{ min-width: 44px; min-height: 44px; \}/.test(html)
+  && !/@media \(max-width: 720px\) \{ #orders \{ display: none; \} \}/.test(html));
+check('and what E would do is said at the top, where the row cannot push it off',
+  !/@media \(max-width: 720px\) \{ #actPrompt \{ display: none; \} \}/.test(html)
+  && /#actPrompt \{ top: 10px; bottom: auto !important;/.test(html));
+check('the keys with no button get one, only where there is no mouse',
+  /<div id="touch" aria-label="Touch controls">/.test(html)
+  && ['follow', 'act', 'map', 'band', 'panel', 'keys']
+    .every((k) => new RegExp(`data-touch="${k}"`).test(html))
+  && /@media \(hover: none\) and \(pointer: coarse\)/.test(html)
+  && /#touch \{ display: none; \}/.test(html));
+check('wired to the very things the keys are wired to', (() => {
+  const src = moduleSource('ui.js');
+  return /button\[data-touch\]/.test(src)
+    && /if \(what === 'act'\) actHere\(\);/.test(src)
+    && /if \(what === 'map'\) stepMapSize\(1\);/.test(src)
+    && /if \(what === 'panel'\) togglePanel\(\);/.test(src) ? true : 'the touch bar is not wired';
+})() === true);
+check('and a pinch stands you back, since a phone has no wheel',
+  /P\.followDist = clamp\(P\.followDist \* \(pinch\.gap \/ gap\), 1\.4, 40\);/.test(moduleSource('ui.js'))
+  && /if \(P\.view !== 'follow' \|\| ev\.touches\.length < 2\) return;/.test(moduleSource('ui.js')));
 
 /* ---- the grass shader's arithmetic, on a parked instance ----
    The shader cannot be run here, but the maths that broke can. Every rejected
@@ -355,7 +425,8 @@ group('one file per thing');
 check('the page is markup, not a program', (() => {
   const markupOnly = readFileSync(INDEX_HTML, 'utf8');
   return !/<script type="module">[\s\S]*\bfunction\b/.test(markupOnly)
-    && /<script type="module" src="src\/main\.js">/.test(markupOnly);
+    // dist/, not src/: the modules are TypeScript and the page loads the build.
+    && /<script type="module" src="dist\/main\.js">/.test(markupOnly);
 })());
 check('and the code is in modules', srcFiles.length >= 10, `${srcFiles.length} files`);
 check('none of which is longer than the page was', (() => {
@@ -384,11 +455,11 @@ check('no module wires the page as it loads', (() => {
   return bad.length ? bad.join('; ') : true;
 })() === true);
 check('the wiring is a function main calls instead', (() => {
-  const main = rawSources[srcFiles.indexOf('main.js')] || '';
+  const main = rawSource('main.js');
   return /wireWorld\(\);/.test(main) && /wireInput\(\);/.test(main);
 })());
 check('and it runs before the world is built', (() => {
-  const main = rawSources[srcFiles.indexOf('main.js')] || '';
+  const main = rawSource('main.js');
   return main.indexOf('wireWorld();') < main.indexOf('buildWorld();');
 })());
 
@@ -770,6 +841,8 @@ check('a gently curving creek keeps its full width',
 
 /* A creek that looks like water rather than a ribbon laid on the ground. */
 const creekSrc = moduleSource('creeks.js');
+// Quoted from the source above; run from the build below.
+const creekBuilt = built('creeks.js');
 check('a creek is drawn through curves, not a chain of six-metre straights',
   /(?:const|let) pts = smoothPath\(path\);/.test(creekSrc)
   && /function smoothPath\(path\)[\s\S]*?for \(let round = 0; round < 2; round\+\+\)/.test(creekSrc));
@@ -777,11 +850,12 @@ check('a creek is drawn through curves, not a chain of six-metre straights',
    Rounded alone it only spreads over more points and folds the ribbon worse;
    the point that doubles back is dropped first. Run, not read. */
 check('and it never doubles back on itself', (() => {
-  const at = creekSrc.indexOf('function smoothPath(path)');
-  const end = at + creekSrc.slice(at).search(/\r?\n\}\r?\n/);
+  // Run, so out of the build — and the offsets with it, or they index the wrong text.
+  const at = creekBuilt.indexOf('function smoothPath(path)');
+  const end = at + creekBuilt.slice(at).search(/\r?\n\}\r?\n/);
   let smoothPath;
   try {
-    smoothPath = new Function('sampleHeight', 'STREAM_DROP', creekSrc.slice(at, end + 2) + '\nreturn smoothPath;')(() => 99, 0.02);
+    smoothPath = new Function('sampleHeight', 'STREAM_DROP', creekBuilt.slice(at, end + 2) + '\nreturn smoothPath;')(() => 99, 0.02);
   } catch (err) { return 'smoothPath would not load: ' + err.message; }
   const zig = [];
   for (let i = 0; i < 30; i++) zig.push({ x: i * 3 + (i % 2 ? 6 : 0), z: i * 0.8, level: 50 - i * 0.1, width: 0 });
@@ -813,9 +887,9 @@ check('and a creek running into another puts the whole of it into that one, from
   && /host\[i\]\.flow = \(host\[i\]\.flow \|\| 0\) \+ mouth;/.test(creekSrc)
   && /point: q, stream: s \}/.test(creekSrc));
 check('a lake is as wide and as deep as the water arriving in it, within reason', (() => {
-  const at = creekSrc.indexOf('function lakeSizeFor(flow)');
-  const close = creekSrc.slice(at).match(/\r?\n\}\r?\n/);
-  const size = new Function('LAKE', creekSrc.slice(at, at + close.index + close[0].length) + '\nreturn lakeSizeFor;')(
+  const at = creekBuilt.indexOf('function lakeSizeFor(flow)');
+  const close = creekBuilt.slice(at).match(/\r?\n\}\r?\n/);
+  const size = new Function('LAKE', creekBuilt.slice(at, at + close.index + close[0].length) + '\nreturn lakeSizeFor;')(
     { min: 7, max: 90, perFlow: 9 });
   const trickle = size(1.4), river = size(20), flood = size(4000);
   return size(0) === 7 && river > trickle * 2 && flood === 90
@@ -885,7 +959,7 @@ check('a creek fills and spills over the rim rather than stopping on dry land',
    over either: on one it cuts its bed seaward rather than stopping two metres
    above a sea four hundred metres in front of it. */
 check('and crosses a plain by cutting its bed seaward rather than stopping on it',
-  /const goSeaward = \(crossOwn\) => \{/.test(creekSrc)
+  /const goSeaward = \(crossOwn\??\) => \{/.test(creekSrc)
   && /if \(g - nxt > MAX_CUT\) return false;/.test(creekSrc));
 check('flat ground leans the water seaward',
   /const score = seen - SEAWARD \* flat \* \(cx \* outX \+ cz \* outZ\) - MEANDER \* keep;/.test(creekSrc)
@@ -1297,7 +1371,7 @@ const composeFirst = (src, keptInto) => {
   });
   return bad;
 };
-const peopleSrc = rawSources[srcFiles.indexOf('people.js')] || '';
+const peopleSrc = rawSource('people.js');
 check('a hut keeps the matrix that was composed for it',
   composeFirst(peopleSrc, 'hutAt').length === 0,
   composeFirst(peopleSrc, 'hutAt').join(' · '));
@@ -1955,7 +2029,8 @@ check('the readout redraws on its own, not only when somebody dies',
 check('the frame rate is beside the clock too',
   /const hf = \$\('hudFps'\);/.test(html) && html.includes('id="hudFps"'));
 check('and so is the head count',
-  /hp\.textContent = people\.length;/.test(html) && html.includes('id="hudPop"'));
+  // textContent is a string, so the count is said to be one.
+  /hp\.textContent = (?:String\()?people\.length\)?;/.test(html) && html.includes('id="hudPop"'));
 check('and they sit in the hud, which H does not hide', (() => {
   const hud = html.slice(html.indexOf('<div id="hud">'), html.indexOf('<div id="hud">') + 400);
   return /id="hudFps"/.test(hud) && /id="hudPop"/.test(hud)
@@ -2141,7 +2216,7 @@ group('the night');
 
 check('it is on by default', /nightSkip: true,/.test(html));
 check('and how fast is a setting', /nightSkipRate: \d+,/.test(html)
-  && /NIGHT_SKIP_RATE: \{ path: 'nightSkipRate'/.test(readFileSync(join(ROOT, 'config.js'), 'utf8')));
+  && /NIGHT_SKIP_RATE: \{ path: 'nightSkipRate'/.test(readFileSync(join(ROOT, 'config.ts'), 'utf8')));
 check('nothing is skipped in daylight', /sunDir\.y > P\.nightFrom\) return false;/.test(html));
 check('deep night runs whatever anyone is doing',
   /if \(sunDir\.y < deepNight\(\)\) return true;/.test(html));
@@ -2155,17 +2230,17 @@ check('deep night runs whatever anyone is doing',
    ------------------------------------------------------------------------- */
 check('where the window opens is a setting',
   /nightFrom: -0\.02,/.test(html)
-  && /NIGHT_FROM: \{ path: 'nightFrom'/.test(readFileSync(join(ROOT, 'config.js'), 'utf8')));
+  && /NIGHT_FROM: \{ path: 'nightFrom'/.test(readFileSync(join(ROOT, 'config.ts'), 'utf8')));
 check('and where it stops waiting for stragglers',
   /nightDeep: -0\.25,/.test(html)
-  && /NIGHT_DEEP: \{ path: 'nightDeep'/.test(readFileSync(join(ROOT, 'config.js'), 'utf8')));
+  && /NIGHT_DEEP: \{ path: 'nightDeep'/.test(readFileSync(join(ROOT, 'config.ts'), 'utf8')));
 /* Set the two the wrong way round and the deep test would fire before the night
    had started — running the world on through a sunset with everybody still out
    in it. Clamped rather than validated, because a rule nobody reads is not a
    rule. */
 check('and the far end is never above the near one',
   /export function deepNight\(\) \{ return Math\.min\(P\.nightDeep, P\.nightFrom\); \}/.test(
-    rawSources[srcFiles.indexOf('clock.js')] || ''));
+    rawSource('clock.js')));
 check('the defaults are the numbers that were hard-coded', (() => {
   const from = Number((html.match(/nightFrom: (-?[\d.]+),/) || [, NaN])[1]);
   const deep = Number((html.match(/nightDeep: (-?[\d.]+),/) || [, NaN])[1]);
@@ -2483,7 +2558,7 @@ check('and arriving just stops them',
 /* Read out of ORDERS rather than written out again here, so the two cannot
    disagree about what a band can be told to do. Adding an errand is adding it
    in one place and putting an icon in the markup. */
-const ORDER_LIST = (rawSources[srcFiles.indexOf('chronicle.js')] || '')
+const ORDER_LIST = (rawSource('chronicle.js'))
   .match(/export const ORDERS = \[([^\]]*)\]/)[1]
   .split(',').map((t) => t.trim().replace(/'/g, '')).filter(Boolean);
 check('there is a button for each job you can give', ORDER_LIST.length >= 8,
@@ -2509,7 +2584,7 @@ check('the row is only there in Follow',
    orders passed, and the buttons were invisible. */
 check('and something actually draws it',
   /export function moveCamera\(dt\) \{\s*updateLeadMark\(\);\s*updateOrders\(\);/.test(
-    rawSources[srcFiles.indexOf('chronicle.js')] || ''));
+    rawSource('chronicle.js')));
 
 /* An order is one instruction taken up once, not a leash: they go and do it and
    then they are choosing for themselves again. */
@@ -2530,8 +2605,8 @@ check('an order draws nothing from the world stream', (() => {
 })() === true);
 check('and the thing that does is only called from the step', (() => {
   // setOut draws from luck(); it must not be reachable from a click.
-  const ui = rawSources[srcFiles.indexOf('ui.js')] || '';
-  const chron = rawSources[srcFiles.indexOf('chronicle.js')] || '';
+  const ui = rawSource('ui.js');
+  const chron = rawSource('chronicle.js');
   return !/setOut\(/.test(ui) && !/setOut\(/.test(chron)
     ? true : 'setOut is called outside move.js';
 })() === true);
@@ -2589,7 +2664,7 @@ check('being sent home draws nothing from the world stream', (() => {
    patch that never applied, and every check about them passed. An export
    nothing imports is the same failure one step earlier. */
 check('the row reads the two of them', (() => {
-  const ui = rawSources[srcFiles.indexOf('ui.js')] || '';
+  const ui = rawSource('ui.js');
   const wired = /data-act\]/.test(ui) && /handBack\(\)/.test(ui) && /sendHome\(\)/.test(ui);
   const imported = /import \{[^}]*\bhandBack\b[^}]*\} from '\.\/chronicle\.js'/s.test(ui)
     && /import \{[^}]*\bsendHome\b[^}]*\} from '\.\/chronicle\.js'/s.test(ui);
@@ -2689,7 +2764,11 @@ if (bubbleFor) {
    it can be run here as it is. Every bubble is the picture of its own name, or
    of the one its alias names. */
 const ICON_PATHS = (() => {
-  const src = sources[srcFiles.indexOf('icons.js')];
+  /* Out of the build: this one is run, not read, and icons is TypeScript now.
+     Asked for by name rather than found by position in a list — a list the
+     module dropped out of the moment it was renamed, which turned four checks
+     into four quiet nulls. */
+  const src = built('icons.js');
   try { return src ? new Function(`${src}\nreturn ICON_PATHS;`)() : null; } catch { return null; }
 })();
 check('every bubble has a drawing', (() => {
@@ -2700,7 +2779,7 @@ check('every bubble has a drawing', (() => {
 })() === true);
 /* And something draws them: the part that has actually gone missing before. */
 check('and they are drawn every frame, after the people move', (() => {
-  const main = rawSources[srcFiles.indexOf('main.js')] || '';
+  const main = rawSource('main.js');
   if (!/import \{ updateBubbles \} from '\.\/bubbles\.js';/.test(main)) return 'never imported';
   return /updatePeople\(paced, daylight\);\s*\/\/[^\n]*\n\s*updateBubbles\(\);/.test(main)
     ? true : 'not called after updatePeople';
@@ -2919,7 +2998,7 @@ check('and there is a button for it too',
 
 /* A load weighs something, for the person you are playing: run, not read. */
 const WEIGH = (() => {
-  const src = sources[srcFiles.indexOf('bag.js')];
+  const src = built('bag.js');
   try { return src ? new Function(src + '\nreturn { loadOf, carryCap, loadPace };')() : null; } catch { return null; }
 })();
 check('a basketful of food is a load of one', (() => {
@@ -2955,7 +3034,7 @@ check('and the one you are playing is weighed by what is in the basket, whatever
   /if \(p\.carry \|\| p\.led\) want \*= carryFactor\(p\);/.test(html));
 /* One handful at a time, and the pile and the basket add up to what there was. */
 const HAND = (() => {
-  const src = sources[srcFiles.indexOf('bag.js')];
+  const src = built('bag.js');
   try { return src ? new Function(src + '\nreturn { takeOut, putIn };')() : null; } catch { return null; }
 })();
 check('a handful out is ten berries, and the food goes with it', (() => {
@@ -3151,7 +3230,7 @@ check('a meal is out of the store at home, out of the basket anywhere',
   /if \(atHome\(p\) && p\.camp\.food >= EAT\.meal\) \{\s*p\.camp\.food -= EAT\.meal;/.test(bodyOf('eat') || '')
   && /ate = eatFromBag\(p, EAT\.meal\);/.test(bodyOf('eat') || ''));
 const MEAL = (() => {
-  const src = sources[srcFiles.indexOf('bag.js')];
+  const src = built('bag.js');
   try { return src ? new Function(src + '\nreturn { eatFromBag };')() : null; } catch { return null; }
 })();
 check('a meal out of the basket is berries first, and comes off the haul', (() => {
@@ -4265,9 +4344,9 @@ check('a small haul is not rounded away to nothing',
    ------------------------------------------------------------------------- */
 group('emptying it');
 
-const dbSrc = readFileSync(join(ROOT, 'db.js'), 'utf8');
-const serverSrc = readFileSync(join(ROOT, 'server.js'), 'utf8');
-const resetSrc = readFileSync(join(ROOT, 'reset.js'), 'utf8');
+const dbSrc = readFileSync(join(ROOT, 'db.ts'), 'utf8');
+const serverSrc = readFileSync(join(ROOT, 'server.ts'), 'utf8');
+const resetSrc = readFileSync(join(ROOT, 'reset.ts'), 'utf8');
 
 check('every table is emptied, not just some of them',
   (() => {
@@ -4302,19 +4381,23 @@ check('it stops short of deleting the file a server is holding open',
   !/unlinkSync|rmSync/.test(resetSrc));
 
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-check('npm run reset exists', pkg.scripts.reset === 'node reset.js', JSON.stringify(pkg.scripts));
+/* endsWith rather than equals, here and below: reset.js is built from reset.ts
+   now and a fresh clone has none, so the scripts compile before they run. What
+   the check is for is which file each one ends up running. */
+check('npm run reset exists', pkg.scripts.reset.endsWith('node reset.js'), JSON.stringify(pkg.scripts));
 
 /* npm start watches and reloads; npm run serve and the Windows service do not.
    The service runs `node server.js` directly, so the thing that must never
    happen is the reload leaking into a plain run. */
-const devSrc = readFileSync(join(ROOT, 'dev.js'), 'utf8');
+const devSrc = readFileSync(join(ROOT, 'dev.ts'), 'utf8');
 const watched = (devSrc.match(/WATCHED = new Set\(\[[^\]]*\]\)/) || [''])[0];
 check('npm start is the development server, npm run serve the plain one',
-  pkg.scripts.start === 'node dev.js' && pkg.scripts.serve === 'node server.js', JSON.stringify(pkg.scripts));
+  pkg.scripts.start.endsWith('node dev.js') && pkg.scripts.serve.endsWith('node server.js'),
+  JSON.stringify(pkg.scripts));
 check('a change to .env restarts it, because settings are only read at startup',
   watched.includes("'.env'"), watched);
 check('and so does a change to the page or the server',
-  ['index.html', 'server.js', 'config.js', 'db.js'].every((f) => watched.includes(`'${f}'`))
+  ['index.html', 'server.ts', 'config.ts', 'db.ts'].every((f) => watched.includes(`'${f}'`))
   && /WATCHED_DIRS = \['src'\]/.test(devSrc), watched);
 check('but not the chronicle, which is written every simulated day', !/chronicle/.test(watched));
 check('it passes its arguments on, so --port still works',
@@ -4635,7 +4718,7 @@ check('and the six learned elsewhere are not among them',
    through the file for the ones that were missed. */
 check('an empty set of them is built from the list',
   /export const emptySkills = \(\) => Object\.fromEntries\(Object\.keys\(SKILLS\)\.map\(\(k\) => \[k, 0\]\)\);/.test(
-    rawSources[srcFiles.indexOf('skills.js')] || ''));
+    rawSource('skills.js')));
 check('and nothing writes the three out by hand any more',
   !/\{ spears: 0, baskets: 0, drying: 0 \}/.test(html));
 /* A save from before the other three has to still mean what it meant. */
@@ -4692,8 +4775,9 @@ check('the page is a window into the list, not the whole of it',
   /rows\.slice\(from, from \+ CHRON_PAGE\)/.test(html));
 check('and the ends stop rather than running off',
   /chronPage = clamp\(chronPage, 0, pages - 1\)/.test(html)
-  && /\$\('chronPrev'\)\.disabled = chronPage === 0/.test(html)
-  && /\$\('chronNext'\)\.disabled = chronPage >= pages - 1/.test(html));
+  // `as HTMLButtonElement`: only a button has `disabled`, and $() returns an element.
+  && /\$\('chronPrev'\)(?: as HTMLButtonElement\))?\.disabled = chronPage === 0/.test(html)
+  && /\$\('chronNext'\)(?: as HTMLButtonElement\))?\.disabled = chronPage >= pages - 1/.test(html));
 check('it says where you are in it', /\$\('chronWhere'\)\.textContent/.test(html));
 
 /* -------------------------------------------------------------------------
@@ -4719,7 +4803,8 @@ check('and every one has a word for the readout',
   causes.join(' '));
 check('a death goes into it', /p\.camp\.toll\[cause\] = \(p\.camp\.toll\[cause\] \|\| 0\) \+ 1/.test(html));
 check('and it is sorted worst first', /\.sort\(\(a, b\) => b\[1\] - a\[1\]\)/.test(html));
-check('with the causes that never happened left out', /\.filter\(\(\[, n\]\) => n > 0\)/.test(html));
+check('with the causes that never happened left out',
+  /\.filter\(\(\[, n\]\) => \(?n(?: as number\))? > 0\)/.test(html));
 
 /* -------------------------------------------------------------------------
    A list you scan and a card you read
@@ -5064,14 +5149,16 @@ check('and the log is the chronicle itself, not a copy of it',
   /chronicle\.filter\(isMilestone\)\s*\.filter\(\(e\) => !aheadOnly \|\| e\.text\.includes\(`\[\$\{aheadOnly\}\]`\)\)\.slice\(0, 8\)/.test(aheadSrc));
 /* What became of the tribe you were watching is what most runs are for. */
 check('it can be narrowed to one tribe',
-  html.includes('<select id="aheadTribe"') && /\$\('aheadTribe'\)\?\.addEventListener\('change', \(ev\) => setAheadOnly\(ev\.target\.value\)\);/.test(html));
+  // `(ev: any)`: a DOM event's target is an EventTarget, which has no `.value`.
+  html.includes('<select id="aheadTribe"') && /\$\('aheadTribe'\)\?\.addEventListener\('change', \(ev(?:: any)?\) => setAheadOnly\(ev\.target\.value\)\);/.test(html));
 check('which narrows the chart to that tribe, scaled to it',
   /const shown = only \? camps\.filter\(\(c\) => c\.code === only\) : camps;/.test(html)
   && /for \(const c of shown\) \{/.test(html) && /shown\.forEach\(\(c\) => \{/.test(html));
 check('and changing it redraws at once, not at the next slice',
   /function setAheadOnly\(code\) \{\s*aheadOnly = code \|\| '';\s*if \(ahead\) drawAhead\(\);/.test(html));
 check('and the list keeps up with tribes splitting off and dying out, and keeps the pick',
-  /if \(key === aheadTribes\) return;/.test(html) && /sel\.value = aheadOnly;/.test(html)
+  // `as HTMLSelectElement`: only a select has a value, and $() returns an element.
+  /if \(key === aheadTribes\) return;/.test(html) && /\(?sel(?: as HTMLSelectElement)?\)?\.value = aheadOnly;/.test(html)
   && /\$\{c\.gone \? ' \(gone\)' : ''\}/.test(html));
 /* Eight lines is what fits and a year is hundreds of them, so unfiltered those
    eight were whichever kills and hungry nights happened to be most recent — a
@@ -5159,7 +5246,7 @@ check('a tiger will not come to the fire',
 /* And how much ground that is depends on how well the band keeps its fire. */
 check('and a better-kept fire holds it further off',
   /export const safeGround = \(camp\) => PANIC\.safe \+ PANIC\.fireSafe \* \(camp\?\.skill\?\.fire \|\| 0\);/.test(
-    rawSources[srcFiles.indexOf('wildlife.js')] || ''));
+    rawSource('wildlife.js')));
 check('by about the width of the trampled ground round a camp', (() => {
   const safe = Number((html.match(/safe: (\d+),/) || [, 0])[1]);
   const more = Number((html.match(/fireSafe: (\d+),/) || [, 0])[1]);
@@ -5354,7 +5441,8 @@ check('nor one that would strand either camp without men',
 
 const PATH_WORLD = 1600;
 const makePaths = new Function('THREE', 'WORLD', 'TILE',
-  moduleSource('paths.js')
+  // Run, not quoted: the build, where `new Set<number>()` is a plain Set again.
+  built('paths.js')
     .replace(/^import .*$/gm, '')
     .replace(/^export /gm, '')
   + '\nreturn { PATH, buildPaths, clearPaths, tread, wearAt, fadePaths, pathStats, takeWornTiles };');
@@ -5549,7 +5637,8 @@ check('and the docks and the woodpiles have no ceiling either',
 group('land and water');
 
 const makeTerrain = new Function('P', 'WORLD',
-  moduleSource('noise.js').replace(/^import .*$/gm, '')
+  // Run, not quoted: the build. The checks that read noise.js quote the source.
+  built('noise.js').replace(/^import .*$/gm, '')
   + '\nreturn { rawHeight, settle: () => { hOffset = 0; hOffset = 4 - rawHeight(0, 0); } };');
 
 /** Land, and how much of the ground anybody may walk on is land, per map size. */
@@ -6473,16 +6562,16 @@ check('but never more of it than there is',
    And where the skills now live
    ------------------------------------------------------------------------- */
 check('what a band knows is its own module now',
-  srcFiles.includes('skills.js') && /const SKILLS = \{/.test(moduleSource('skills.js')));
+  srcFiles.includes(sourceName('skills.js')) && /const SKILLS = \{/.test(moduleSource('skills.js')));
 /* Eight modules import these names from life.js. A move that is invisible to
    all of them is a move that cannot break any of them. */
 check('and life.js passes the names through, so nothing else had to change',
   /export \{\s*FORGET_WORDS, LEAN, ROLES, ROLE_AT, SKILL, SKILLS[^]*?\} from '\.\/skills\.js';/.test(
-    rawSources[srcFiles.indexOf('life.js')] || ''));
+    rawSource('life.js')));
 /* A re-export binds nothing locally, and life.js uses most of them itself. */
 check('while still importing the ones it uses',
   /import \{\s*ROLES, SKILL, SKILLS, SKILL_RUNGS, announceSkill, assignRoles, craftChoice,[^]*?\} from '\.\/skills\.js';/.test(
-    rawSources[srcFiles.indexOf('life.js')] || ''));
+    rawSource('life.js')));
 
 /* -------------------------------------------------------------------------
    Stone, and what it is for
@@ -7050,10 +7139,14 @@ group('loading over a slow link');
    loads, one round later, which is exactly the slowness this is for. */
 {
   const idx = readFileSync(INDEX_HTML, 'utf8');
-  const listed = [...idx.matchAll(/<link rel="modulepreload" href="src\/([\w-]+\.js)">/g)].map((m) => m[1]);
+  const listed = [...idx.matchAll(/<link rel="modulepreload" href="dist\/([\w-]+\.js)">/g)].map((m) => m[1]);
+  /* What the page names is the build: a module written as params.ts is loaded
+     as dist/params.js, so the source list is read in the build's own terms
+     before the two are compared. */
+  const built = srcFiles.map((f) => f.replace(/\.ts$/, '.js'));
   check('every module is preloaded, and nothing that is not one',
-    srcFiles.every((f) => listed.includes(f)) && listed.every((f) => srcFiles.includes(f)),
-    `missing ${srcFiles.filter((f) => !listed.includes(f)).join(' ') || 'none'}, stale ${listed.filter((f) => !srcFiles.includes(f)).join(' ') || 'none'}`);
+    built.every((f) => listed.includes(f)) && listed.every((f) => built.includes(f)),
+    `missing ${built.filter((f) => !listed.includes(f)).join(' ') || 'none'}, stale ${listed.filter((f) => !built.includes(f)).join(' ') || 'none'}`);
   check('and after the import map, or the map would be ignored',
     idx.indexOf('type="importmap"') > 0 && idx.indexOf('type="importmap"') < idx.indexOf('rel="modulepreload"'));
   /* Slow is not broken: six seconds said "could not start" about a page that
@@ -7155,7 +7248,7 @@ check('fishing spreads over the water rather than sitting on one spot',
    And where the larder lives
    ------------------------------------------------------------------------- */
 check('where food comes from is its own module',
-  srcFiles.includes('larder.js') && /const FORAGED = \{/.test(larderSrc)
+  srcFiles.includes(sourceName('larder.js')) && /const FORAGED = \{/.test(larderSrc)
   && /const FISH = \{/.test(larderSrc));
 /* It is handed positions and asked what they are worth: nothing in it knows
    about people, camps or days.
@@ -7171,7 +7264,7 @@ check('and it knows nothing about people or days',
   (codeOnly(larderSrc).match(/\bpeople\b|simDay/g) || []).join(' '));
 check('life.js passes it through the way it does the skills',
   /export \{\s*FISH, FORAGED, buildForaged[^]*?\} from '\.\/larder\.js';/.test(
-    rawSources[srcFiles.indexOf('life.js')] || ''));
+    rawSource('life.js')));
 
 /* -------------------------------------------------------------------------
    Nothing is drawn while nothing is watching
@@ -7406,9 +7499,10 @@ check('food comes home as the library\'s cargo, and a rabbit in the arms',
   && /bag\?\.animal === 'rabbit' \|\| bag\?\.animal === 'boar' \? 'cargo:animal' : 'cargo:meat'/.test(looksSrc));
 
 /* The builds, run: the library's formula lifted out of looks.js. */
+const looksBuilt = built('looks.js');
 const buildAt = new Function(
-  looksSrc.slice(looksSrc.indexOf('const smooth = '), looksSrc.indexOf("/* The library's build"))
-  + looksSrc.slice(looksSrc.indexOf('function buildAt('), looksSrc.indexOf('/* The library stretches'))
+  looksBuilt.slice(looksBuilt.indexOf('const smooth = '), looksBuilt.indexOf("/* The library's build"))
+  + looksBuilt.slice(looksBuilt.indexOf('function buildAt('), looksBuilt.indexOf('/* The library stretches'))
   + 'return buildAt;')();
 const [slimW] = buildAt('slim', 1.0), [broadShoulder] = buildAt('broad', 1.34), [broadWaist] = buildAt('broad', 1.10);
 const [fullW, fullD] = buildAt('full', 1.10), [avgW, avgD] = buildAt('average', 1.10);
@@ -7456,7 +7550,7 @@ check('farmland is found for the island: fertile, flat, and worth more the short
   && /0\.55 \+ fbm\(x \* 0\.010, z \* 0\.010, 2, P\.seed \+ 707\)/.test(bodyOf('soilAt') || '')
   && /if \(q\.level < ground \+ 0\.3\) continue;/.test(bodyOf('surveyFarmland') || ''));
 check('a band walks past poor ground at home to good ground off, but not across the island, nor onto another\'s', (() => {
-  const src = moduleSource('farming.js');
+  const src = built('farming.js');
   const at = src.indexOf('function chooseSite(');
   const close = src.slice(at).match(/\r?\n\}\r?\n/);
   const choose = new Function('FARM', src.slice(at, at + close.index + close[0].length) + '\nreturn chooseSite;')(
@@ -7479,10 +7573,14 @@ check('and comes back to the farmland it took after a reload',
    ------------------------------------------------------------------------- */
 group('what a band remembers');
 const lessonSrc = moduleSource('lessons.js');
+/* The checks above quote this module; the ones below run it. What is quoted is
+   the source, because that is what somebody wrote; what is run is the build,
+   because a browser and node both refuse `as [string, number]`. */
+const lessonBuilt = built('lessons.js');
 const lessonFn = (name) => {
-  const at = lessonSrc.indexOf('function ' + name + '(');
-  const close = lessonSrc.slice(at).match(/\r?\n\}\r?\n/);
-  return lessonSrc.slice(at, at + close.index + close[0].length);
+  const at = lessonBuilt.indexOf('function ' + name + '(');
+  const close = lessonBuilt.slice(at).match(/\r?\n\}\r?\n/);
+  return lessonBuilt.slice(at, at + close.index + close[0].length);
 };
 check('every death is a lesson, taken before the dead are gone',
   /learnFrom\(p, cause\);[^\n]*\n  recordDeath\(p, cause\);/.test(html));
@@ -7667,7 +7765,7 @@ check('a conquest is worth telling', /'conquest',   \/\/ a band took another's v
 /* A field grows with the band that works it, wider and longer both, and is
    never planted in the creek or on the camp's trampled ground. */
 check('a field grows with the band and its farming, and has no largest', (() => {
-  const src = moduleSource('farming.js');
+  const src = built('farming.js');
   const at = src.indexOf('function fieldSize(camp)');
   const close = src.slice(at).match(/\r?\n\}\r?\n/);
   const FIELD = { spacing: 1.6, minLen: 9.5, perHead: 30, step: 1.4 };
@@ -7867,7 +7965,8 @@ group('raids you can see');
   const mv = moduleSource('move.js');
   check('raiders carry spears', /p\.hasSpear = p\.job === 'hunt' \|\| p\.job === 'raid';/.test(mv));
   check('and go as a war party, warriors first',
-    /gatherWarParty\(p, mark\);/.test(mv) && /free\.sort\(\(a, b\) => \(b\.role === 'warrior'\) - \(a\.role === 'warrior'\)\);/.test(mv)
+    /gatherWarParty\(p, mark\);/.test(mv)
+    && /free\.sort\(\(a, b\) => .*b\.role === 'warrior'.*-.*a\.role === 'warrior'.*\);/.test(mv)
     && /const take = Math\.min\(RAID\.party - 1,/.test(mv) && /party: \d+,/.test(html));
   check('the chronicle says when they set out', /set out to raid \[\$\{mark\.code\}\]/.test(mv));
   check('settled once for the whole party, not once for each who arrives',

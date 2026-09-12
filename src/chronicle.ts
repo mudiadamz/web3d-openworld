@@ -17,7 +17,7 @@ import { fruitNear } from './orchard.js';
 import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
 import { ORES, depositRadius, deposits } from './quarries.js';
 import { preyNear } from './spear.js';
-import { updateActionRings, whatHere } from './reach.js';
+import { ordersPossible, updateActionRings, whatHere } from './reach.js';
 import { takeCover } from './danger.js';
 import { atHome, canEat, condition } from './vitals.js';
 import { moorRaft } from './rafts.js';
@@ -115,8 +115,8 @@ export function renderChronPage() {
     ? `${from + 1}–${Math.min(from + CHRON_PAGE, rows.length)} of ${rows.length}${kept}`
       + (needle || milestonesOnly ? ` · ${chronRows.length} in all` : '')
     : `0 of ${chronRows.length}`;
-  $('chronPrev').disabled = chronPage === 0;
-  $('chronNext').disabled = chronPage >= pages - 1;
+  ($('chronPrev') as HTMLButtonElement).disabled = chronPage === 0;
+  ($('chronNext') as HTMLButtonElement).disabled = chronPage >= pages - 1;
 }
 
 /* -------------------------------------------------------------------------
@@ -948,38 +948,42 @@ export function updateOrders() {
   if (!p) return;
   updateBagHud(p);
   const heavy = tooHeavy(p);
-  for (const b of box.children) {
+  // Buttons, which is what the row holds: their dataset and disabled are wanted.
+  const can = ordersPossible(p.camp);
+  for (const b of box.children as unknown as HTMLButtonElement[]) {
     const mine = b.dataset && b.dataset.order === (p.orders || p.job);
     if (b.classList.contains('on') !== !!mine) b.classList.toggle('on', !!mine);
     // Too heavy to walk: no errand can be set off on (tooHeavyToSend).
     if (b.dataset?.order && b.disabled !== heavy) b.disabled = heavy;
+    const job = b.dataset?.order;          // gone where the band has no such errand
+    if (job && job in can && b.hidden !== !can[job]) b.hidden = !can[job];
   }
   /* Greyed while nothing is holding them. A button whose whole job is to undo
      something has to say when there is nothing to undo: pressing it and having
      nothing happen reads as the button being broken. */
-  const free = box.querySelector?.('button[data-act="free"]');
+  const free = box.querySelector?.('button[data-act="free"]') as HTMLButtonElement;
   if (free) {
     const held = !!(p.led || p.orders);
     const can = held && !heavy;
     if (free.disabled !== !can) free.disabled = !can;
   }
-  const home = box.querySelector?.('button[data-act="home"]');
+  const home = box.querySelector?.('button[data-act="home"]') as HTMLButtonElement;
   if (home && home.disabled !== heavy) home.disabled = heavy;
   /* Put away: only in the storage area with something to put, and lit green
      when it is — the same green as the ring. Drop: whenever there is a load. */
   const loadNow = hasLoad(p);
-  const store = box.querySelector?.('button[data-act="store"]');
+  const store = box.querySelector?.('button[data-act="store"]') as HTMLButtonElement;
   if (store) {
     const can = loadNow && inStoreArea(p);
     if (store.disabled !== !can) store.disabled = !can;
     store.classList?.toggle?.('ready', can);
   }
-  const drop = box.querySelector?.('button[data-act="drop"]');
+  const drop = box.querySelector?.('button[data-act="drop"]') as HTMLButtonElement;
   if (drop && drop.disabled !== !loadNow) drop.disabled = !loadNow;
   // Rest lit while they are resting; eat only with something to eat.
   const rest = box.querySelector?.('button[data-act="rest"]');
   if (rest) rest.classList?.toggle?.('ready', Boolean(p.resting));
-  const food = box.querySelector?.('button[data-act="eat"]');
+  const food = box.querySelector?.('button[data-act="eat"]') as HTMLButtonElement;
   if (food) {
     const can = canEat(p);
     if (food.disabled !== !can) food.disabled = !can;
@@ -1532,7 +1536,10 @@ export const BISECT = [
   ['people and camps', () => tribeGroup],
   ['sky', () => sky],
   ['terrain', () => byName('terrain')],
-];
+  /* A layer's name and how to find it — said to be that pair at the close, or
+     the two halves come back as one union and the finder is not callable.
+     `shadows` has no finder: it is the renderer's own switch. */
+] as [string, (() => any) | null][];
 export let bisectAt = 0;
 
 /* Rebuilt objects are new objects, so the layers are looked up by name at the
@@ -1558,7 +1565,8 @@ export function applyBisect() {
   for (let i = 0; i < bisectAt; i++) {
     const [, pick] = BISECT[i];
     if (!pick) { shadows = true; continue; }
-    for (const o of [].concat(pick())) {
+    // One thing or several: the layer says which, and both are walked the same.
+    for (const o of ([] as any[]).concat(pick())) {
       if (!o) continue;
       if (!bisectWas.has(o)) bisectWas.set(o, o.visible);
       o.visible = false;
@@ -1568,7 +1576,7 @@ export function applyBisect() {
   if (shadows) {
     renderer.shadowMap.enabled = false;
     sunLight.castShadow = false;
-    world.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+    world.traverse((o: any) => { if (o.material) o.material.needsUpdate = true; });
   }
 }
 
@@ -1694,7 +1702,7 @@ export function wireInput() {
      Bound to the box, not the rows: the rows are rewritten every time somebody
      is born, dies, falls ill or changes job. Only the living carry `data-p` —
      the "who is gone" tab is a list of people there is nothing to follow. */
-  $('tribeList')?.addEventListener('click', (ev) => {
+  $('tribeList')?.addEventListener('click', (ev: any) => {
     /* A lineage button, a name inside a lineage, or back. Before the row's own
        click, because the button sits on a row that would otherwise follow them. */
     const lin = ev.target?.closest?.('[data-lin]');

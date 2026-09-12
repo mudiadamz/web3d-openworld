@@ -205,7 +205,9 @@ export function seasonPhase() {
 
 /* Each season holds its own for most of its length and then hands over, rather
    than the year being one continuous slide through the colour wheel. */
-export function blendSeason(table, out) {
+// `out` is only wanted for the three-part tints, which are written into it and
+// handed back; a scalar season value is returned on its own.
+export function blendSeason(table, out?) {
   const p = seasonPhase() * 4;
   const i = Math.floor(p) % 4;
   const j = (i + 1) % 4;

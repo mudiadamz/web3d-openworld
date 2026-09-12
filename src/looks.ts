@@ -72,7 +72,8 @@ const MID = {
   neck: (J.neckBase[1] + J.headBase[1]) / 2,
 };
 export const BUILD_FIT = Object.fromEntries(BODY_BUILDS.map((build) => {
-  const fit = { armX: buildAt(build, J.shoulder[1])[0], hipX: buildAt(build, J.hip[1])[0] };
+  // Two numbers across, and then a vector for every limb the loop below adds.
+  const fit: Record<string, any> = { armX: buildAt(build, J.shoulder[1])[0], hipX: buildAt(build, J.hip[1])[0] };
   for (const [piece, y] of Object.entries(MID)) {
     const [w, d] = buildAt(build, y);
     fit[piece] = new THREE.Vector3(w, 1, d);
@@ -314,7 +315,8 @@ export function growLooks(room) {
 
 export function clearLooks() {
   if (!looks) return;
-  const geometries = new Set();
+  // The shapes behind the meshes: gathered first, because several parts share one.
+  const geometries = new Set<THREE.BufferGeometry>();
   for (const key in looks) {
     lookGroup?.remove(looks[key]);
     geometries.add(looks[key].geometry);
@@ -463,7 +465,9 @@ const HEM = [0, 0.023, -0.029, 0.013, -0.017, 0.035];
 function tunicGeo(sex, build) {
   const torso = torsoRings(sex === 'f' ? 'torsoFemale' : 'torsoMale');
   const first = torso[0], top = torso[torso.length - 1];
-  const rings = [
+  /* The hem is the bottom ring's alone, so `hem` is optional on the rest —
+     said here, or the ring type is a union and only one arm of it has one. */
+  const rings: { y: number; rx: number; rz: number; cz: number; hem?: boolean }[] = [
     { y: first.y - 0.035, rx: first.rx * 1.25 + 0.01, rz: first.rz * 1.35 + 0.01, cz: 0, hem: true },
     ...torso.map((r) => ({ y: r.y, rx: r.rx * 1.08 + 0.012, rz: r.rz * 1.10 + 0.012, cz: r.cz })),
     { y: top.y + 0.02, rx: 0.069, rz: 0.064, cz: 0 },           // the neckline
@@ -575,8 +579,17 @@ function cloakGeo() {
   return merge([g.scale(1, 1, 0.8).translate(0, 0.14, -0.02)]);
 }
 
+/** One drawn part: its shape, whether it is cloth — which is a different
+    material — and whether it casts a shadow. */
+export interface LookSpec {
+  geo: THREE.BufferGeometry;
+  cloth?: boolean;
+  shadow: boolean;
+}
+
 function lookGeometries() {
-  const out = {};
+  // Keyed by part — 'hair:long', 'cargo:fish', 'sleeve:0' — and every one a LookSpec.
+  const out: Record<string, LookSpec> = {};
   for (const sex of ['m', 'f']) {
     for (const build of BODY_BUILDS) out[`tunic:${sex}:${build}`] = { geo: tunicGeo(sex, build), cloth: true, shadow: true };
   }

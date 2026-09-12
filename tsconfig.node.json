@@ -1,0 +1,47 @@
+{
+  "//": [
+    "The Node side: the server, the dev runner, the settings, the chronicle's",
+    "database and the reset command. Separate from tsconfig.json because the two",
+    "halves share almost nothing — that one targets a browser and loads the DOM",
+    "and three's types, this one runs on node and loads node's.",
+    "",
+    "rootDir and outDir are both '.', so config.ts emits config.js beside it and",
+    "every path that names one keeps working: `node server.js`, dev's spawn of",
+    "it, test.js's import of './config.js', and — the reason it matters most —",
+    "the Windows service, which deploy/service.ps1 installs as `node server.js`",
+    "from the project root. Emitting anywhere else would strand an installed",
+    "service until somebody reinstalled it.",
+    "",
+    "The emitted .js are build output and gitignored as such. That is why npm",
+    "start and npm run serve build first: on a fresh clone there is no server.js",
+    "to run until tsc has made one.",
+    "",
+    "test.js and test-boot.js stay JavaScript and are not listed below. They read",
+    "the other files as text and pin thousands of regexes against them, so they",
+    "are the thing that proves this move did not change any of it."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+
+    "rootDir": ".",
+    "outDir": ".",
+    "sourceMap": true,
+
+    "allowJs": false,
+    "checkJs": false,
+
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  /* `files`, not `include`. outDir is the project root, and TypeScript excludes
+     its own outDir from `include` by default — which here excludes everything,
+     and tsc reports that it found no inputs at all. `files` names its inputs
+     outright and no exclude is applied to it. */
+  "files": ["config.ts", "db.ts", "reset.ts", "server.ts", "dev.ts"]
+}

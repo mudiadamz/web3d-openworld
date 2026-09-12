@@ -86,7 +86,8 @@ export let modelsPending = false;
 
 export async function loadModel(url) {
   if (modelCache.has(url)) return modelCache.get(url);
-  const gltf = await new Promise((resolve, reject) => {
+  // What the loader hands back: its scene and its animations are read below.
+  const gltf = await new Promise<any>((resolve, reject) => {
     new GLTFLoader().load(url, resolve, undefined, reject);
   });
   let mesh = null;
@@ -143,6 +144,18 @@ export function modelFor(url) {
 }
 
 /** An instanced mesh of one model, sized so its longest axis is `fit` metres. */
+/** A loaded model and the instances drawn from it. `birds` is dealt in after
+    the set is made — which birds of the flock belong to this species — so it
+    is not part of what a set starts as. */
+export interface ModelSet {
+  mesh: THREE.InstancedMesh;
+  entry: any;
+  count: number;
+  scale: number;
+  footOffset: number;
+  birds?: number[];
+}
+
 export function makeModelSet(spec, count) {
   const entry = modelFor(spec.url);
   if (!entry || count <= 0 || count > MODEL_MAX_INSTANCES) return null;
@@ -162,7 +175,7 @@ export function makeModelSet(spec, count) {
     // Models are not modelled with their feet at the origin; the horse's are
     // 59 units below it. Without this the herd walks buried to the knee.
     footOffset: -entry.minY * (spec.fit / entry.span),
-  };
+  } as ModelSet;
 }
 
 /* One instance's transform and its own moment in the wingbeat. `setTime` on the
@@ -417,14 +430,16 @@ export function addPart(bag, key, geo, count, group) {
 }
 
 export function buildQuadrupeds(spec, count) {
-  const parts = {};
+  // Filled by addPart, a mesh at a time, and read back by name below.
+  const parts: Record<string, any> = {};
   const bodyGeo = roundBox(...spec.body);
   bodyGeo.translate(0, spec.bodyY, 0);
   addPart(parts, 'body', bodyGeo, count, fauna);
 
   if (spec.hump) {
     const humpGeo = roundBox(...spec.hump.size);
-    humpGeo.translate(...spec.hump.pos);
+    // three.js takes three numbers; the spec holds them as an array.
+    humpGeo.translate(...(spec.hump.pos as [number, number, number]));
     addPart(parts, 'hump', humpGeo, count, fauna);
   }
 
@@ -1203,7 +1218,7 @@ export function updateQuadrupeds(dt) {
       }
 
       _mLocal.makeRotationY(Math.sin(d.phase * 1.7 + d.tailOff) * 0.4);
-      _mLocal.setPosition(...spec.tailPos);
+      _mLocal.setPosition(...(spec.tailPos as [number, number, number]));
       _mChain.multiplyMatrices(_mAnim, _mLocal);
       parts.tail.setMatrixAt(i, _mChain);
 
@@ -1422,7 +1437,7 @@ function drawCarcass(d, i, spec, model, parts, slice) {
     }
   }
   _mLocal.makeRotationY(0);
-  _mLocal.setPosition(...spec.tailPos);
+  _mLocal.setPosition(...(spec.tailPos as [number, number, number]));
   _mChain.multiplyMatrices(_mAnim, _mLocal);
   parts.tail.setMatrixAt(i, _mChain);
   for (let k = 0; k < 4; k++) {

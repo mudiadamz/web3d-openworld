@@ -44,7 +44,8 @@ export { CITY, CIVIC, OUTSKIRTS, campReach, claimCivic, cityPlotsFor, dressCivic
 export const ROUND_RINGS = [[0, 0], [8, 5], [10, 7]];       // [radial, rings] per level
 
 /** A box-shaped ellipsoid: same width, height and depth, none of the corners. */
-export function roundBox(w, h, d) {
+export function roundBox(...dims: number[]) {
+  const [w, h, d] = dims;
   const [seg, rings] = ROUND_RINGS[QUALITY[P.quality]?.round ?? 2];
   if (!seg) return new THREE.BoxGeometry(w, h, d);
   const g = new THREE.SphereGeometry(0.5, seg, rings);
@@ -53,7 +54,8 @@ export function roundBox(w, h, d) {
 }
 
 /** A limb: round in cross-section, domed at both ends, filling the same box. */
-export function roundLimb(w, h, d) {
+export function roundLimb(...dims: number[]) {
+  const [w, h, d] = dims;
   const [seg] = ROUND_RINGS[QUALITY[P.quality]?.round ?? 2];
   if (!seg) return new THREE.BoxGeometry(w, h, d);
   /* The cap radius comes off the thinner cross-section so the capsule stays
@@ -89,8 +91,12 @@ export const HAIR = [0x181310, 0x2b1d14, 0x3d2a1a, 0x4a3626];
 // flame goes dark at exactly the moment it should be brightest.
 export const fireMaterial = new THREE.MeshBasicMaterial({ color: 0xffb347 });
 
-export const camps = [];        // { x, z, huts, light, ... }
-export const people = [];
+import type { Camp, Person } from './types.js';
+// Written in types.ts, handed on from here: this is where camps and people live.
+export type { Camp, Person };
+
+export const camps: Camp[] = [];
+export const people: Person[] = [];
 
 /* Metres between two fires at world build. Not scaled by the map — see the note
    where it is used. A bigger island now holds proportionally more bands. */
@@ -183,7 +189,7 @@ export function chooseCampSites(count) {
       toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 },
       born: 0, peak: 0, founded: simDay, gone: false,
       history: [],
-    });
+    } as Camp);
   }
 }
 
@@ -213,7 +219,7 @@ export function campFromRecord(index, x, z, name, founded) {
     toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 },
     born: 0, peak: 0, founded: Number.isFinite(founded) ? founded : simDay, gone: false,
     history: [],
-  };
+  } as Camp;
   camps.push(camp);
   layoutCamp(camp, index);
   return camp;
@@ -1603,7 +1609,8 @@ export function paintPeople() {
    nought so it sits on the rim of whatever it is put in. Round things, because
    the same heap has to read as berries, fruit or a catch depending only on its
    colour and the stretch it is given. */
-export function heapGeo(w, h, d) {
+export function heapGeo(...dims: number[]) {
+  const [w, h, d] = dims;
   const r = h * 0.5;
   const parts = [];
   for (let k = 0; k < 6; k++) {
@@ -1616,7 +1623,8 @@ export function heapGeo(w, h, d) {
 }
 
 /* A basket: a tapered tub with a handle arched over it. */
-export function basketGeoFrom(top, bottom, height) {
+export function basketGeoFrom(...dims: number[]) {
+  const [top, bottom, height] = dims;
   const tub = new THREE.CylinderGeometry(top, bottom, height, 12);
   const handle = new THREE.TorusGeometry(top * 0.92, 0.012, 4, 12, Math.PI).translate(0, height / 2, 0);
   return joinGeometries([tub, handle]);

@@ -738,7 +738,13 @@ export function chooseJob(p, day) {
       ['raid', !p.child && hunger > RAID.hungry && rested > 0.4
         && simDay - (p.camp.lastRaid ?? -99) > RAID.every && raidTarget(p.camp)
         ? RAID.chance * hunger * rested * (p.role === 'warrior' ? 2.5 : 1) : 0],
-    ];
+    /* An errand and what it is worth, said to be that pair — at the close of the
+       list rather than on the line above it, the same as the craft weights in
+       skills.ts: a check reads this list out of the source and looks for
+       `const weights = [` exactly. Everything below multiplies the second of
+       each pair and rolls against the total, and neither means anything while
+       the pair is "string or number". */
+    ] as [string, number][];
     /* A role leans the whole list before anything is rolled: it multiplies the
        job it belongs to and zeroes the ones it refuses, so the chief does not
        spend the morning on the hill and the knapper is usually knapping. A band
@@ -779,7 +785,8 @@ function gatherWarParty(leader, mark) {
     if (q === leader || q.sick || q.led || q.acting || q.asleep || q.job === 'raid') continue;
     if (q.state === 'idle' || AT_HOME.has(q.job)) free.push(q);
   }
-  free.sort((a, b) => (b.role === 'warrior') - (a.role === 'warrior'));
+  // Warriors first: a comparator wants numbers, and these are two yes-or-nos.
+  free.sort((a, b) => Number(b.role === 'warrior') - Number(a.role === 'warrior'));
   const take = Math.min(RAID.party - 1, Math.max(0, Math.round(adults / 4) - 1), free.length);
   for (let k = 0; k < take; k++) {
     const q = free[k];
@@ -1947,7 +1954,7 @@ export function applyShadowSettings(q = QUALITY[P.quality]) {
     sunLight.shadow.mapSize.set(q.shadowMap, q.shadowMap);
   }
   // Whether a material samples a shadow map is baked into its program.
-  world.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+  world.traverse((o: any) => { if (o.material) o.material.needsUpdate = true; });
 }
 
 /* Where the camera goes when a world is built. It used to be a button as

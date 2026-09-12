@@ -62,7 +62,7 @@ const payload = { values, explicit, chronicle: Boolean(db) };
    never send a page anything it did not ask for. */
 const DEV = Boolean(process.env.DEV_RELOAD);
 const BOOT = `${process.pid}-${Date.now()}`;
-const devStreams = new Set();
+const devStreams = new Set<any>();
 /* How soon the page tries again once the server has gone. The browser's own
    default is about three seconds, which is most of the wait. */
 export const DEV_RETRY_MS = 300;
@@ -94,7 +94,10 @@ export const BODY_LIMIT = 1_000_000;
 
 /** Read a JSON body, with a cap so a stuck client cannot fill memory. */
 function readJson(req, limit = BODY_LIMIT) {
-  return new Promise((resolve, reject) => {
+  /* The body is whatever the page sent and the handlers read their own fields
+     off it, so it is `any` deliberately. Said here rather than as a return type
+     on the line above because test.js pins that signature word for word. */
+  return new Promise<any>((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
@@ -104,7 +107,7 @@ function readJson(req, limit = BODY_LIMIT) {
            does about it matters — it falls back to keeping the world in the
            browser — and it cannot do that if all it gets is a dead socket and a
            stack trace on the server's console. */
-        const err = new Error(`body too large: ${size} bytes, limit ${limit}`);
+        const err: any = new Error(`body too large: ${size} bytes, limit ${limit}`);
         err.tooLarge = true;
         /* Stop reading, but do not tear the socket down here: the 413 has not
            been written yet, and a client that gets a dropped connection instead

@@ -524,7 +524,11 @@ export function craftChoice(camp) {
     /* And clothes, sewn as the cold comes on: a little all year, most in the
        autumn before the winter they are for. */
     ['clothing', 0.10 + (seasonName === 'autumn' ? 0.55 : seasonName === 'winter' ? 0.35 : 0)],
-  ];
+  /* A skill and its weight, said to be a pair — at the close of the list rather
+     than on the line above it, because a check reads this list out of the
+     source and looks for `const weights = [` exactly. Without it the roll below
+     is subtracting "string or number" from a number. */
+  ] as [string, number][];
   /* Six weights for eight skills, and that is the shape of it: these are the
      things a band gets better at by sitting down and working at them. The other
      two are learned at the graveyard and nowhere else — going back to it, and

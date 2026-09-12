@@ -179,6 +179,23 @@ function Send-CtrlBreak {
   }
 }
 
+# server.js is built from server.ts and is not in the repository, so a fresh
+# clone has nothing for the service to run. Built at install rather than inside
+# the runner: a build that failed at boot would leave the service unable to
+# start at all, which is worse than starting on the build it already had.
+# Note that `restart` does not come through here - after a pull, install again.
+function Build-Project {
+  $node = Get-Node
+  $tsc = Join-Path $Root 'node_modules\typescript\bin\tsc'
+  if (-not (Test-Path $tsc)) { Fail 'typescript is not installed - run `npm install` in the project first' }
+  Say 'building the page and the server...'
+  & $node $tsc -p (Join-Path $Root 'tsconfig.json')
+  if ($LASTEXITCODE -ne 0) { Fail 'the page did not build - fix the errors above, then install again' }
+  & $node $tsc -p (Join-Path $Root 'tsconfig.node.json')
+  if ($LASTEXITCODE -ne 0) { Fail 'the server did not build - fix the errors above, then install again' }
+  Ok 'built'
+}
+
 # The launcher, so both backends start it the same way and the port lives in one
 # place rather than inside a task definition nobody reads.
 function Write-Runner {
@@ -278,6 +295,7 @@ switch ($Action) {
       Warn 'DELETE /api/data wipes every world, run and chronicle, and nothing asks who you are.'
       Warn 'Put it behind something that does, or keep the bind at 127.0.0.1.'
     }
+    Build-Project
     $nssm = Get-Nssm
     if ($nssm) { Install-Service -Nssm $nssm } else { Install-Task }
     Start-It

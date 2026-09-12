@@ -11,10 +11,10 @@ import { buildWorld, placeCamera } from './move.js';
 import {
   chronPage, closeChronicle, closeTribe, dropHere, eatHere, handBack, openChronicle, openTribe, orderJob,
   restHere, renderChronPage, renderTribeCard, sendHome, setChronFind, setChronPage, setTribeTab, showKeys,
-  storeHere, toggleKeys, tribeShown
+  storeHere, toggleKeys, tribeShown, actHere, pickFollow, setViewMode
 } from './chronicle.js';
 import { camps } from './people.js';
-import { travelTo } from './map.js';
+import { stepMapSize, travelTo } from './map.js';
 import { $, STATE_STORE, clearSavedState, ui } from './save.js';
 import { elapsed, seeAhead, setAheadOnly, stopAhead, updateHud } from './main.js';
 
@@ -190,7 +190,8 @@ export function codeChip(seed) {
   return `<b class="wcode" style="background:${worldColor(seed)}">${worldCode(seed)}</b>`;
 }
 
-export function localWorlds(next) {
+// With a list it writes; without one it just reads the shelf back.
+export function localWorlds(next?) {
   try {
     if (next) localStorage.setItem(WORLD_STORE, JSON.stringify(next));
     return JSON.parse(localStorage.getItem(WORLD_STORE) || '[]');
@@ -259,7 +260,7 @@ export function renderWorlds() {
   sel.innerHTML = worlds.map((w) =>
     `<option value="${w.seed}"${w.seed === P.seed ? ' selected' : ''}>${worldCode(w.seed)} · ${w.name}</option>`)
     .join('') || '<option value="">no worlds yet</option>';
-  $('seedOut').textContent = P.seed;
+  $('seedOut').textContent = String(P.seed);
   $('worldHere').innerHTML = codeChip(P.seed) + (here ? here.name : nameForSeed(P.seed));
 }
 
@@ -270,7 +271,7 @@ export function enterWorld(seed, name) {
   toast(name ? `${name} · seed ${P.seed}` : `seed ${P.seed}`, 2.2);
 }
 
-$('world').addEventListener('change', (e) => {
+$('world').addEventListener('change', (e: any) => {
   const seed = parseInt(e.target.value, 10);
   const w = worlds.find((x) => x.seed === seed);
   if (w) enterWorld(w.seed, w.name);
@@ -284,9 +285,9 @@ export function setRate(i) {
   toast(`clock ${r}×`, 1.2);
 }
 
-$('runAhead').addEventListener('click', () => seeAhead(Number($('years').value) || 5));
+$('runAhead').addEventListener('click', () => seeAhead(Number(($('years') as HTMLInputElement).value) || 5));
 $('aheadStop').addEventListener('click', stopAhead);
-$('aheadTribe')?.addEventListener('change', (ev) => setAheadOnly(ev.target.value));
+$('aheadTribe')?.addEventListener('change', (ev: any) => setAheadOnly(ev.target.value));
 
 $('slower').addEventListener('click', () => setRate(rateIndex - 1));
 $('faster').addEventListener('click', () => setRate(rateIndex + 1));
@@ -378,7 +379,7 @@ arm($('wipeAll'), 'Delete everything', wipeEverything, 5);
 /* A tribe's line on the panel opens it. The rows are rebuilt every half second,
    so the click is caught on the container rather than on rows that will not
    exist by the time anybody presses one. */
-$('tribes').addEventListener('click', (ev) => {
+$('tribes').addEventListener('click', (ev: any) => {
   const row = ev.target.closest ? ev.target.closest('div[data-camp]') : null;
   if (row) openTribe(Number(row.dataset.camp));
 });
@@ -417,7 +418,7 @@ $('tribeGo').addEventListener('click', () => {
   toast(camp.name);
 });
 $('tribeClose').addEventListener('click', closeTribe);
-$('tribe').addEventListener('click', (ev) => { if (ev.target === $('tribe')) closeTribe(); });
+$('tribe').addEventListener('click', (ev: any) => { if (ev.target === $('tribe')) closeTribe(); });
 
 /* One idea of what is worth reading, two buttons that say it. Both write the
    same flag and then redraw both places, so the panel and the window can never
@@ -456,7 +457,9 @@ for (const id of ['chronKind', 'chronKind2']) {
 /* One listener on the row rather than six on the buttons. The two on the end
    are not errands. One takes the instructions off them and one brings them in,
    so they carry `data-act` and are read separately. */
-$('orders')?.addEventListener('click', (ev) => {
+$('orders')?.addEventListener('click', (ev: any) => {
+  // Shut or open the row. First, because folding it away is not an errand.
+  if (ev.target?.closest?.('#ordersFold')) { $('orders').classList.toggle('collapsed'); return; }
   const b = ev.target?.closest?.('button[data-order]');
   if (b) { orderJob(b.dataset.order); return; }
   const a = ev.target?.closest?.('button[data-act]');
@@ -468,12 +471,76 @@ $('orders')?.addEventListener('click', (ev) => {
   if (a?.dataset.act === 'eat' && !eatHere()) toast('busy');
 });
 
+/* ---- a screen with no keys ----
+
+   Everything on the order row above is already a button, so a phone can reach
+   all of it by tapping — but only once you are behind somebody, and getting
+   there was F. These are the rest of the keys that had no button at all: they
+   call exactly what the keys call, so there is one way each of these works. */
+$('touch')?.addEventListener('click', (ev: any) => {
+  const b = ev.target?.closest?.('button[data-touch]');
+  if (!b) return;
+  const what = b.dataset.touch;
+  // F: into Follow, then again for somebody else — the same one key, twice over.
+  if (what === 'follow') { if (P.view !== 'follow') setViewMode('follow'); else pickFollow(); }
+  if (what === 'act') actHere();
+  if (what === 'map') stepMapSize(1);
+  /* One sheet at a time. Each of these covers the whole screen, and opening a
+     second over the first left them stacked with nothing to close them but
+     Escape, which a phone has not got. The same three closes that "go to their
+     camp" already makes, in the same order. */
+  if (what === 'band') { if ($('tribe').hidden) { closeChronicle(); showKeys(false); openTribe(tribeShown || 0); } else closeTribe(); }
+  if (what === 'panel') togglePanel();
+  if (what === 'keys') { closeTribe(); closeChronicle(); toggleKeys(); }
+  // Says what the next tap does, because shut it is the only thing left to read.
+  if (what === 'fold') b.textContent = $('touch').classList.toggle('collapsed') ? 'menu' : 'hide';
+});
+
+/* On a phone both corners start shut. The screen is small and the world is the
+   point of it; the icon that opens each is right there, which is the one thing
+   the world pane's own collapse taught (a minimise you cannot undo is a leave).
+   With a mouse there is room, so the row and the rail start as they always did. */
+if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches) {
+  $('orders')?.classList.add('collapsed');
+  $('touch')?.classList.add('collapsed');
+  const fold = $('touchFold');
+  if (fold) fold.textContent = 'menu';
+}
+
+/* Pinch is the wheel a phone does not have: in Follow it sets how far back you
+   stand, the same as the wheel does (chronicle.js). Two fingers only — one
+   finger is a drag to look around, and in Orbit two fingers belong to
+   OrbitControls, which is listening on this canvas already. */
+/* The canvas is read off the page rather than imported from scene.js: this
+   module is in a cycle with that one, so an imported binding read while this
+   file is still evaluating is a ReferenceError, not an element. The listeners
+   below run at load like every other one here, and `$` is a DOM lookup. */
+const view = $('view');
+const pinch = { live: false, gap: 0 };
+const pinchGap = (ev) => (ev.touches.length >= 2
+  ? Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY)
+  : 0);
+view?.addEventListener('touchstart', (ev: any) => {
+  if (P.view !== 'follow' || ev.touches.length < 2) return;
+  pinch.live = true;
+  pinch.gap = pinchGap(ev);
+}, { passive: true });
+view?.addEventListener('touchmove', (ev: any) => {
+  if (!pinch.live || P.view !== 'follow') return;
+  const gap = pinchGap(ev);
+  if (!gap || !pinch.gap) return;
+  ev.preventDefault();
+  P.followDist = clamp(P.followDist * (pinch.gap / gap), 1.4, 40);
+  pinch.gap = gap;
+}, { passive: false });
+view?.addEventListener('touchend', (ev: any) => { if (ev.touches.length < 2) pinch.live = false; }, { passive: true });
+
 $('chronOpen').addEventListener('click', openChronicle);
 $('chronClose').addEventListener('click', closeChronicle);
-$('chron').addEventListener('click', (ev) => { if (ev.target === $('chron')) closeChronicle(); });
+$('chron').addEventListener('click', (ev: any) => { if (ev.target === $('chron')) closeChronicle(); });
 $('chronPrev').addEventListener('click', () => { setChronPage(chronPage - 1); renderChronPage(); });
 $('chronNext').addEventListener('click', () => { setChronPage(chronPage + 1); renderChronPage(); });
-$('chronFind').addEventListener('input', (ev) => {
+$('chronFind').addEventListener('input', (ev: any) => {
   setChronFind(ev.target.value);
   setChronPage(0);                      // a new search starts at the top of it
   renderChronPage();
@@ -482,7 +549,7 @@ $('chronFind').addEventListener('input', (ev) => {
 $('keysOpen').addEventListener('click', toggleKeys);
 $('keysClose').addEventListener('click', () => showKeys(false));
 // Clicking the dimmed area behind the card closes it; clicking the card does not.
-$('keys').addEventListener('click', (ev) => { if (ev.target === $('keys')) showKeys(false); });
+$('keys').addEventListener('click', (ev: any) => { if (ev.target === $('keys')) showKeys(false); });
 
 /* One path for the icon and for H, because they are the same gesture.
 
@@ -491,7 +558,7 @@ $('keys').addEventListener('click', (ev) => { if (ev.target === $('keys')) showK
    know. Collapsed, the icon IS the panel — one row, no title, still there. The
    `hidden` class stays for the one thing it is right for, which is the panel
    not existing yet while the world is being built. */
-export function togglePanel(collapsed) {
+export function togglePanel(collapsed?) {
   const next = collapsed === undefined ? !ui.classList.contains('collapsed') : Boolean(collapsed);
   ui.classList.toggle('collapsed', next);
   // Nothing in the pane is redrawn while it is shut, so opening it has to catch up.

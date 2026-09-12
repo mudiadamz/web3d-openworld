@@ -18,7 +18,44 @@ import { camps } from './people.js';
    until the first click or key press.
    ------------------------------------------------------------------------- */
 
-export const audio = { ctx: null, ready: false, failed: false, nextBird: 0, nextOwl: 0 };
+/* What the graph is, once there is one. The five below are what it starts as —
+   no context, not ready, nothing failed yet — and the rest arrive when the
+   first gesture builds the graph (start). Named here rather than left to
+   accumulate, because "the object grows properties later" is a thing a reader
+   can only discover by finding every assignment to it. */
+/** One noise voice: the filter the white noise runs through, and the gain it
+    comes out at. Both are wanted afterwards — the wind opens its filter as it
+    picks up, and it is the gain that fades in and out. */
+export interface Voice {
+  filter: BiquadFilterNode;
+  gain: GainNode;
+}
+
+export interface Audio {
+  ctx: AudioContext | null;
+  ready: boolean;
+  failed: boolean;
+  nextBird: number;
+  nextOwl: number;
+  noise?: AudioBuffer;
+  master?: GainNode;
+  // The four filtered noise voices: wind, leaves, surf, fire.
+  wind?: Voice;
+  rustle?: Voice;
+  waves?: Voice;
+  fire?: Voice;
+  // And the three the oscillators are mixed into, which are plain gains.
+  birdBus?: GainNode;
+  cricketBus?: GainNode;
+  nightBus?: GainNode;
+}
+
+/* Safari still wants the prefix, and the page asks for whichever it finds. */
+declare global {
+  interface Window { webkitAudioContext?: typeof AudioContext }
+}
+
+export const audio = { ctx: null, ready: false, failed: false, nextBird: 0, nextOwl: 0 } as Audio;
 
 export function noiseVoice(ctx, dest, type, freq, q) {
   const src = ctx.createBufferSource();

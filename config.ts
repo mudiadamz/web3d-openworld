@@ -261,7 +261,12 @@ export function resolveConfig(env = process.env) {
   return { values, explicit, notes };
 }
 
-export function resolveServer(env = process.env) {
+/* The return type is written down because it cannot be inferred. `out` is keyed
+   by the schema's own names lowercased — port, host, chronicle_db — and an
+   object spread drops an index signature, so all TypeScript makes of
+   `{ ...out, notes }` is `{ notes }` on its own and every caller loses the field
+   it came for. Typing `out` does not help; the spread is where it is lost. */
+export function resolveServer(env = process.env): Record<string, any> {
   const notes = [];
   const out = {};
   for (const [name, spec] of Object.entries(SERVER_SCHEMA)) {

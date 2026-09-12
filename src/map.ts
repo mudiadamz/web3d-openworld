@@ -92,7 +92,8 @@ export let MAP_DISPLAY = MAP_SIZES[MAP_DEFAULT].px;
    with the size, or a bigger map is the same island with the same dots on it
    drawn smaller, which is not a bigger map. */
 export let MK = MAP_N / MAP_DISPLAY;
-export const mapCanvas = $('mapCanvas');
+// A canvas, said to be one: everything below wants its width, height and context.
+export const mapCanvas = $('mapCanvas') as HTMLCanvasElement;
 export const mapCtx = mapCanvas.getContext('2d');
 
 /** Walks to the next size, wrapping through hidden and back to the smallest. */
@@ -297,7 +298,8 @@ function drawCreekLayer() {
   const k = MAP_N / mapView.span;
   mapCtx.lineCap = 'round';
   mapCtx.lineJoin = 'round';
-  for (const [edge, color] of [[1.3, 'rgba(14, 38, 58, 0.75)'], [0, 'rgba(118, 190, 228, 1)']]) {
+  // How much wider than the water, and in what colour: a number and a string.
+  for (const [edge, color] of [[1.3, 'rgba(14, 38, 58, 0.75)'], [0, 'rgba(118, 190, 228, 1)']] as [number, string][]) {
     mapCtx.strokeStyle = color;
     for (const path of streams) {
       for (let i = 1; i < path.length; i++) {
@@ -418,7 +420,8 @@ export function setAllMapLayers(on) {
     is hidden — the way the chronicle's does, so a map with half its layers off
     says so before you wonder where everybody went. */
 export function paintLayerButtons() {
-  for (const b of $('mapLayers')?.querySelectorAll?.('button[data-layer]') || []) {
+  // Asked for as elements, because what is wanted off each one is its dataset.
+  for (const b of ($('mapLayers')?.querySelectorAll?.('button[data-layer]') || []) as NodeListOf<HTMLElement>) {
     b.setAttribute('aria-pressed', String(Boolean(mapShows[b.dataset.layer])));
   }
   /* "All" is on when everything is, off when nothing is, and mixed in between —
@@ -507,7 +510,8 @@ function clumpFruit(now) {
 function gatherMarks(now) {
   mapMarks.length = 0;
   if (!mapIsFull()) return;
-  const put = (kind, x, z, label, color, size) => {
+  // Colour and size are the mark kind's own unless a mark asks for its own.
+  const put = (kind, x, z, label, color?, size?) => {
     const [mx, my] = worldToMap(x, z);
     // Off the edge of a zoomed-in view: nothing to draw and nothing to click.
     if (mx < -6 || my < -6 || mx > MAP_N + 6 || my > MAP_N + 6) return false;
@@ -1011,7 +1015,7 @@ $('mapFilter')?.addEventListener('click', () => {
   box.hidden = !box.hidden;
   $('mapFilter').setAttribute('aria-expanded', String(!box.hidden));
 });
-$('mapLayers')?.addEventListener('click', (ev) => {
+$('mapLayers')?.addEventListener('click', (ev: any) => {
   /* All of them: back on if anything is hidden, away if nothing is. Bringing
      everything back is the more useful half, so a mixed list goes that way. */
   if (ev.target?.closest?.('button[data-all]')) {

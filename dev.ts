@@ -30,8 +30,12 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
    written there every simulated day, and a restart per write would be a
    server that never finished starting. By name rather than by pattern too,
    because saving `.env` in an editor writes `.env.swp`, `.env~` and stranger
-   things on the way, and none of those is a change to anything. */
-export const WATCHED = new Set(['.env', 'index.html', 'server.js', 'config.js', 'db.js', 'package-lock.json']);
+   things on the way, and none of those is a change to anything.
+
+   The .ts are the sources, not the .js built from them: watching the output
+   would mean a change to config.ts moved nothing until something else had
+   already rebuilt it, which is the wrong way round. */
+export const WATCHED = new Set(['.env', 'index.html', 'server.ts', 'config.ts', 'db.ts', 'package-lock.json']);
 /* Everything in these is the page. Not watched recursively: that needs Node 20
    on Linux and the package says 18, and src/ is flat. */
 export const WATCHED_DIRS = ['src'];
@@ -69,6 +73,27 @@ export function updateModel() {
   else console.log(`  humans-threejs: ${now}, the newest`);
 }
 
+/* src/ is TypeScript and the page loads dist/, so nothing runs until tsc has
+   been over it. Built here rather than left to the reader: `npm start` on a
+   fresh clone should serve the world, not a page of missing modules.
+
+   Through node with tsc's own entry rather than a shell, for the same reason
+   the install above names npm.cmd on Windows — a PATH that works in one
+   terminal and not another is a start that fails for no visible reason. */
+export function build(project = null) {
+  const tsc = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
+  if (!existsSync(tsc)) {
+    console.log('  build: typescript is not installed — run `npm install`');
+    return false;
+  }
+  const run = spawnSync(process.execPath, project ? [tsc, '-p', project] : [tsc],
+    { cwd: ROOT, stdio: 'inherit', timeout: 180000 });
+  /* A type error still leaves the old dist/ in place, so the page keeps
+     working while it is being fixed; the errors are on the terminal above. */
+  if (run.status !== 0) console.log('  build: tsc reported errors — serving the last good build');
+  return run.status === 0;
+}
+
 const args = process.argv.slice(2);          // `npm start -- --port 8090` still works
 let child = null;
 let pending = null;
@@ -95,7 +120,15 @@ function start() {
 function changed(what) {
   clearTimeout(pending);
   pending = setTimeout(() => {
+    const name = String(what);
     console.log(`\n  ${what} changed — restarting`);
+    // A change in src/ is source: compile it before the server serves dist/.
+    if (name.startsWith('src')) build();
+    /* And so is the server's own: server.js is built from server.ts now, so
+       without this the restart would bring back the previous build. dev.ts is
+       the one file this cannot do anything about — the process running is the
+       one built a moment ago, and it cannot replace itself mid-flight. */
+    else if (name.endsWith('.ts')) build('tsconfig.node.json');
     if (child) {
       restarting = true;
       child.kill('SIGINT');          // the server's own graceful stop: the chronicle is closed properly
@@ -106,6 +139,7 @@ function changed(what) {
 }
 
 updateModel();
+build();
 
 /* The lockfile is written by every install, including the one just above —
    and macOS will hand a watcher set up a moment afterwards the event anyway.

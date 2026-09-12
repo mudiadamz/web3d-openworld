@@ -66,7 +66,16 @@ export let grassTiles = [];      // { mesh, flowers, ix, iz }
 export let dirtyTiles = [];      // rebuild queue, drained a few per frame
 export let GRID = 9, BLADES = 2000;
 export let bladeGeo = null, flowerGeo = null;
-export let stats = { blades: 0, trees: 0, rocks: 0, fruit: 0, animals: 0, people: 0, models: 0, modelled: 0 };
+/** What is in the world, for the panel and the boot check. `graves` arrives
+    once anybody has been buried, which is why it is optional rather than 0:
+    a world nobody has died in has no graves, not zero of them. */
+export interface Stats {
+  blades: number; trees: number; rocks: number; fruit: number;
+  animals: number; people: number; models: number; modelled: number;
+  graves?: number;
+}
+
+export let stats = { blades: 0, trees: 0, rocks: 0, fruit: 0, animals: 0, people: 0, models: 0, modelled: 0 } as Stats;
 
 export function disposeGroup(group) {
   group.traverse((o) => {

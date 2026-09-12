@@ -67,7 +67,9 @@ const markup = readFileSync(INDEX_HTML, 'utf8');
    an id the page asks for. */
 const SOURCE_DIR = process.env.SRC_DIR || join(ROOT, 'src');
 const html = [markup, ...(existsSync(SOURCE_DIR)
-  ? readdirSync(SOURCE_DIR).filter((f) => f.endsWith('.js')).sort()
+  // Either extension: the modules are being moved to TypeScript one at a time,
+  // and a module that has been moved is still the source these checks read.
+  ? readdirSync(SOURCE_DIR).filter((f) => f.endsWith('.js') || f.endsWith('.ts')).sort()
     .map((f) => readFileSync(join(SOURCE_DIR, f), 'utf8')
       .replace(/^export (?=(?:async )?function |class |const |let )/gm, ''))
   : [])].join('\n');
@@ -484,7 +486,11 @@ const useStubs = (src) => src
    harness had to keep working across every step of it: the modules in src/ if
    they are there, and the inline script if they are not. Whichever it is, the
    thing imported is a single entry that pulls in the rest. */
-const SRC_DIR = SOURCE_DIR;
+/* The build, not the source. src/ is TypeScript now, and this half of the
+   harness imports the modules and runs them — so it takes what the browser
+   takes, out of dist/. The shape checks above still read src/ (SOURCE_DIR):
+   they are about the code as written, this is about the code as it runs. */
+const SRC_DIR = process.env.BUILD_DIR || join(ROOT, 'dist');
 const srcFiles = existsSync(SRC_DIR)
   ? readdirSync(SRC_DIR).filter((f) => f.endsWith('.js'))
   : [];

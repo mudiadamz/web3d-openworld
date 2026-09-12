@@ -19,7 +19,9 @@
     color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
-  canvas { display: block; width: 100%; height: 100%; }
+  /* touch-action: none, or a drag on a phone scrolls the page instead of
+     turning the camera, and a pinch zooms the document rather than the view. */
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   /* ---- control panel ---- */
   #ui {
@@ -233,6 +235,12 @@
   #following .where {
     display: block; margin-top: 1px; color: var(--muted);
     font-size: 8px; font-variant-numeric: tabular-nums;
+  }
+  /* Coordinates, altitude, wanted and actual speed, metres remaining: worth
+     having with a keyboard and a debugger open, and on a phone it is a line of
+     telemetry across the top of a world you are trying to watch. */
+  @media (hover: none) and (pointer: coarse) {
+    #following .where { display: none; }
   }
   /* The key list is a popup rather than a strip along the bottom: it can say
      everything once instead of the one line that fits. */
@@ -523,15 +531,21 @@
     border-top: 0; background: rgba(0, 0, 0, 0.25);
   }
   #map[hidden] { display: none; }
-  /* Bottom middle, above the toast, and out of the way of the map. */
+  /* Bottom left, above the toast, and out of the way of the map. The rail of
+     keys is bottom right, so the controls sit in the two corners and the middle
+     of the screen stays the world. */
   #orders {
-    position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);
+    position: fixed; left: 12px; bottom: 12px;
     display: flex; gap: 5px; padding: 5px;
     background: var(--panel); backdrop-filter: blur(14px);
     border: 1px solid var(--line); border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
   #orders[hidden] { display: none; }
+  /* Shut, the fold button is the whole row. A class and never the `hidden`
+     attribute: `hidden` here is what says you are behind somebody at all
+     (updateOrders), and a collapse that used it would fight the follow. */
+  #orders.collapsed > *:not(#ordersFold) { display: none; }
   #orders .btn.order { width: 30px; height: 28px; padding: 0; }
   #orders .btn.order svg { width: 15px; height: 15px; }
   /* The last two are not errands. A hairline says so, because a row of twelve
@@ -569,7 +583,23 @@
   /* In the storage area: the same green as the ring on the ground. */
   #orders .bag em.here { color: #9fe39a; font-weight: 600; }
   #orders .btn.order.ready { color: #bff0b8; border-color: #8fd18a; box-shadow: 0 0 0 1px rgba(143, 209, 138, 0.35); }
-  @media (max-width: 720px) { #orders { display: none; } }
+  /* An errand this band does not have is taken out of the row, not greyed in
+     it. `.btn.icon` sets a display, and an author's display outranks the
+     browser's own `[hidden] { display: none }` — so without this line setting
+     the attribute does nothing at all, which is the same trap the overlays
+     above each carry a rule for. Not inside the phone's media query: a button
+     that cannot do anything is no more use with a mouse. */
+  #orders .btn[hidden] { display: none; }
+  /* On a phone the row stays: it is the only way to reach any of this without
+     a keyboard. It wraps instead of running off the side, and every button is a
+     thumb wide. `:not([hidden])` because the row is shown by the hidden
+     attribute, and a plain `display` here would override it. */
+  @media (max-width: 720px) {
+    #orders:not([hidden]) { display: flex; flex-wrap: wrap; justify-content: flex-start;
+      max-width: calc(100vw - 24px); gap: 6px; padding: 6px 8px; }
+    #orders .btn.icon { min-width: 44px; min-height: 44px; }
+    #orders .bag { flex-basis: 100%; }
+  }
   /* What E would do, just above the order row. */
   #actPrompt {
     position: fixed; left: 50%; bottom: 58px; transform: translateX(-50%);
@@ -600,7 +630,31 @@
   }
   #danger.hunted span { color: #ffb4a8; }
   @keyframes dangerPulse { from { box-shadow: 0 0 0 0 rgba(226, 87, 76, 0.2); } to { box-shadow: 0 0 18px 2px rgba(226, 87, 76, 0.55); } }
-  @media (max-width: 720px) { #actPrompt { display: none; } }
+  /* And what E would do goes to the top, where the order row cannot push it
+     off the bottom of a short screen. */
+  @media (max-width: 720px) {
+    #actPrompt { top: 10px; bottom: auto !important; max-width: calc(100vw - 24px);
+      white-space: normal; text-align: center; }
+  }
+  /* ---- touch controls ----
+     The handful of things that are keys on a desktop and nothing at all on a
+     phone: following somebody, doing what is in front of them, the map, the
+     band, the panel and this list. Only where there is no mouse. */
+  #touch { display: none; }
+  @media (hover: none) and (pointer: coarse) {
+    #touch {
+      position: fixed; right: 10px; bottom: 12px; z-index: 6;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+    }
+    #touch .btn { min-width: 60px; min-height: 44px; font-size: 11px; }
+    /* Shut, the fold button is the whole rail — the other corner's bargain. */
+    #touch.collapsed .btn:not(#touchFold) { display: none; }
+    /* And the row stops short of it. Both corners sit on the bottom now, and
+       the rail is the one with a z-index: without this an opened row runs the
+       width of the screen underneath it, and the buttons it covers are not
+       merely hidden, they are untappable. */
+    #orders:not([hidden]) { max-width: calc(100vw - 96px); }
+  }
   #mapCanvas {
     /* Drawn larger than it is shown, so it stays crisp on a retina display.
        The display size is set from MAP_DISPLAY in one place, not here. */
@@ -613,7 +667,15 @@
     color: var(--text); font-size: 10px; letter-spacing: 0.04em; white-space: nowrap;
   }
   #toast[hidden], #help[hidden] { display: none; }
-  @media (max-width: 720px) { #map { display: none; } }
+  /* The map used to be switched off outright below 720px, which meant the `map`
+     button on the rail walked the sizes against something that could never
+     appear — the one control on a phone that did nothing at all. It is back,
+     and out of the two bottom corners: the order row holds one and the rail of
+     keys the other, so the small map goes top left, under the icons. The full
+     size is centred and needs no help. */
+  @media (max-width: 720px) {
+    #map:not(.full) { left: 12px; right: auto; top: 68px; bottom: auto; }
+  }
   #loading {
     position: fixed; inset: 0; display: grid; place-items: center;
     background: #05070a; color: var(--muted); z-index: 10; letter-spacing: 0.06em;
@@ -858,6 +920,8 @@
      world. The name of each is on its title and its aria-label, so nothing is
      hidden from a pointer that hovers or a reader that speaks. -->
 <div id="orders" hidden>
+  <!-- Folds the row away to its own icon. First, so it is the one that stays. -->
+  <button class="btn icon" id="ordersFold" aria-label="Fold the row away" title="Fold the row away"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.2 8 10.2l4-4"/></svg></button>
   <!-- What they are carrying, how full, and the store it is for. -->
   <div id="bagHud" class="bag"></div>
   <!-- Put it away (lit in the storage area) and drop it. -->
@@ -889,6 +953,19 @@
   <span class="sep" aria-hidden="true"></span>
   <button class="btn icon order" data-act="free" aria-label="Let them carry on" title="Let them carry on"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2"/><path d="M4.3 11.7 11.7 4.3"/></svg></button>
   <button class="btn icon order" data-act="home" aria-label="Go home" title="Go home"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.4 7.7 8 3.1l5.6 4.6"/><path d="M4.1 8.4v4.8h7.8V8.4"/></svg></button>
+</div>
+
+<!-- Touch: what the keys do, for a screen with no keys. Hidden wherever there
+     is a mouse, so it costs a desktop nothing. -->
+<div id="touch" aria-label="Touch controls">
+  <button class="btn" data-touch="follow" title="Follow somebody (F)">follow</button>
+  <button class="btn" data-touch="act" title="Do what is in front of them (E)">do</button>
+  <button class="btn" data-touch="map" title="The map (M)">map</button>
+  <button class="btn" data-touch="band" title="The band (T)">band</button>
+  <button class="btn" data-touch="panel" title="The world panel (H)">panel</button>
+  <button class="btn" data-touch="keys" title="Everything else (/)">keys</button>
+  <!-- And the one that folds the other six away, leaving itself. -->
+  <button class="btn" data-touch="fold" id="touchFold" title="Fold these away" aria-label="Fold these away">hide</button>
 </div>
 
 <div id="actPrompt" hidden></div>
@@ -956,49 +1033,52 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/loaders/GLTFLoader.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/utils/BufferGeometryUtils.js">
 <link rel="modulepreload" href="node_modules/humans-threejs/human-parts.js">
-<link rel="modulepreload" href="src/audio.js">
-<link rel="modulepreload" href="src/bag.js">
-<link rel="modulepreload" href="src/bubbles.js">
-<link rel="modulepreload" href="src/chronicle.js">
-<link rel="modulepreload" href="src/clock.js">
-<link rel="modulepreload" href="src/creeks.js">
-<link rel="modulepreload" href="src/danger.js">
-<link rel="modulepreload" href="src/drops.js">
-<link rel="modulepreload" href="src/explore.js">
-<link rel="modulepreload" href="src/farming.js">
-<link rel="modulepreload" href="src/hunt.js">
-<link rel="modulepreload" href="src/icons.js">
-<link rel="modulepreload" href="src/kin.js">
-<link rel="modulepreload" href="src/larder.js">
-<link rel="modulepreload" href="src/lessons.js">
-<link rel="modulepreload" href="src/life.js">
-<link rel="modulepreload" href="src/looks.js">
-<link rel="modulepreload" href="src/main.js">
-<link rel="modulepreload" href="src/map.js">
-<link rel="modulepreload" href="src/move.js">
-<link rel="modulepreload" href="src/noise.js">
-<link rel="modulepreload" href="src/orchard.js">
-<link rel="modulepreload" href="src/params.js">
-<link rel="modulepreload" href="src/paths.js">
-<link rel="modulepreload" href="src/people.js">
-<link rel="modulepreload" href="src/quarries.js">
-<link rel="modulepreload" href="src/rafts.js">
-<link rel="modulepreload" href="src/reach.js">
-<link rel="modulepreload" href="src/save.js">
-<link rel="modulepreload" href="src/scene.js">
-<link rel="modulepreload" href="src/settlement.js">
-<link rel="modulepreload" href="src/skills.js">
-<link rel="modulepreload" href="src/society.js">
-<link rel="modulepreload" href="src/spear.js">
-<link rel="modulepreload" href="src/thickets.js">
-<link rel="modulepreload" href="src/ui.js">
-<link rel="modulepreload" href="src/village.js">
-<link rel="modulepreload" href="src/vitals.js">
-<link rel="modulepreload" href="src/wildlife.js">
-<link rel="modulepreload" href="src/wood.js">
-<link rel="modulepreload" href="src/world.js">
+<link rel="modulepreload" href="dist/audio.js">
+<link rel="modulepreload" href="dist/bag.js">
+<link rel="modulepreload" href="dist/bubbles.js">
+<link rel="modulepreload" href="dist/chronicle.js">
+<link rel="modulepreload" href="dist/clock.js">
+<link rel="modulepreload" href="dist/creeks.js">
+<link rel="modulepreload" href="dist/danger.js">
+<link rel="modulepreload" href="dist/drops.js">
+<link rel="modulepreload" href="dist/explore.js">
+<link rel="modulepreload" href="dist/farming.js">
+<link rel="modulepreload" href="dist/hunt.js">
+<link rel="modulepreload" href="dist/icons.js">
+<link rel="modulepreload" href="dist/kin.js">
+<link rel="modulepreload" href="dist/larder.js">
+<link rel="modulepreload" href="dist/lessons.js">
+<link rel="modulepreload" href="dist/life.js">
+<link rel="modulepreload" href="dist/looks.js">
+<link rel="modulepreload" href="dist/main.js">
+<link rel="modulepreload" href="dist/map.js">
+<link rel="modulepreload" href="dist/move.js">
+<link rel="modulepreload" href="dist/noise.js">
+<link rel="modulepreload" href="dist/orchard.js">
+<link rel="modulepreload" href="dist/params.js">
+<link rel="modulepreload" href="dist/paths.js">
+<link rel="modulepreload" href="dist/people.js">
+<link rel="modulepreload" href="dist/quarries.js">
+<link rel="modulepreload" href="dist/rafts.js">
+<link rel="modulepreload" href="dist/reach.js">
+<link rel="modulepreload" href="dist/save.js">
+<link rel="modulepreload" href="dist/scene.js">
+<link rel="modulepreload" href="dist/settlement.js">
+<link rel="modulepreload" href="dist/skills.js">
+<link rel="modulepreload" href="dist/society.js">
+<link rel="modulepreload" href="dist/spear.js">
+<link rel="modulepreload" href="dist/thickets.js">
+<link rel="modulepreload" href="dist/types.js">
+<link rel="modulepreload" href="dist/ui.js">
+<link rel="modulepreload" href="dist/village.js">
+<link rel="modulepreload" href="dist/vitals.js">
+<link rel="modulepreload" href="dist/wildlife.js">
+<link rel="modulepreload" href="dist/wood.js">
+<link rel="modulepreload" href="dist/world.js">
 
-<script type="module" src="src/main.js"></script>
+<!-- Built from src/ by `npm run build` (tsc). The page loads the build, never
+     the source: src is TypeScript now, and a browser cannot read it. -->
+<script type="module" src="dist/main.js"></script>
 
 </body>
 </html>

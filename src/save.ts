@@ -8,6 +8,7 @@ import {
   lineage, nextPersonId, packs, recountAnimals, setLineage, setNextPersonId, takePersonId, usedCodes, usedNames
 } from './wildlife.js';
 import {
+  type Person,
   BUILDS, GARMENT, HAIR, SKIN, campFromRecord, camps, drawGraves, graves, growPeople, paintPeople, people,
   setGraves
 } from './people.js';
@@ -216,7 +217,7 @@ export function personFromRecord(r) {
       : null,
     hut: camp.huts[r.h] || camp.huts[0],
     work: Math.random() * Math.PI * 2,
-  };
+  } as Person;
   applyAge(p);                // size and childhood follow from the birth day
   usedNames.add(p.name);
   return p;

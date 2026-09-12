@@ -253,7 +253,9 @@ const extent = (key) => {
 };
 /* Width, length, depth — the length being the bone's, joint to joint, when
    there is a next joint to reach. */
-const across = (key, len) => {
+// `len` is the bone's length when there is a next joint to reach — the `??`
+// below is what a foot or a neck gets instead, so it is optional, and says so.
+const across = (key, len?) => {
   const { size } = extent(key);
   return [size[0], len ?? size[1], size[2]];
 };

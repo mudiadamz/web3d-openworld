@@ -11,6 +11,76 @@
    Everything worth turning lives in `P` and on the panel.
    ========================================================================= */
 
+/* The types are attached at the close of each object rather than written onto
+   its lines. `export const P: Params = {` would say the same thing, and it
+   would also rewrite the line — and a few hundred checks in test.js read these
+   files as text and quote the lines they are about. Four of them failed the
+   first time this was typed, on `paceDay: null as number | null` and its like.
+
+   So: the literal is left exactly as it was written, and `as Params` at the
+   end says what it is. `satisfies` would be the better keyword — it checks
+   without widening — but it keeps the literal types with it, and `shadows:
+   true` typed as `true` rather than `boolean` makes `?shadows=0` an error
+   instead of a setting. */
+export interface Counts {
+  grass: number; trees: number; rocks: number;
+  bison: number; deer: number; rabbits: number; boars: number; tigers: number;
+  birds: number; butterflies: number;
+  camps: number; people: number;
+  flowers: number; fruit: number; streams: number;
+}
+
+export interface Params {
+  time: number;
+  dayLength: number;
+  /* Null until something sets it: unset means "the day itself", which is not
+     the same statement as any number would be. */
+  paceDay: number | null;
+  yearLength: number;
+  map: number;
+  fertility: number;
+  abundance: number;
+  exposure: number;
+  wind: number;
+  windDir: number;
+  gust: number;
+  quality: QualityName;
+  nightSkip: boolean;
+  nightSkipRate: number;
+  nightFrom: number;
+  nightDeep: number;
+  shadows: boolean;
+  terrainShadow: boolean;
+  water: boolean;
+  waves: number;
+  models: 'off' | 'birds' | 'all';
+  view: 'orbit' | 'follow';
+  followDist: number;
+  fov: number;
+  sound: boolean;
+  volume: number;
+  seed: number;
+  counts: Counts;
+}
+
+export type QualityName = 'low' | 'medium' | 'high';
+
+/** What a preset buys: rendering cost, and a starting population. */
+export interface QualityPreset {
+  seg: number; grid: number; shadowMap: number; pixelRatio: number; round: number;
+  counts: Counts;
+}
+
+/** What server.js writes into the page in place of the <!--CONFIG--> marker. */
+export interface InjectedConfig {
+  values: Partial<Params> & { counts?: Partial<Counts> };
+  explicit?: string[];
+}
+
+declare global {
+  interface Window { __CONFIG__?: InjectedConfig }
+}
+
 export const P = {
   time: 7.5,          // hours, 0..24 — state, not a setting; the clock always runs
   /* Real seconds for a full 24h. Every walk, flight and camera move is
@@ -82,7 +152,7 @@ export const P = {
     camps: 2, people: 16,
     flowers: 150, fruit: 5, streams: 5,
   },
-};
+} as Params;
 
 /* Quality buys only rendering cost — terrain resolution, shadow map, pixel
    ratio, how far the grass reaches. Population is separate and lives in
@@ -100,7 +170,7 @@ export const QUALITY = {
     seg: 448, grid: 9, shadowMap: 2048, pixelRatio: 2.0, round: 2,
     counts: { grass: 2000, trees: 1000, rocks: 260, bison: 9, deer: 22, rabbits: 44, boars: 16, tigers: 2, birds: 44, butterflies: 70, camps: 2, people: 16, flowers: 150, fruit: 5, streams: 5 },
   },
-};
+} satisfies Record<QualityName, QualityPreset>;
 
 /* server.js replaces the <!--CONFIG--> marker above with the defaults it
    resolved from the environment. Opened as a plain file there is no injection
@@ -122,11 +192,11 @@ export function applyUrlOverrides() {
   if (typeof location === 'undefined') return;
   const q = new URLSearchParams(location.search || '');
   const models = q.get('models');
-  if (['off', 'birds', 'all'].includes(models)) P.models = models;
+  if (['off', 'birds', 'all'].includes(models)) P.models = models as 'off' | 'birds' | 'all';
   const quality = q.get('quality');
-  if (quality && QUALITY[quality]) {
-    P.quality = quality;
-    Object.assign(P.counts, QUALITY[quality].counts);
+  if (quality && QUALITY[quality as QualityName]) {
+    P.quality = quality as QualityName;
+    Object.assign(P.counts, QUALITY[quality as QualityName].counts);
   }
 
   /* Bisecting switches. Some things can only be identified by turning them off
@@ -147,7 +217,9 @@ export function applyInjectedConfig() {
   const explicit = new Set(cfg.explicit || []);
 
   for (const [key, value] of Object.entries(cfg.values)) {
-    if (key !== 'counts' && key in P) P[key] = value;
+    // Through `unknown`: P is a Params, and assigning to it by a string key is
+    // exactly the thing a shape is for stopping. The guard above is the check.
+    if (key !== 'counts' && key in P) (P as unknown as Record<string, unknown>)[key] = value;
   }
   // Naming a quality loads that preset's populations, exactly as picking it on
   // the panel does — then anything asked for by name wins over the preset.
@@ -193,9 +265,8 @@ export const PEOPLE_ROOM =
    three thousand people needs somewhere for all of them to live. */
 export const CAMP_CEILING = Math.round(clampTo(PEOPLE_ROOM / 14, 4, 240));
 
-function clampTo(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function clampTo(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 export const TILE = 24;           // grass tile size
 export const SEA = 0;             // water plane height
 export const SNOW = 96;           // grass and trees stop below this
 export const FOG_DENSITY = 0.0024;
-

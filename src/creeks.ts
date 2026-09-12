@@ -245,7 +245,7 @@ export function traceStreams(count) {
        which is exactly where these were ending, two metres above the water.
        A river crossing a plain is cutting the channel it runs in, and that
        channel is what carveStreams then digs. */
-    const goSeaward = (crossOwn) => {
+    const goSeaward = (crossOwn?) => {
       const away = Math.hypot(x, z) || 1;
       const tx = x + (x / away) * STREAM_STEP, tz = z + (z / away) * STREAM_STEP;
       if (Math.hypot(tx, tz) > WORLD * 0.47) return false;
