@@ -534,6 +534,16 @@
     border-top: 0; background: rgba(0, 0, 0, 0.25);
   }
   #map[hidden] { display: none; }
+  /* Over the world, under anything that is a dialog. Without this the rail
+     has a z-index and the map does not, so the rail sits on top of it. */
+  #map.full { z-index: 8; }
+  /* And on a phone the full map is the only thing on screen. Every pane over
+     it is a piece of map that cannot be tapped, which is most of why clicking
+     it did nothing there. The way back is the map’s own ▣ button. */
+  @media (hover: none) and (pointer: coarse) {
+    body.mapFull #hud, body.mapFull #orders, body.mapFull #touch,
+    body.mapFull #ui, body.mapFull #actPrompt, body.mapFull #danger { display: none; }
+  }
   /* Bottom left, above the toast, and out of the way of the map. The rail of
      keys is bottom right, so the controls sit in the two corners and the middle
      of the screen stays the world. */

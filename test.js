@@ -5845,6 +5845,11 @@ check('the wheel zooms it, the way a wheel over a map does',
 check('the frame and the controls belong to the full size only',
   /#map\.full::before/.test(html) && /#mapUi \{ display: none; \}/.test(html)
   && /#map\.full #mapUi \{/.test(html));
+/* The full map is what you are looking at, so on a phone it is all there is.
+   Every pane left over it is a piece of map that cannot be tapped. */
+check('the full map puts the panes away on a phone',
+  mapMod.includes("classList.toggle('mapFull'")
+  && html.includes('body.mapFull #touch'));
 
 /* The page is served `no-store` so a restart with a new .env shows up. The
    modules it loads have to be too, or a reload gives you new markup driving old

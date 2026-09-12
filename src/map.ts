@@ -106,6 +106,9 @@ export function setMapSize(i) {
   const at = MAP_SIZES[mapSize];
   const box = $('map');
   box?.classList.toggle('full', Boolean(at.fills));
+  /* And the page, because what has to get out of the way is not inside the
+     map: the rail, the row, the caption and the pane are all siblings of it. */
+  document.body?.classList.toggle('mapFull', Boolean(at.fills));
   /* Zoom belongs to the full map. Carrying it out to a 92-pixel corner would
      leave you with a corner map of somewhere you cannot tell from anywhere
      else, and no control on it to undo that. */
