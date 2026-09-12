@@ -1426,16 +1426,10 @@ export function updateFollowCaption() {
   el.hidden = false;
   const age = Math.floor(personAge(p));
   const doing = doingWords(p);
-  /* What is in their arms, when the words for what they are doing have not
-     already said it. It was "carrying 10", a number of food units nobody counts
-     in; it is the things now, and said once. */
-  /* And not at all while the basket at the bottom of the screen is showing:
-     what is in it, and how much they have left, are said there already, and
-     saying them twice is what crowded this line. The basket is hidden on a
-     narrow screen, and there the caption still says both. */
+  /* What they are carrying is not said here at all. The basket at the bottom
+     of the screen says it, and on the one screen narrow enough to need this
+     line short, saying it twice is what ran it off the edge. */
   const hud = !(typeof innerWidth === 'number' && innerWidth <= 720);
-  const carrying = !hud && p.haul > 0 && !doing.startsWith('bringing home')
-    ? ` · with ${bagWords(p.bag) || 'food'}` : '';
   /* Sex, then how they are. Energy only shows once it is low enough to be
      changing what they can do — a readout that is always there is a readout
      nobody reads. */
@@ -1470,7 +1464,7 @@ export function updateFollowCaption() {
      says nothing, which is correct: everybody there does everything. */
   const post = p.role && p.role !== 'forager' ? ` · ${ROLE_WORDS[p.role] || p.role}` : '';
   el.textContent = `${who(p)}, ${age}${p.sex === 'f' ? '♀' : '♂'}${post}`
-    + `${word ? ` · ${word}` : ''} · ${hud ? doing : doing.replace(/,.*/, "")}${carrying}${ill}`;
+    + `${word ? ` · ${word}` : ''} · ${hud ? doing : doing.replace(/,.*/, "")}${ill}`;
 
   /* Where they are, read straight off the person rather than off anything
      drawn. That is the whole point of it: if these numbers are changing and the

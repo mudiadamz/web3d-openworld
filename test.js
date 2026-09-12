@@ -2475,9 +2475,9 @@ check('and nothing in between reads 0',
 check('it never goes over ten', energyOutOfTen({ energy: 1.5 }) === 10);
 check('the meter turns red on the last of it', /ten <= 2 \? ' low' : ''/.test(html));
 /* The basket at the bottom of the screen says what they carry and how much
-   they have left; the caption says neither while it is showing. */
+   they have left; the caption never says either, so the line stays short. */
 check('and the caption does not repeat what the basket says',
-  /const carrying = !hud && p\.haul > 0/.test(bodyOf('updateFollowCaption') || '')
+  !/bagWords/.test(bodyOf('updateFollowCaption') || '')
   && /\+ \(hud \? '' : ` <span class="meter/.test(bodyOf('updateFollowCaption') || ''));
 
 /* -------------------------------------------------------------------------
@@ -4329,7 +4329,7 @@ check('the numbers are tabular, so they do not dance while you read them',
    something — and "food" when nothing was counted at all. */
 check('a small haul is not rounded away to nothing',
   /bagAdd\(p, 'berries', Math\.max\(1,/.test(html) && /bagAdd\(p, 'fish', Math\.max\(1,/.test(html)
-  && /\$\{bagWords\(p\.bag\) \|\| 'food'\}/.test(caption));
+  && (bodyOf('updateBagHud') || '').includes("bagWords(p.bag, true) || (p.haul > 0 ? 'food'"));
 
 /* -------------------------------------------------------------------------
    Starting again
@@ -6070,7 +6070,7 @@ check('all of it, as a list rather than a sentence',
   bagWordsFn({ fruit: 4, berries: 22, fish: 1, game: 0, ore: 0 }, true) === '1 fish, 4 fruit, 22 berries',
   bagWordsFn({ fruit: 4, berries: 22, fish: 1, game: 0, ore: 0 }, true));
 check('the caption no longer gives a bare number of food units',
-  !/carrying \$\{p\.haul/.test(sayingSrc) && /!doing\.startsWith\('bringing home'\)/.test(sayingSrc));
+  !/carrying \$\{p\.haul/.test(sayingSrc));
 
 /* The threshold has to sit under a walk and over a standstill, or somebody
    coasting to a halt flickers between the two. */

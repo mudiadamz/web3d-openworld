@@ -7,7 +7,7 @@ import {
   saveChronicle, setBornCount, setChronicle, setDiedCount, setMilestonesOnly, setPendingEvents, setRunId,
   startRun
 } from './life.js';
-import { buildWorld, placeCamera } from './move.js';
+import { VIEW_MODES, buildWorld, placeCamera } from './move.js';
 import {
   chronPage, closeChronicle, closeTribe, dropHere, eatHere, handBack, openChronicle, openTribe, orderJob,
   restHere, renderChronPage, renderTribeCard, sendHome, setChronFind, setChronPage, setTribeTab, showKeys,
@@ -481,6 +481,8 @@ $('touch')?.addEventListener('click', (ev: any) => {
   const b = ev.target?.closest?.('button[data-touch]');
   if (!b) return;
   const what = b.dataset.touch;
+  // C: fly, walk, orbit, follow and round again - the same walk the key makes.
+  if (what === 'view') setViewMode(VIEW_MODES[(VIEW_MODES.indexOf(P.view) + 1) % VIEW_MODES.length]);
   // F: into Follow, then again for somebody else — the same one key, twice over.
   if (what === 'follow') { if (P.view !== 'follow') setViewMode('follow'); else pickFollow(); }
   if (what === 'act') actHere();
