@@ -4196,7 +4196,7 @@ check('and every view of the world is rebuilt afterwards',
     'renderTribes', 'updateHud', 'drawMap'].every((f) =>
     html.slice(html.indexOf('function rebuildAfterAhead('), html.indexOf('function tick()')).includes(f)));
 check('including the clock, which tick would otherwise have written',
-  /\$\('almanac'\)\.textContent = `day \$\{Math\.floor\(simDay\)\}/.test(
+  /\$\('almanac'\)\.textContent = `year \$\{Math\.floor\(simDay \/ P\.yearLength\) \+ 1\}/.test(
     html.slice(html.indexOf('function rebuildAfterAhead('))));
 
 /* Scenery does not need to move when nobody is watching, and it turned out to

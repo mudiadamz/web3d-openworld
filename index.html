@@ -153,6 +153,9 @@
   #skip { margin-left: 4px; opacity: 0.75; font-size: 8px; letter-spacing: 1px; }
   #following .meter { opacity: 0.8; margin-left: 2px; letter-spacing: 0.5px; }
   #following .meter.low { color: #e8746a; opacity: 1; }
+  /* Only ever drawn on a narrow screen, and there it is what runs the caption
+     off the edge. Hidden rather than cut, so it is one line to bring back. */
+  #following .meter { display: none; }
   /* The fathers, back as far as anything is remembered. */
   #following .line { display: block; margin-top: 1px; color: var(--muted); font-size: 8px; }
   #years {
@@ -813,7 +816,7 @@
   <div id="aheadLog"></div>
   <button class="btn" id="aheadStop">Stop here</button>
 </div></div>
-<div id="hud"><span id="clock">07:30</span><span id="skip" hidden>▶▶</span><div id="almanac">day 0 · spring</div><div id="vitals"><b id="hudPop">–</b> people · <b id="hudFps">–</b> fps</div><div id="following" hidden></div></div>
+<div id="hud"><span id="clock">07:30</span><span id="skip" hidden>▶▶</span><div id="almanac" title="day 0">year 1 · spring</div><div id="vitals"><b id="hudPop">–</b> people · <b id="hudFps">–</b> fps</div><div id="following" hidden></div></div>
 
 <div id="toast" hidden></div>
 

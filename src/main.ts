@@ -349,7 +349,8 @@ export function rebuildAfterAhead(y) {
      the corner still says the day it started. */
   lastClock = hhmm(P.time);
   $('clock').textContent = lastClock;
-  $('almanac').textContent = `day ${Math.floor(simDay)} · ${seasonName}`;
+  $('almanac').textContent = `year ${Math.floor(simDay / P.yearLength) + 1} · ${seasonName}`;
+  $('almanac').title = `day ${Math.floor(simDay)}`;
   drawMap(0);
   persistState();
   toast(`${y} years on · day ${Math.floor(simDay)}`, 3);
@@ -417,7 +418,8 @@ export function tick() {
   if (clockText !== lastClock) {
     lastClock = clockText;
     $('clock').textContent = clockText;
-    $('almanac').textContent = `day ${Math.floor(simDay)} · ${seasonName}`;
+    $('almanac').textContent = `year ${Math.floor(simDay / P.yearLength) + 1} · ${seasonName}`;
+    $('almanac').title = `day ${Math.floor(simDay)}`;
   }
   windUniforms.uTime.value += real * (0.6 + P.wind * 1.1);
 

@@ -1470,7 +1470,7 @@ export function updateFollowCaption() {
      says nothing, which is correct: everybody there does everything. */
   const post = p.role && p.role !== 'forager' ? ` · ${ROLE_WORDS[p.role] || p.role}` : '';
   el.textContent = `${who(p)}, ${age}${p.sex === 'f' ? '♀' : '♂'}${post}`
-    + `${word ? ` · ${word}` : ''} · ${doing}${carrying}${ill}`;
+    + `${word ? ` · ${word}` : ''} · ${hud ? doing : doing.replace(/,.*/, "")}${carrying}${ill}`;
 
   /* Where they are, read straight off the person rather than off anything
      drawn. That is the whole point of it: if these numbers are changing and the

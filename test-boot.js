@@ -366,7 +366,7 @@ function mark(tag) {
   const st = document.getElementById('stats').innerHTML.replace(/<[^>]*>/g, ' ');
   console.log(`MARK ${String(++marks).padStart(2)} ${tag.padEnd(22)}`
     + ` frames ${String(frames).padStart(6)}`
-    + ` ${((alm && alm.textContent.match(/day \d+/)) || ['day ?'])[0]}`
+    + ` ${((alm && alm.title.match(/day \d+/)) || ['day ?'])[0]}`
     + ` ${(st.match(/(\d+) people/) || [, '?'])[1]}p`
     + ` ${(st.match(/(\d+) fruit/) || [, '?'])[1]}f`);
 }
@@ -708,8 +708,8 @@ if (modelsVendored) {
   /* Coming back to where you were. The saved session above was served during
      boot; the page should be in it. */
   const almanac = document.getElementById('almanac');
-  check('the saved day was restored', almanac && /day 42\b/.test(almanac.textContent),
-    almanac ? JSON.stringify(almanac.textContent) : 'no almanac');
+  check('the saved day was restored', almanac && /day 42\b/.test(almanac.title),
+    almanac ? JSON.stringify(almanac.title) : 'no almanac');
   const tribesEl = document.getElementById('tribes');
   check('the saved tribe name came back', tribesEl && /Testtown/.test(tribesEl.innerHTML),
     tribesEl ? tribesEl.innerHTML.replace(/<[^>]*>/g, ' ').slice(0, 80) : '');
@@ -827,7 +827,7 @@ let nightReport = 'not watched';
      has to move the world further at 4× than at 1×. Both windows are short and
      back to back, so the night skip is either on for both or off for both. */
   const worldMinutes = () => {
-    const day = Number((document.getElementById('almanac').textContent.match(/day (\d+)/) || [, 0])[1]);
+    const day = Number((document.getElementById('almanac').title.match(/day (\d+)/) || [, 0])[1]);
     const [h, m] = document.getElementById('clock').textContent.split(':').map(Number);
     return day * 1440 + h * 60 + m;
   };
@@ -1545,7 +1545,7 @@ let travelReport = 'not measured';
 let aheadReport = 'not run';
 {
   const almanac = document.getElementById('almanac');
-  const dayNow = () => Number((almanac.textContent.match(/day (\d+)/) || [, 0])[1]);
+  const dayNow = () => Number((almanac.title.match(/day (\d+)/) || [, 0])[1]);
   const statNow = () => {
     const h = document.getElementById('stats').innerHTML;
     return {
@@ -1842,7 +1842,7 @@ if (measuring('repeat')) {
   const fp = () => {
     const st = document.getElementById('stats').innerHTML.replace(/<[^>]*>/g, ' ');
     const t = document.getElementById('tribes').innerHTML.replace(/<[^>]*>/g, ' ');
-    const alm = document.getElementById('almanac').textContent;
+    const alm = document.getElementById('almanac').title;
     return `${(alm.match(/day \d+/) || [''])[0]} | ${(st.match(/(\d+) people/) || [, '?'])[1]} people`
       + ` | ${(st.match(/(\d+) fruit/) || [, '?'])[1]} fruit`
       + ` | ${t.replace(/\s+/g, ' ').trim().slice(0, 110)}`;
