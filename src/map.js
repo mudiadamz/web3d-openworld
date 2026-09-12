@@ -13,7 +13,6 @@ import { _fwd, openTribe, setViewMode, syncLookFromCamera } from './chronicle.js
 import { $, persistState } from './save.js';
 import { toast } from './ui.js';
 import { armAudio, audio } from './audio.js';
-import { daysOfFood } from './life.js';
 import { ICON_PATHS } from './icons.js';
 import { ORES, deposits } from './quarries.js';
 import { ripeWord, thickets } from './thickets.js';
@@ -388,7 +387,7 @@ export function updateScaleBar() {
    you like to read the map, not a fact about the world, so it is not in the
    save and it does not travel with a seed.
    ------------------------------------------------------------------------- */
-export const MAP_LAYERS = ['camps', 'people', 'animals', 'paths', 'creeks', 'barrows', 'fruit', 'forage', 'farms', 'fish', 'rafts', 'stores',
+export const MAP_LAYERS = ['camps', 'people', 'animals', 'paths', 'creeks', 'barrows', 'fruit', 'forage', 'farms', 'fish', 'rafts',
   'stone', 'iron', 'bronze', 'silver', 'gold'];
 export const MAP_LAYERS_STORE = 'openworld.mapLayers';
 export const mapShows = Object.fromEntries(MAP_LAYERS.map((k) => [k, true]));
@@ -457,7 +456,6 @@ export const MARK_KINDS = {
   farms: { icon: 'farm', color: '#e2c35a' },
   fish: { icon: 'fish', color: '#76c8f0' },
   rafts: { icon: 'raft', color: '#c9a36b' },
-  stores: { icon: 'granary', color: '#ecc870' },
   // Coloured per mark, by what the quarry is: see ORES in quarries.js.
   quarry: { icon: 'quarry', color: '#bdb6aa' },
 };
@@ -565,11 +563,6 @@ function gatherMarks(now) {
       const out = at && raftBusy(c) ? c.raftOut : null;
       if (out) put('rafts', out.x, out.z, `${c.name}'s raft — out on the water`);
       else if (at) put('rafts', at.mx, at.mz, `${c.name}'s raft, tied up at its dock`);
-    }
-    if (mapShows.stores && c.storesUp > 0 && c.storeSpots?.[0]) {
-      const s = c.storeSpots[0];
-      put('stores', s.x, s.z,
-        `${c.name}'s granaries: ${Math.floor(daysOfFood(c))} days of food put by`);
     }
   }
   /* The quarries: one mark each, the colour of what is in it and the size of

@@ -82,6 +82,27 @@ export let hOffset = 0;   // slides the island so spawn always sits above the wa
    smooth mound. 0.0045 puts ~7 hill cells across 1600 units; the range mask at
    0.0019 gives about three mountain regions. Retuning any of these is the
    fastest way to change what the world looks like. */
+/* The shape of the island, in fractions of the map like everything else here.
+
+   A falloff that reads the distance from the middle and nothing else can only
+   make a coin: the same coast at every bearing, which is no island anybody has
+   seen. So the distance it reads is pushed in and out — bays where it is
+   pushed out, headlands where it is pushed in — and stretched a little along
+   one bearing, so the island is longer one way than the other.
+
+   Both are kept small deliberately. The coast has to stay near 0.92 of the
+   half-width, which is where canStand stops anybody (move.js): deeper bays
+   would cut inside the ground people may walk on, and longer headlands would
+   run out past it into land nobody can reach. */
+export const COAST = {
+  from: 0.72,          // share of the half-width the shape starts to tell at: coast, not country
+  stretch: 0.16,       // how much longer the island is across one bearing than the other
+  bays: 0.45,          // how far the coast is pushed in and out, as a share of the way out
+  sharpen: 2.6,        // how hard the noise is pushed to its ends, so coast is bay or headland
+  trim: 0.35,          // lean inward that keeps the island the size it was, bays and all
+  perMap: 4.2,         // bays and headlands around one map width
+};
+
 export const LAND = {
   plain: 5,            // metres above the sea the open country lies at
   roll: 6,             // and how far it rolls, top to bottom, over a few hundred metres
@@ -136,7 +157,32 @@ export function rawHeight(x, z) {
      to 12% at 1600 m and from 24% to 9% at 3200 m, because on a bigger island
      the same fall is spread over more metres. */
   const half = WORLD / 2;
-  h -= smoothstep(half * 0.78, half * 1.12, d) * 95;
+  /* What the falloff reads: not how far out this is, but how far out it is for
+     its bearing — the coast pushed in and out by a slow noise, around an island
+     stretched along one of them (COAST). The tilt comes off the seed, so the
+     long axis is not the x axis on every island in the game. */
+  const tilt = (s % 628) / 100;
+  const ct = Math.cos(tilt), stl = Math.sin(tilt);
+  const ax = (x * ct + z * stl) * (1 + COAST.stretch), az = (z * ct - x * stl) * (1 - COAST.stretch);
+  /* Sharpened, not merely scaled. Fractal noise spends most of its time near
+     the middle of its range, so a coefficient on the raw value buys a coast
+     that is still nearly a circle — the extremes it would need arrive a few
+     times an island. Stretched and clipped, the same noise gives ground that
+     is mostly headland or mostly bay, with the turn between them short. */
+  const swing = (fbm((x / WORLD) * COAST.perMap + 61.2, (z / WORLD) * COAST.perMap - 44.8, 3, s + 2600) - 0.5) * 2;
+  /* Trimmed back in, because a bay and a headland are not the same size: area
+     goes as the radius squared, so pushing the coast out gains more ground than
+     pushing it in gives up, and sharpening alone quietly grew the island from
+     three fifths of the map to three quarters. The trim is a constant lean
+     inward that holds the island to the size it always was — the shape changes,
+     not how much of the map is land. */
+  const bay = Math.max(-1, Math.min(1, swing * COAST.sharpen)) + COAST.trim;
+  /* And all of it is a fact about the coast rather than the country behind it:
+     the shape only begins to tell past COAST.from of the half-width, so a bay
+     cannot bite far enough inland to put sea in the middle of the island. */
+  const edge = smoothstep(half * COAST.from, half, d);
+  const coast = d + (Math.hypot(ax, az) * (1 + COAST.bays * bay) - d) * edge;
+  h -= smoothstep(half * 0.78, half * 1.12, coast) * 95;
   return h;
 }
 

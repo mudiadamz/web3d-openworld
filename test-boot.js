@@ -3198,11 +3198,8 @@ if (mapModule?.mapMarks && mapModule.setMapLayer) {
   const kinds = Object.keys(M.MARK_KINDS);
   marksReport = kinds.map((k) => `${k} ${count(k)}`).join(' · ');
   check('the full map marks where the food is', M.mapMarks.length > 0, marksReport);
-  /* A band with anything put by has a granary standing, so a living band with
-     food and no mark has lost it somewhere between the two. */
-  const stocked = liveCamps.filter((c) => !c.gone && c.storesUp > 0).length;
-  check('including the granaries of every band with food put by',
-    count('stores') === stocked, `${count('stores')} marked of ${stocked}`);
+  /* Granaries are not marked: a band's own stores are on its card, and the map
+     is for what is out there to find rather than what somebody already has. */
 
   /* The pointer on a mark's middle finds it. The conversion from map units to
      screen pixels is the half of a hit test that can be silently backwards. */

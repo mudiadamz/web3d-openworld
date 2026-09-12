@@ -187,6 +187,38 @@ export function chooseCampSites(count) {
   }
 }
 
+/** A band founded while the world ran, built again where it stood (save.js).
+
+    The seed lays out only the bands an island starts with, so this is the one
+    part of a reload no seed can do: a band that broke away on day 300 has a
+    name, a code and a place, and all three are in the save. Without it the
+    restore filled the seeded camps and stopped, and every band founded after
+    them came back as camps[0] — a world of twenty bands reloading as five, with
+    everybody else's descendants standing round the first band's fire. */
+export function campFromRecord(index, x, z, name, founded) {
+  if (index >= campCapacity) growCamps(index + 1);
+  /* Its own rolls, as a camp founded in play gets them (life.js, splitCamp):
+     the same band on the same day draws the same names for its children. */
+  const rng = mulberry32((P.seed ^ 0x5b1f7) + index * 7717 + Math.floor(founded || 0));
+  const camp = {
+    index, x, z, y: sampleHeight(x, z),
+    rng, voice: tribeVoice(rng), name,
+    code: takeTribeCode(name),
+    get color() { return codeColor(this.code); },
+    // Everything else is read back over this by the restore (save.js).
+    food: 0, pop: 0, need: 0, hunger: 1, wasEmpty: false,
+    stone: 0,
+    skill: emptySkills(),
+    told: emptySkills(),
+    toll: { age: 0, infancy: 0, hunger: 0, exhaustion: 0, sickness: 0, tiger: 0, raid: 0 },
+    born: 0, peak: 0, founded: Number.isFinite(founded) ? founded : simDay, gone: false,
+    history: [],
+  };
+  camps.push(camp);
+  layoutCamp(camp, index);
+  return camp;
+}
+
 /* Metres of trampled ground around a camp — no grass, no trees, and the
    distance the rest of the simulation means by "at the fire". Grown with the
    camp: hearths sit 13 m out and their tents 6 to 9 m beyond that, so at 17 the

@@ -8,7 +8,7 @@ import {
   lineage, nextPersonId, packs, recountAnimals, setLineage, setNextPersonId, takePersonId, usedCodes, usedNames
 } from './wildlife.js';
 import {
-  BUILDS, GARMENT, HAIR, SKIN, camps, drawGraves, graves, growPeople, paintPeople, people,
+  BUILDS, GARMENT, HAIR, SKIN, campFromRecord, camps, drawGraves, graves, growPeople, paintPeople, people,
   setGraves
 } from './people.js';
 import {
@@ -48,7 +48,9 @@ export function snapshot() {
     day: r2(simDay),
     born: bornCount,
     died: diedCount,
-    camps: camps.map((c) => ({ name: c.name, food: r2(c.food), history: c.history,
+    /* Where each one stands, so a band founded in play can be built again: the
+       seed only knows the ones the island started with (people.js). */
+    camps: camps.map((c) => ({ name: c.name, x: r2(c.x), z: r2(c.z), food: r2(c.food), history: c.history,
       skill: Object.fromEntries(Object.keys(SKILLS).map((k) => [k, r2(c.skill[k] || 0)])),
       toll: c.toll, born: c.born, peak: c.peak, founded: r2(c.founded), lost: c.lost || 0,
       stone: r2(c.stone || 0), ores: c.ores || undefined, raft: c.raft ? 1 : 0, wd: r2(c.wood || 0), st: r2(c.stock || 0), dh: r2(c.ditchDug || 0),
@@ -223,6 +225,19 @@ export function personFromRecord(r) {
 /** The band and the herds — applied after the world exists to put them in. */
 export function applySavedLife(st) {
   if (!st || !camps.length) return;
+
+  /* Every band the save holds, before anybody is put in one: the seeded camps
+     are already there, and each one founded while the world ran is built where
+     it stood. A person whose band is missing comes back in camps[0]
+     (personFromRecord), which is how a reload used to reset a world's bands to
+     the handful the island starts with and leave the people in the wrong ones. */
+  for (let i = 0; i < st.camps.length; i++) {
+    if (camps[i]) continue;
+    const c = st.camps[i];
+    // A save from before their places were kept: stop, rather than shift every band after it along one.
+    if (!Number.isFinite(c?.x) || !Number.isFinite(c?.z)) break;
+    campFromRecord(i, Number(c.x), Number(c.z), c.name || 'band', Number(c.founded));
+  }
 
   st.camps.forEach((c, i) => {
     if (!camps[i]) return;

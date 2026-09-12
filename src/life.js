@@ -195,6 +195,9 @@ export function renderTribes(now = 0) {
   const rows = [];
   camps.forEach((c, i) => { if (!c.gone) rows.push({ c, i, dev: developmentOf(c) }); });
   rows.sort((x, y) => y.dev - x.dev || x.i - y.i);
+  // How many there are, on the panel's own heading.
+  const count = $('tribeCount');
+  if (count) count.textContent = '(' + rows.length + ')';
   el.innerHTML = rows.map(({ c, i, dev }) => {
     let pop = 0;
     for (const p of people) if (p.camp === c) pop++;
@@ -870,8 +873,26 @@ export const SPLIT = {
      reached sixty, so not one band ever split. Five bands filled their ground,
      seven died out, nobody settled anywhere new, and the island sat under a
      hundred people on land that could hold thousands. So a band now goes when
-     it has filled the ground it can reach, not the tents it has room for. */
-  at: 24,              // people in one camp before it is too many
+     it has filled the ground it can reach, not the tents it has room for.
+
+     Twenty-four was that ground at the yield it was tuned for, and it splits a
+     band the moment it becomes one: the rungs above ask for twenty people, then
+     thirty, then sixty, so a settlement that halves itself at twenty-four never
+     climbs past the first of them. It is also no longer the whole story — a
+     band with a field of its own eats what it grows rather than what it can
+     walk to, and a richer island (ABUNDANCE) feeds the same hundred metres
+     several times over.
+
+     So: as high as the evidence allows and no higher. Forty is the top of the
+     band test.js holds this to — above it nobody has measured a world that
+     still splits, and the sixty that stopped every split was only twenty past
+     it. A settlement fills out, climbs a rung or two, and sends a band over the
+     hill when it is genuinely crowded, which is what the ladder was always for.
+     The multipliers above carry it the rest of the way: sixty for a tribe,
+     eighty-four for a chiefdom, two hundred and forty for a city (society.js).
+
+     Past forty wants a long run behind it, not an argument. */
+  at: 40,              // people in one camp before it is too many
   takes: 0.42,         // share of them who go
   /* Three and a half days is not a surplus, it is next week's dinner. Splitting
      on it turned one band that was coping into two that were not — measured
@@ -887,7 +908,10 @@ export const SPLIT = {
   gap: 45,             // metres clear of another settlement's tents, outskirts or
                        // streets: room for a band's own clearing and a little
                        // more. A new band may pitch beside a village or a city.
-  everyYears: 1.5,     // no camp splits twice in quick succession
+  /* And not twice in quick succession. A settlement that has just sent a band
+     out is short of the people it was crowded with, and splitting again on the
+     next full store is how one that ought to be growing stays small. */
+  everyYears: 3,       // sim-years before the same camp may send another band out
   pairs: 3,            // fertile adults of each sex who go, at most
   keepPairs: 2,        // and who must be left behind, at least
 };

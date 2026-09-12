@@ -37,17 +37,53 @@ export const STREAM_DROP = 0.02;         // forced descent per step, so a creek 
 export const CHANNEL_DEPTH = 1.7;
 export const CHANNEL_BANK = 0.5;
 export const MAX_CUT = 4;                // a creek cuts through a bump, not through a hill
-export const MAX_STEPS = 240;            // 1.4 km, longer than the island is wide
+/* Long enough to run the length of the island and meander on the way: a river
+   rises high and ends at the sea, and the old 240 steps (1.4 km) was a ceiling
+   a creek on a big map hit while still inland. Scaled with the map, like
+   everything else about the island's shape. */
+export const MAX_STEPS = Math.max(400, Math.ceil((WORLD * 2.2) / STREAM_STEP));
+export const REACH_RINGS = 4;            // how far ahead it looks for a way down, in steps
+export const SOURCE_HIGH = 38;           // metres: where it would rather rise, given the choice
+export const FLAT_DROP = 0.35;           // metres of fall in sight that counts as a slope at all
+export const SEAWARD = 2.5;              // metres a heading is worth for facing open water, on flat ground
+export const MEANDER = 0.6;              // metres a heading is worth for being the way it is already going
 export const MAX_BANK_CUT = 4;           // a hillside gets a notch, not a gorge
 
 export const LAKE = {
-  min: 7,              // metres out from the middle, the smallest a creek pools into ...
-  perStep: 0.09,       // ... and more the further the creek had come to it
-  max: 30,
-  depth: 2.2,          // how deep in the middle
+  min: 6,              // metres out from the middle, the smallest a creek pools into ...
+  perFlow: 12,         // ... and wider with the water arriving in it: metres per root of debit
+  max: 90,             // a river makes a lake, not a pond with a cap on it
+  depth: 2.2,          // how deep in the middle before the water coming in is counted ...
+  deepPerFlow: 0.5,    // ... and deeper for that water ...
+  deepest: 6,          // ... to here
   berm: 7,             // metres of bank raised round it, wherever the ground fell away
   spring: 3.2,         // a spring's pool
 };
+
+/* What a river carries, and what it is made of.
+
+   A spring is a trickle and a glacier's melt is more; both gather the rain off
+   every metre of ground they cross, so the debit grows all the way down. The
+   water is as wide as the root of it — double the water is half again as wide,
+   not twice, which is how rivers actually are — and where one creek runs into
+   another the whole of what it carries goes on down that one, so the reach
+   below a junction is both rivers and runs wider than either. */
+export const FLOW = {
+  spring: 1.4,         // debit where a spring wells up
+  glacier: 3.2,        // and under a glacier, where the melt comes off the ice
+  perMetre: 0.016,     // gathered off the ground, per metre the creek has run
+  width: 2.6,          // metres of water per root of debit
+};
+
+/** How wide a lake the water arriving makes of the hollow it fills. */
+export function lakeSizeFor(flow) {
+  return Math.max(LAKE.min, Math.min(LAKE.max, LAKE.min + LAKE.perFlow * Math.sqrt(Math.max(0, flow))));
+}
+
+/** And how deep, which is the same water again. */
+export function lakeDepthFor(flow) {
+  return Math.min(LAKE.deepest, LAKE.depth + LAKE.deepPerFlow * Math.sqrt(Math.max(0, flow)));
+}
 
 /* Where a creek rises. Under a glacier: ground just below the snow line with
    snowfield above it, where the melt comes off the ice. Or a spring: high
@@ -55,11 +91,15 @@ export const LAKE = {
    spring, so an island with snow on it has both — and one without has only
    springs, which is all it could have. */
 function pickSource(rng, ice) {
+  /* High ground first, and only then anything that will do. A creek is as long
+     as the fall it starts with, so where there are tops to rise on it rises on
+     them — and an island too low for that still gets its creeks. */
+  for (const floor of [SOURCE_HIGH, 32]) {
   for (let t = 0; t < 200; t++) {
     const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * WORLD * 0.40;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const h = sampleHeight(x, z);
-    if (h < 32) continue;                                    // springs come from high ground
+    if (h < floor) continue;                                 // springs come from high ground
     if (streams.some((s) => Math.hypot(s[0].x - x, s[0].z - z) < 130)) continue;
     if (!ice) {
       if (h > SNOW - 14) continue;                           // under the snow is the glacier's
@@ -73,12 +113,32 @@ function pickSource(rng, ice) {
     }
     if (snowAbove) return { x, z, kind: 'glacier' };
   }
+  }
   return null;
 }
 
 /* Water this creek has come to: a lake a creek before it pooled into, or the
    channel of one, at or below its own level — water runs into water, never up
    into it. */
+/* The water on the ground at one point: as wide as the root of what it carries,
+   and never a ruled width — wandering wider and narrower along its length, with
+   a pool now and then where it spreads out and slows. Two banks of its own as
+   well, not one ruled twice, so one side is cut back where the other stands in. */
+function setWaterWidth(q) {
+  /* Narrows and broad reaches, a few tens of metres each — but a good deal
+     less of it than there used to be. At the old spread a creek was anywhere
+     between half and half again its width, which is three times over, against
+     a debit that ranges less than twice across the island's rivers: the wander
+     swamped the water, and the big river came out narrower than the small one
+     as often as not. A river reads by its size first and its mood second. */
+  const wander = 0.82 + 0.36 * fbm(q.x * 0.022, q.z * 0.022, 3, P.seed + 7711);
+  // ... and now and then a pool, where the water spreads out and slows ...
+  const pool = 1 + 0.3 * smoothstep(0.6, 0.78, fbm(q.x * 0.009, q.z * 0.009, 2, P.seed + 4242));
+  q.width = FLOW.width * Math.sqrt(q.flow) * wander * pool;
+  q.bankL = 0.55 + 0.45 * fbm(q.x * 0.06, q.z * 0.06, 2, P.seed + 1301);
+  q.bankR = 0.55 + 0.45 * fbm(q.x * 0.06, q.z * 0.06, 2, P.seed + 2903);
+}
+
 function meetWater(x, z, level) {
   for (const lake of lakes) {
     if (lake.spring || lake.level > level + 0.3) continue;
@@ -87,10 +147,56 @@ function meetWater(x, z, level) {
   for (const s of streams) {
     for (const q of s) {
       if (q.level > level + 0.3) continue;
-      if (Math.hypot(q.x - x, q.z - z) < q.width * 0.5 + 4) return q;
+      // The creek it runs into, and where: what it carries goes on down from there.
+      if (Math.hypot(q.x - x, q.z - z) < q.width * 0.5 + 4) return { x: q.x, z: q.z, level: q.level, point: q, stream: s };
     }
   }
   return null;
+}
+
+/* How far a stuck creek looks for a way on, and how high a rim it will fill
+   behind before it spills over: a lake is not the end of a river, it is a
+   wide place in one. */
+export const SPILL = { rings: 30, rise: 6, tries: 5 };
+
+/* Where the water goes when there is no step down from here at all: it fills,
+   and leaves over the lowest rim it can reach. The rim is what stands between
+   this and the ground beyond; the ground beyond has to be lower than here, or
+   it is not a way out but another basin.
+
+   Without this a creek stopped wherever the ground in front of it rose — on
+   open country, a few hundred metres short of a sea it never reached, with a
+   puddle at the end of it. Water does not do that: it fills the hollow and
+   goes over the side. */
+function spillOver(x, z, level, path) {
+  let best = null, bestScore = Infinity;
+  for (let ring = 2; ring <= SPILL.rings; ring++) {
+    const r = ring * STREAM_STEP;
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      const tx = x + Math.cos(a) * r, tz = z + Math.sin(a) * r;
+      if (Math.hypot(tx, tz) > WORLD * 0.47) continue;
+      const th = sampleHeight(tx, tz);
+      if (th > level - 0.2) continue;                 // no lower than here: not a way out
+      // The lip between the two: how deep the hollow fills before it goes over.
+      let rim = -Infinity;
+      for (let d = STREAM_STEP; d < r; d += STREAM_STEP) {
+        const t = d / r;
+        rim = Math.max(rim, sampleHeight(x + (tx - x) * t, z + (tz - z) * t));
+      }
+      if (rim > level + SPILL.rise) continue;         // a hill between, not a rim
+      // And never back onto its own course, which is a loop rather than a way on.
+      let own = false;
+      for (let q = 0; q < path.length - 6 && !own; q++) {
+        if (Math.hypot(path[q].x - tx, path[q].z - tz) < 12) own = true;
+      }
+      if (own) continue;
+      const score = th + Math.max(0, rim - level) * 0.5 + r * 0.02;
+      if (score < bestScore) { bestScore = score; best = { x: tx, z: tz, h: th, r }; }
+    }
+    if (best) break;                                  // the nearest rim that lets it out
+  }
+  return best;
 }
 
 export function traceStreams(count) {
@@ -110,28 +216,112 @@ export function traceStreams(count) {
        own course, the edge of the island — is where it pools. */
     let end = 'lake', met = null;
 
+    /* Filling a hollow and leaving over its rim, when there is no step down
+       from where it stands. A handful of times at most: a creek that has done
+       it five times is crossing a basin that is not going to let it out. */
+    let spills = 0;
+    const trySpill = () => {
+      if (spills >= SPILL.tries) return false;
+      const over = spillOver(x, z, level, path);
+      if (!over) return false;
+      const steps = Math.max(1, Math.round(over.r / STREAM_STEP));
+      const fall = level - Math.min(over.h, level - 0.2);
+      const dx = over.x - x, dz = over.z - z;
+      for (let q = 1; q < steps; q++) {
+        const t = q / steps;
+        path.push({ x: x + dx * t, z: z + dz * t, level: level - fall * t, width: 0 });
+      }
+      x = over.x; z = over.z; level -= fall;
+      dirX = dx; dirZ = dz;
+      spills++;
+      return true;
+    };
+
+    /* And where there is no rim to spill over either, it goes on seaward,
+       cutting its bed as it goes. Inland is a floor rather than a slope
+       (noise.js, LAND.floor): flat ground has nothing lower within reach to
+       find, so a creek that stops the moment it cannot see a fall stops in the
+       middle of the island with the sea four hundred metres in front of it —
+       which is exactly where these were ending, two metres above the water.
+       A river crossing a plain is cutting the channel it runs in, and that
+       channel is what carveStreams then digs. */
+    const goSeaward = (crossOwn) => {
+      const away = Math.hypot(x, z) || 1;
+      const tx = x + (x / away) * STREAM_STEP, tz = z + (z / away) * STREAM_STEP;
+      if (Math.hypot(tx, tz) > WORLD * 0.47) return false;
+      const g = sampleHeight(tx, tz);
+      const nxt = Math.min(level - STREAM_DROP, g);
+      if (g - nxt > MAX_CUT) return false;              // a hill in the way: it really is stuck
+      /* Its own course is in the way only when it is not the thing it is
+         escaping. A creek that has come back round onto itself is ringed by its
+         own bed, so refusing to cross it there refuses the only way out and
+         leaves the creek pooled in the middle of its own loops — which is where
+         every one of these was ending. A river in that position cuts the
+         meander off and runs through it. */
+      for (let q = 0; !crossOwn && q < path.length - 60; q++) {
+        if (Math.hypot(path[q].x - tx, path[q].z - tz) < 5) return false;
+      }
+      dirX = tx - x; dirZ = tz - z;
+      x = tx; z = tz; level = nxt;
+      return true;
+    };
+
     for (let i = 0; i < MAX_STEPS; i++) {
       path.push({ x, z, level, width: 0 });
       if (level <= SEA + 0.3) { end = 'sea'; break; }
 
-      // Steepest descent on a ring around the current point.
-      let bestX = x, bestZ = z, bestH = Infinity;
-      for (let k = 0; k < 16; k++) {
-        const a = (k / 16) * Math.PI * 2;
-        const nx = x + Math.cos(a) * STREAM_STEP, nz = z + Math.sin(a) * STREAM_STEP;
-        const nh = sampleHeight(nx, nz);
-        if (nh < bestH) { bestH = nh; bestX = nx; bestZ = nz; }
-      }
+      /* Which way the water goes: sixteen headings, each looked along as far as
+         REACH_RINGS steps. What a heading is worth is the lowest ground it can
+         see, so a lip with a fall behind it beats open ground that stays flat.
 
-      /* Momentum. Pure steepest descent rattles from side to side down a noisy
-         slope and reads as a zigzag; carrying the previous direction gives the
-         meander a creek actually has. */
-      dirX = dirX * 0.55 + (bestX - x) * 0.45;
-      dirZ = dirZ * 0.55 + (bestZ - z) * 0.45;
+         A heading whose first step climbs more than the creek can trench is not
+         a way out at all and is dropped — which is what lets the water go
+         *around* a rise. Taking the one lowest neighbour and stopping at the
+         first lip in front of it is what used to end a creek a few hundred
+         metres below its spring, in a pond on an open hillside with the sea a
+         kilometre downhill.
+
+         And flat ground leans seaward. Inland is a floor rather than a slope
+         (noise.js, LAND.floor), so the fall from one step to the next is
+         centimetres of detail noise and steepest descent across it is a wander.
+         Flat country still drains — the tilt is too slight to see and the water
+         finds it anyway — so where there is no real fall the heading leans
+         toward open water, and where the ground does fall the lean is nothing
+         beside it. */
+      const away = Math.hypot(x, z) || 1, outX = x / away, outZ = z / away;
+      const carry = Math.hypot(dirX, dirZ);
+      let bestA = null, bestScore = Infinity;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2, cx = Math.cos(a), cz = Math.sin(a);
+        const climb = sampleHeight(x + cx * STREAM_STEP, z + cz * STREAM_STEP) - (level - STREAM_DROP);
+        if (climb > MAX_CUT) continue;                   // a hill, not a rise: go round it
+        let seen = Infinity;
+        for (let ring = 1; ring <= REACH_RINGS; ring++) {
+          seen = Math.min(seen, sampleHeight(x + cx * STREAM_STEP * ring, z + cz * STREAM_STEP * ring));
+        }
+        const flat = Math.max(0, 1 - Math.max(0, level - seen) / FLAT_DROP);
+        const keep = carry > 1e-4 ? (cx * dirX + cz * dirZ) / carry : 0;
+        const score = seen - SEAWARD * flat * (cx * outX + cz * outZ) - MEANDER * keep;
+        if (score < bestScore) { bestScore = score; bestA = a; }
+      }
+      // Nowhere to go at all: it fills, and leaves over the rim if there is one.
+      if (bestA == null) { if (trySpill() || goSeaward()) continue; break; }
+
+      /* Momentum, so the course meanders rather than rattling from side to side
+         down a noisy slope — but never enough to turn the step into the rise the
+         heading was chosen to keep clear of. */
+      const headX = Math.cos(bestA), headZ = Math.sin(bestA);
+      dirX = dirX * 0.55 + headX * STREAM_STEP * 0.45;
+      dirZ = dirZ * 0.55 + headZ * STREAM_STEP * 0.45;
       const len = Math.hypot(dirX, dirZ);
-      if (len < 1e-4) break;
-      const nx = x + (dirX / len) * STREAM_STEP;
-      const nz = z + (dirZ / len) * STREAM_STEP;
+      let nx = x + (dirX / len || headX) * STREAM_STEP;
+      let nz = z + (dirZ / len || headZ) * STREAM_STEP;
+      if (sampleHeight(nx, nz) - (level - STREAM_DROP) > MAX_CUT) {
+        dirX = headX * STREAM_STEP;
+        dirZ = headZ * STREAM_STEP;
+        nx = x + headX * STREAM_STEP;
+        nz = z + headZ * STREAM_STEP;
+      }
       if (Math.hypot(nx, nz) > WORLD * 0.47) break;
 
       const ground = sampleHeight(nx, nz);
@@ -141,8 +331,15 @@ export function traceStreams(count) {
          hill, not a rise, so the creek pools there. Without that limit a creek
          on gently rolling ground will meander for kilometres, digging the whole
          way: one of these ran 2670 m across a 1600 m island. */
-      const next = Math.min(level - STREAM_DROP, ground);
-      if (ground - next > MAX_CUT) break;
+      /* ...and never deeper than a channel below the ground it is crossing. The
+         forced descent falls whether the ground does or not, so on a plain the
+         bed sank a little every step until the creek was four metres down in a
+         trench of its own digging — at which point nothing within reach was low
+         enough to step to, seaward included, and it stopped in the middle of the
+         island. A river crossing flat country runs in a shallow bed, not a
+         gorge that deepens forever. */
+      const next = Math.max(Math.min(level - STREAM_DROP, ground), ground - CHANNEL_DEPTH);
+      if (ground - next > MAX_CUT) { if (trySpill() || goSeaward()) continue; break; }
 
       // Into water that is already there: it joins it, and ends.
       met = meetWater(nx, nz, next);
@@ -162,17 +359,31 @@ export function traceStreams(count) {
       for (let k = 0; k < path.length - 20; k++) {
         if (Math.hypot(path[k].x - nx, path[k].z - nz) < 10) { looped = true; break; }
       }
-      if (looped) break;
+      if (looped) { if (trySpill() || goSeaward(true)) continue; break; }
 
       x = nx; z = nz; level = next;
     }
 
     if (path.length > 14) {
       let pts = smoothPath(path);
-      // Where it pools, the lake it makes: bigger the further the creek came.
+      /* What it carries by the time it gets there: what it rose with, and the
+         rain off every metre it has run since. Measured on the walked path
+         rather than the drawn one, so trimming its mouth back out of a lake
+         cannot change the size of the lake it is arriving in. */
+      let runLen = 0;
+      for (let i = 1; i < path.length; i++) runLen += Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z);
+      const head = src.kind === 'glacier' ? FLOW.glacier : FLOW.spring;
+      const mouth = head + FLOW.perMetre * runLen;
+
+      // Where it pools, the lake it makes: as wide and as deep as the water arriving.
       if (end === 'lake') {
         const last = pts[pts.length - 1];
-        lakes.push({ x: last.x, z: last.z, level: last.level, r: Math.min(LAKE.max, LAKE.min + path.length * LAKE.perStep), spring: false });
+        const pooled = {
+          x: last.x, z: last.z, level: last.level,
+          r: lakeSizeFor(mouth), depth: lakeDepthFor(mouth), spring: false,
+        };
+        lakes.push(pooled);
+        pts.lake = pooled;
       }
       // A spring wells up in a pool of its own, at the head of the creek.
       if (src.kind === 'spring') {
@@ -183,24 +394,29 @@ export function traceStreams(count) {
       const into = end === 'lake' ? lakes[lakes.length - (src.kind === 'spring' ? 2 : 1)] : met?.lake;
       if (into) pts = trimInto(pts, into);
       if (src.kind === 'spring') pts = trimFrom(pts, lakes[lakes.length - 1]);
-      /* A spring is a trickle and a mouth is a stream: narrow at the top and
-         widening with the water it has gathered — faster at first, then
-         slowly — and never a ruled width, but wandering a little wider and
-         narrower along its length. A glacier's melt starts with more. */
-      const n = pts.length, head = src.kind === 'glacier' ? 2.6 : 1.6;
-      for (let i = 0; i < n; i++) {
-        const f = i / (n - 1), q = pts[i];
-        // Narrows and broad reaches, a few tens of metres each ...
-        const wander = 0.55 + 0.9 * fbm(q.x * 0.022, q.z * 0.022, 3, P.seed + 7711);
-        // ... and now and then a pool, where the water spreads out and slows ...
-        const pool = 1 + 0.7 * smoothstep(0.6, 0.78, fbm(q.x * 0.009, q.z * 0.009, 2, P.seed + 4242));
-        q.width = (head + 8.4 * Math.sqrt(f)) * wander * pool;
-        /* ... and two banks of its own, not one ruled twice: how far the water
-           reaches toward each side, as a share of what the bend allows, so one
-           bank is cut back where the other stands in. Never more than the whole
-           of it, so it can never fold the water where the width could not. */
-        q.bankL = 0.55 + 0.45 * fbm(q.x * 0.06, q.z * 0.06, 2, P.seed + 1301);
-        q.bankR = 0.55 + 0.45 * fbm(q.x * 0.06, q.z * 0.06, 2, P.seed + 2903);
+      /* A spring is a trickle and a mouth is a river: the debit at each point is
+         what it rose with plus the ground it has drained to get there, and the
+         width follows from it (setWaterWidth). */
+      let along = 0;
+      for (let i = 0; i < pts.length; i++) {
+        if (i) along += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+        pts[i].flow = head + FLOW.perMetre * along;
+        setWaterWidth(pts[i]);
+      }
+      /* And where it runs into another creek, the whole of what it carries goes
+         on down that one from the junction: the reach below is both rivers, so
+         it runs wider from there, and the lake it ends in is the bigger for it. */
+      if (met?.stream) {
+        const host = met.stream, at = host.indexOf(met.point);
+        for (let i = Math.max(0, at); i < host.length; i++) {
+          host[i].flow = (host[i].flow || 0) + mouth;
+          setWaterWidth(host[i]);
+        }
+        if (host.lake) {
+          const hostMouth = host[host.length - 1].flow;
+          host.lake.r = lakeSizeFor(hostMouth);
+          host.lake.depth = lakeDepthFor(hostMouth);
+        }
       }
       pts.source = src.kind;
       pts.end = end;
@@ -324,7 +540,8 @@ export function carveStreams() {
     const i1 = Math.min(fieldSeg, Math.ceil((lake.x + out + WORLD / 2) / fieldCell));
     const j0 = Math.max(0, Math.floor((lake.z - out + WORLD / 2) / fieldCell));
     const j1 = Math.min(fieldSeg, Math.ceil((lake.z + out + WORLD / 2) / fieldCell));
-    const depth = lake.spring ? 1.1 : LAKE.depth, berm = lake.spring ? 3 : LAKE.berm;
+    // As deep as the water arriving made it (lakeDepthFor); a spring's pool is a pool.
+    const depth = lake.spring ? 1.1 : (lake.depth ?? LAKE.depth), berm = lake.spring ? 3 : LAKE.berm;
     for (let j = j0; j <= j1; j++) {
       const cz = -WORLD / 2 + j * fieldCell;
       for (let i = i0; i <= i1; i++) {

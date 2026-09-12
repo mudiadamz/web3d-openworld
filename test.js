@@ -797,10 +797,44 @@ check('and it never doubles back on itself', (() => {
 check('and after smoothing it still only runs downhill, and never above the ground',
   /level: Math\.min\(pts\[i\]\.level, sampleHeight\(pts\[i\]\.x, pts\[i\]\.z\), below\)/.test(creekSrc));
 check('narrow at the spring, wider downstream, and never a ruled width',
-  /q\.width = \(head \+ 8\.4 \* Math\.sqrt\(f\)\) \* wander \* pool;/.test(creekSrc)
-  && /head = src\.kind === 'glacier' \? 2\.6 : 1\.6;/.test(creekSrc) && !/width = 4\.5 \+ 5\.5/.test(creekSrc));
+  /q\.width = FLOW\.width \* Math\.sqrt\(q\.flow\) \* wander \* pool;/.test(creekSrc)
+  && /const head = src\.kind === 'glacier' \? FLOW\.glacier : FLOW\.spring;/.test(creekSrc)
+  && !/width = 4\.5 \+ 5\.5/.test(creekSrc));
+/* A river is the water it carries: what it rose with, and the rain off every
+   metre of ground it has crossed since. The width follows from the debit, and
+   so does the lake it ends in — which is the difference between a pond that
+   happens to be where a creek stopped and a lake that is the size of its
+   river. */
+check('the debit grows with every metre the creek runs',
+  /pts\[i\]\.flow = head \+ FLOW\.perMetre \* along;/.test(creekSrc)
+  && /const mouth = head \+ FLOW\.perMetre \* runLen;/.test(creekSrc));
+check('and a creek running into another puts the whole of it into that one, from the junction down',
+  /const host = met\.stream, at = host\.indexOf\(met\.point\);/.test(creekSrc)
+  && /host\[i\]\.flow = \(host\[i\]\.flow \|\| 0\) \+ mouth;/.test(creekSrc)
+  && /point: q, stream: s \}/.test(creekSrc));
+check('a lake is as wide and as deep as the water arriving in it, within reason', (() => {
+  const at = creekSrc.indexOf('function lakeSizeFor(flow)');
+  const close = creekSrc.slice(at).match(/\r?\n\}\r?\n/);
+  const size = new Function('LAKE', creekSrc.slice(at, at + close.index + close[0].length) + '\nreturn lakeSizeFor;')(
+    { min: 7, max: 90, perFlow: 9 });
+  const trickle = size(1.4), river = size(20), flood = size(4000);
+  return size(0) === 7 && river > trickle * 2 && flood === 90
+    ? true : JSON.stringify({ trickle, river, flood });
+})() === true);
+check('and the lake at the end grows when a tributary arrives',
+  /host\.lake\.r = lakeSizeFor\(hostMouth\);/.test(creekSrc)
+  && /host\.lake\.depth = lakeDepthFor\(hostMouth\);/.test(creekSrc)
+  && /const depth = lake\.spring \? 1\.1 : \(lake\.depth \?\? LAKE\.depth\)/.test(creekSrc));
 check('with narrows, broad reaches, and now and then a pool',
-  /const wander = 0\.55 \+ 0\.9 \* fbm\(/.test(creekSrc) && /const pool = 1 \+ 0\.7 \* smoothstep\(/.test(creekSrc));
+  /const wander = 0\.82 \+ 0\.36 \* fbm\(/.test(creekSrc) && /const pool = 1 \+ 0\.3 \* smoothstep\(/.test(creekSrc));
+/* And less of both than the debit, or the river's size is not what you see:
+   the wander used to span three times over against a debit spanning less than
+   twice, so the big river came out narrower than the small one as often as not. */
+check('a river reads by its size first: the wander never outruns the water', (() => {
+  const wander = Number((creekSrc.match(/const wander = [\d.]+ \+ ([\d.]+) \* fbm\(/) || [, 9])[1]);
+  const pool = Number((creekSrc.match(/const pool = 1 \+ ([\d.]+) \* smoothstep\(/) || [, 9])[1]);
+  return (1 + wander + pool) / (1 - wander * 0.5) < 2.4 ? true : `${wander} of wander and ${pool} of pool`;
+})() === true);
 /* Two banks, not one ruled twice — and each only ever a share of what the
    bend allows, so an uneven bank can never fold the water. */
 check('and two uneven banks, each its own, the water and the channel alike',
@@ -821,6 +855,41 @@ check('it rises under a glacier or at a spring, and a spring wells up in a pool'
   /return \{ x, z, kind: 'glacier' \};/.test(creekSrc) && /return \{ x, z, kind: 'spring' \};/.test(creekSrc)
   && /if \(src\.kind === 'spring'\) \{\s*lakes\.push\(/.test(creekSrc)
   && /const src = pickSource\(rng, ice\) \|\| pickSource\(rng, !ice\);/.test(creekSrc));
+/* A river is as long as the fall it starts with and the way it finds down.
+   Both used to be cut short: it rose wherever the ground was over 32 m, and it
+   pooled at the first lip it could not step over. */
+check('a creek rises as high as the island offers, and has room to run its length',
+  /for \(const floor of \[SOURCE_HIGH, 32\]\)/.test(creekSrc)
+  && /if \(h < floor\) continue;/.test(creekSrc)
+  && /MAX_STEPS = Math\.max\(400, Math\.ceil\(\(WORLD \* 2\.2\) \/ STREAM_STEP\)\)/.test(creekSrc));
+check('and looks past the first rise for a way around it before it pools',
+  /for \(let ring = 1; ring <= REACH_RINGS; ring\+\+\)/.test(creekSrc)
+  && /if \(climb > MAX_CUT\) continue;/.test(creekSrc)
+  && /seen = Math\.min\(seen, sampleHeight\(x \+ cx \* STREAM_STEP \* ring/.test(creekSrc)
+  && /if \(bestA == null\) \{ if \(trySpill\(\) \|\| goSeaward\(\)\) continue; break; \}/.test(creekSrc));
+/* And on ground with no fall in it at all — the inland floor — it leans toward
+   open water rather than wandering until it meets its own course. */
+/* And a hollow is a wide place in a river, not the end of one: where there is
+   no step down at all it fills and goes over the lowest rim it can reach, so a
+   creek stops on dry ground only when the basin really has no way out. */
+check('a creek fills and spills over the rim rather than stopping on dry land',
+  /function spillOver\(x, z, level, path\)/.test(creekSrc)
+  && /if \(rim > level \+ SPILL\.rise\) continue;/.test(creekSrc)
+  && /if \(th > level - 0\.2\) continue;/.test(creekSrc)
+  && (creekSrc.match(/if \(trySpill\(\) \|\| goSeaward\((?:true)?\)\) continue; break; \}/g) || []).length === 3
+  /* And the one that fires when it meets its own bed may cross it: that bed is
+     the thing it is escaping, so refusing to cross leaves it pooled inside its
+     own loops, which is where every creek that stopped on dry land stopped. */
+  && /if \(looped\) \{ if \(trySpill\(\) \|\| goSeaward\(true\)\) continue; break; \}/.test(creekSrc));
+/* And a plain offers nothing lower anywhere in reach, so there is no rim to go
+   over either: on one it cuts its bed seaward rather than stopping two metres
+   above a sea four hundred metres in front of it. */
+check('and crosses a plain by cutting its bed seaward rather than stopping on it',
+  /const goSeaward = \(crossOwn\) => \{/.test(creekSrc)
+  && /if \(g - nxt > MAX_CUT\) return false;/.test(creekSrc));
+check('flat ground leans the water seaward',
+  /const score = seen - SEAWARD \* flat \* \(cx \* outX \+ cz \* outZ\) - MEANDER \* keep;/.test(creekSrc)
+  && /const flat = Math\.max\(0, 1 - Math\.max\(0, level - seen\) \/ FLAT_DROP\);/.test(creekSrc));
 check('a glacier only where there is snow above it to melt', (() => {
   const at = creekSrc.indexOf('function pickSource(rng, ice)');
   const body = creekSrc.slice(at, at + 1400);
@@ -3675,10 +3744,11 @@ check('a camp with an empty store is a hungry camp', (() => {
   }
   return bad.length ? bad.join(' · ') : true;
 })() === true);
-/* Both places a camp is made: at world build and when a band splits off. */
-check('in both places a camp is made',
-  (html.match(/food: 0, pop: 0, need: 0, hunger: 1,/g) || []).length === 2,
-  `${(html.match(/food: 0, pop: 0, need: 0, hunger: 1,/g) || []).length} of 2`);
+/* All three places a camp is made: at world build, when a band splits off, and
+   when one founded in play is built again on the way back from a save. */
+check('in all three places a camp is made',
+  (html.match(/food: 0, pop: 0, need: 0, hunger: 1,/g) || []).length === 3,
+  `${(html.match(/food: 0, pop: 0, need: 0, hunger: 1,/g) || []).length} of 3`);
 /* And the literal is not trusted at all: the books are opened once before
    anybody moves, so hunger is worked out rather than assumed. A `days` of zero
    eats nothing and spoils nothing. */
@@ -5561,8 +5631,29 @@ check('the lowest inland ground is a floor above the water, eased in',
    and a check that greps the whole file for that string fails on the
    explanation of why it is gone. */
 check('the falloff is written against the map, not in metres',
-  /const half = WORLD \/ 2;\s*h -= smoothstep\(half \* 0\.78, half \* 1\.12, d\) \* 95;/
+  /const half = WORLD \/ 2;[\s\S]*?h -= smoothstep\(half \* 0\.78, half \* 1\.12, coast\) \* 95;/
     .test(moduleSource('noise.js')));
+/* And it reads a bearing's own distance to the coast rather than the plain one,
+   or the island is a coin: bays, headlands, and longer one way than the other. */
+check('the island is not a disc', (() => {
+  const t = makeTerrain({ seed: 20260906 }, 1600);
+  t.settle();
+  const shore = [];
+  for (let k = 0; k < 48; k++) {
+    const a = (k / 48) * Math.PI * 2;
+    let r = 0;
+    for (let d = 1600 * 0.15; d < 1600 * 0.62; d += 4) {
+      if (t.rawHeight(Math.cos(a) * d, Math.sin(a) * d) > 0) r = d;
+    }
+    shore.push(r);
+  }
+  const lo = Math.min(...shore), hi = Math.max(...shore);
+  const mean = shore.reduce((n, v) => n + v, 0) / shore.length;
+  return (hi - lo) / mean > 0.2 ? true : `shore ${lo.toFixed(0)}-${hi.toFixed(0)} m, only ${(((hi - lo) / mean) * 100).toFixed(0)}% of it`;
+})() === true);
+check('and its shape is written in fractions of the map, like the falloff',
+  /stretch: [\d.]+,/.test(moduleSource('noise.js'))
+  && /\(x \/ WORLD\) \* COAST\.perMap/.test(moduleSource('noise.js')));
 
 /* -------------------------------------------------------------------------
    The full-page map
@@ -7437,6 +7528,35 @@ check('a daughter band takes its mother\'s memories; the card lists them',
 check('memories, and the ground that paid, are kept across a reload',
   /ls: packLessons\(c\.lessons\)/.test(html) && /camps\[i\]\.lessons = unpackLessons\(c\.ls\);/.test(html)
   && /pt: c\.patches\?\.length \?/.test(html) && /camps\[i\]\.patches = Array\.isArray\(c\.pt\)/.test(html));
+/* -------------------------------------------------------------------------
+   Every band comes back
+
+   A world grows bands: it starts with the handful the island is laid out for
+   and founds the rest as it runs. Only the first kind can be rebuilt from the
+   seed, so the rest have to be saved with the one thing no seed knows — where
+   they stood — or a reload is a world reset to its opening bands with all of
+   its people crowded into them.
+   ------------------------------------------------------------------------- */
+group('every band comes back');
+check('the panel is titled for the entities, and says how many there are',
+  /<h2>Entities <span id="tribeCount">\(0\)<\/span><\/h2>/.test(html)
+  && /const count = \$\('tribeCount'\);/.test(html)
+  && /if \(count\) count\.textContent = '\(' \+ rows\.length \+ '\)';/.test(html));
+check('a band is saved with where it stands', /camps: camps\.map\(\(c\) => \(\{ name: c\.name, x: r2\(c\.x\), z: r2\(c\.z\)/.test(html));
+check('and one founded in play is built again before anybody is put in a band', (() => {
+  const at = html.indexOf('function applySavedLife');
+  const body = html.slice(at, at + 6000);
+  const built = body.indexOf('campFromRecord(i, Number(c.x), Number(c.z)');
+  const filled = body.indexOf('personFromRecord(r)');
+  return built > 0 && filled > built ? true : JSON.stringify({ built, filled });
+})() === true);
+check('and a save from before their places were kept stops rather than shifting the rest along',
+  /if \(!Number\.isFinite\(c\?\.x\) \|\| !Number\.isFinite\(c\?\.z\)\) break;/.test(html));
+check('the band it builds is a whole band, with room in the meshes for it',
+  /if \(index >= campCapacity\) growCamps\(index \+ 1\);/.test(moduleSource('people.js'))
+  && /camps\.push\(camp\);\s*layoutCamp\(camp, index\);/.test(moduleSource('people.js'))
+  && /skill: emptySkills\(\),/.test(bodyOf('campFromRecord') || ''));
+
 check('a saved memory comes back as it was, and an old save remembers nothing', (() => {
   const keep = (lessonSrc.match(/const keep2 = [^\n]*\n/) || [''])[0];
   const [pack, unpack] = new Function('LESSON_WORDS', keep + lessonFn('packLessons') + lessonFn('unpackLessons')
@@ -7905,7 +8025,7 @@ group('the sea stays at sea');
 {
   const sc = moduleSource('scene.js'), no = moduleSource('noise.js');
   const calm = Number((sc.match(/SWELL_CALM = ([\d.]+)/) || [, 0])[1]);
-  const inland = Number((no.match(/h -= smoothstep\(half \* ([\d.]+), half \* 1\.12, d\) \* 95;/) || [, 1])[1]);
+  const inland = Number((no.match(/h -= smoothstep\(half \* ([\d.]+), half \* 1\.12, coast\) \* 95;/) || [, 1])[1]);
   check('the swell dies before the coast, so no crest stands up through the plains',
     /float amp = uWaves \* \(0\.35 \+ uWindStrength \* 1\.5\) \* offshore;/.test(sc)
     && /smoothstep\(uIslandHalf \* \$\{SWELL_CALM\.toFixed\(2\)\}, uIslandHalf \* \$\{SWELL_FULL\.toFixed\(2\)\}, length\(position\.xz\)\)/.test(sc));
