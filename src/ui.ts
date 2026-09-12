@@ -481,8 +481,14 @@ $('touch')?.addEventListener('click', (ev: any) => {
   const b = ev.target?.closest?.('button[data-touch]');
   if (!b) return;
   const what = b.dataset.touch;
-  // C: fly, walk, orbit, follow and round again - the same walk the key makes.
-  if (what === 'view') setViewMode(VIEW_MODES[(VIEW_MODES.indexOf(P.view) + 1) % VIEW_MODES.length]);
+  /* C: Orbit and Follow, which are the two there are - the same walk the key
+     makes. Leaving Follow hands the person back with it: setViewMode already
+     lets go of the lead, and this lets go of a standing order too, so nobody
+     is left walking an errand out of a view you are no longer in. */
+  if (what === 'view') {
+    if (P.view === 'follow') handBack();
+    setViewMode(VIEW_MODES[(VIEW_MODES.indexOf(P.view) + 1) % VIEW_MODES.length]);
+  }
   // F: into Follow, then again for somebody else — the same one key, twice over.
   if (what === 'follow') { if (P.view !== 'follow') setViewMode('follow'); else pickFollow(); }
   if (what === 'act') actHere();
