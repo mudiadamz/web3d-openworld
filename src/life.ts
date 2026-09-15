@@ -1269,10 +1269,10 @@ export function updateEconomy(days) {
 
   for (const c of camps) {
     const before = c.food;
-    // Curing is the only thing standing between a good week and a lean one:
-    // without it nothing keeps, and a band this side of agriculture cannot
-    // hoard its way out of a bad season however well it hunts.
-    const spoil = FOOD.spoil * (1 - SKILL.dryKeep * c.skill.drying);
+    // Curing slows the rot, and so does farming: a band with a harvest learns
+    // to keep what it grows, so it can hoard its way through a bad season in a
+    // way a band this side of agriculture never can, however well it hunts.
+    const spoil = FOOD.spoil * (1 - SKILL.dryKeep * c.skill.drying) * (1 - SKILL.farmKeep * Math.min(1, c.skill.farming || 0));
     c.food = Math.max(0, c.food - c.need * days - c.food * spoil * days);
     c.hunger = clamp(1 - daysOfFood(c) / FOOD.comfortable, 0, 1);
     // Log the crossing, not the state: a chronicle of "still hungry" every

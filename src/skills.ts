@@ -132,7 +132,8 @@ export const SKILLS = {
      digging ditches and carrying water at the band's field, and `farming` only
      once that is a fair hand — then the field feeds them, and past a fair hand
      at farming a pen of animals gives a little every day, winter included. The
-     first food anybody on the island makes rather than finds (farming.js). */
+     first food anybody on the island makes rather than finds, and the first a
+     band can keep: one that farms well spoils less of its store (farming.js). */
   irrigation: { label: 'irrigation', of: 'watering' },
   farming: { label: 'farming', of: 'farming' },
   /* Eighteenth: keeping a village. Learned at the fire like weaving, and what
@@ -196,6 +197,7 @@ export const SKILL = {
   spearChance: 1.20,   // kill chance, at mastery
   basketHaul: 0.90,    // what a foraging trip brings home
   dryKeep: 0.65,       // how much less of the store spoils
+  farmKeep: 0.55,      // and how much less again, for a band that farms well
   /* Healing. The sickness was the leading cause of death and the only one
      nobody could do anything about; this is the something. Not a cure — 0.55
      of the mortality at mastery still leaves a plague worth fearing — but it is

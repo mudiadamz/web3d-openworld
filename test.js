@@ -3993,6 +3993,12 @@ check('a better spear kills more often',
   /q\.chance \* \(1 \+ SKILL\.spearChance \* p\.camp\.skill\.spears\)/.test(html));
 check('baskets bring more home', /1 \+ SKILL\.basketHaul \* p\.camp\.skill\.baskets/.test(html));
 check('and curing keeps the store', /FOOD\.spoil \* \(1 - SKILL\.dryKeep \* c\.skill\.drying\)/.test(html));
+/* And past curing, a harvest: a band that farms well keeps what it has on top
+   of whatever drying already saves. Multiplied rather than added, so the two
+   together can never take the rot below nothing and start making food. */
+check('and farming keeps it longer still',
+  html.includes('* (1 - SKILL.farmKeep * Math.min(1, c.skill.farming || 0))')
+  && moduleSource('skills.js').includes('farmKeep: 0.'));
 
 /* THE one. Knowledge is capped by what the living remember, and the only way
    memory rises is people learning. If only children learn, and only once, then
