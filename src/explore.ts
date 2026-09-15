@@ -3,7 +3,8 @@ import { flatnessAt, sampleHeight, clearOfCreeks } from './noise.js';
 import { CAMP_CLEARING, camps } from './people.js';
 import { deposits } from './quarries.js';
 import { forageRichness, nearestShore } from './larder.js';
-import { SPLIT, logEvent, personAge, simDay, who } from './life.js';
+import { GROUND, SPLIT, logEvent, personAge, simDay, who } from './life.js';
+import { STAGES } from './society.js';
 
 /* -------------------------------------------------------------------------
    Explorers
@@ -30,6 +31,8 @@ export const EXPLORE = {
   keep: 6,             // finds a band remembers
   notable: 0.55,       // a find worth a line in the chronicle, once it is the band's best
   flat: 0.9,           // ground a camp could stand on
+  push: 2.5,           // how many more of its bold a crowded band sends: 1 + this
+  lookRings: [30, 60, 90], // metres round where they stop that they look over
 };
 
 /* A city's streets reach this far from its hall, from this rung up — CITY.reach
@@ -49,13 +52,29 @@ export function clearOfCamps(x, z) {
   return true;
 }
 
+/** How crowded a band is, 0 to 1: the fuller of how close it is to splitting
+    and how long a hungrier neighbour has been squeezing it off its ground.
+    Measured against the split size for the rung the settlement is on, not the
+    bare number, or every town would read as crowded at forty people and
+    empty itself onto the hills. */
+export function crowding(camp) {
+  if (!camp) return 0;
+  const size = SPLIT.at * (STAGES[camp.stage || 0]?.split || 1);
+  const full = size > 0 ? (camp.pop || 0) / size : 0;
+  const squeezed = (camp.pressed || 0) / GROUND.patience;
+  return Math.max(0, Math.min(1, Math.max(full, squeezed)));
+}
 /** How much this person wants to go: nothing unless they are bold, and more
     the bolder; less when hungry or tired, like any long walk. */
 export function exploreWeight(p, hunger, rested) {
   if (p.child || p.sick || personAge(p) < 16) return 0;
   const bold = p.traits?.bold ?? 1;
   if (bold < EXPLORE.bold) return 0;
-  return EXPLORE.chance * (1 + (bold - EXPLORE.bold) * 4) * rested * (1 - 0.8 * hunger);
+  /* And a crowded band sends more of them, and stops letting hunger hold them
+     back: running short of ground is the whole reason to go and find more. */
+  const crowd = crowding(p.camp);
+  return EXPLORE.chance * (1 + (bold - EXPLORE.bold) * 4) * rested
+    * (1 - 0.8 * hunger * (1 - crowd)) * (1 + EXPLORE.push * crowd);
 }
 
 /* The emptiest of a handful of far places: as far from any fire as can be
@@ -106,21 +125,34 @@ export function siteWorth(x, z) {
   return ground + water + stone + room + (flat - EXPLORE.flat) * 2;
 }
 
-/** Arrived: the place looked over, and remembered if it is worth it. */
+/** Arrived: the place looked over, and remembered if it is worth it.
+
+    Not only the spot they stopped on. That was picked at random, and in hill
+    country a random spot is usually a slope - so a valley with good flat
+    ground a stone throw away was scored nothing and forgotten. They look round
+    it and keep the best of what a camp could actually stand on. */
 export function surveyDone(p) {
   const camp = p.camp;
-  const worth = siteWorth(p.x, p.z);
+  let x = p.x, z = p.z, worth = siteWorth(p.x, p.z);
+  for (const r of EXPLORE.lookRings) {
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      const tx = p.x + Math.cos(a) * r, tz = p.z + Math.sin(a) * r;
+      const w = siteWorth(tx, tz);
+      if (w > worth) { worth = w; x = tx; z = tz; }
+    }
+  }
   if (!(worth > 0)) return;
   camp.finds ||= [];
   const best = camp.finds[0]?.worth ?? 0;
-  const again = camp.finds.find((f) => Math.hypot(f.x - p.x, f.z - p.z) < 60);
+  const again = camp.finds.find((f) => Math.hypot(f.x - x, f.z - z) < 60);
   if (again) again.worth = worth;
-  else camp.finds.push({ x: Math.round(p.x), z: Math.round(p.z), worth });
+  else camp.finds.push({ x: Math.round(x), z: Math.round(z), worth });
   camp.finds.sort((a, b) => b.worth - a.worth);
   if (camp.finds.length > EXPLORE.keep) camp.finds.length = EXPLORE.keep;
   if (worth > best && worth > EXPLORE.notable) {
-    const far = Math.round(Math.hypot(p.x - camp.x, p.z - camp.z));
-    logEvent('find', `${who(p)} found good ground ${far} m from the fire`, p.x, p.z);
+    const far = Math.round(Math.hypot(x - camp.x, z - camp.z));
+    logEvent('find', `${who(p)} found good ground ${far} m from the fire`, x, z);
   }
   p.explored = simDay;
 }

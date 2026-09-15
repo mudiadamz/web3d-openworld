@@ -39,6 +39,12 @@ export const PATH = {
      dozen crossings take fresh grass to bare earth — a route somebody runs
      twice a day is a path within the week, and a walk taken once is not. */
   perMetre: 0.055,
+  /* And what an explorer leaves: the same walk, counted two and a half times.
+     Somebody who crosses a ridge once to see what is past it would otherwise
+     leave a line nobody can see that is gone within the month. A round trip
+     now thins the grass and eases the next walker, and a second puts it on the
+     map: the way over is marked because somebody went to mark it. */
+  blaze: 2.5,
   showing: 0.22,        // wear at which the grass starts to thin
   bare: 0.72,           // and at which it stops growing at all
   /* And where a path is worn enough to be worth drawing on a map. The same
@@ -181,7 +187,7 @@ function bump(i, j, amount) {
    its longest, which is most of a cell, and an unwatched step is longer still —
    stamping only where they landed leaves a dotted line with gaps a path cannot
    be made of. */
-export function tread(x0, z0, x1, z1) {
+export function tread(x0, z0, x1, z1, weight = 1) {
   if (!wear) return;
   const dx = x1 - x0, dz = z1 - z0;
   const dist = Math.hypot(dx, dz);
@@ -191,7 +197,7 @@ export function tread(x0, z0, x1, z1) {
      That is the point: what a cell collects is the distance walked across it,
      so crossing a cell corner to corner wears it more than clipping an edge,
      and neither depends on where the frame boundaries happened to fall. */
-  const each = (dist / steps) * PATH.perMetre;
+  const each = (dist / steps) * PATH.perMetre * weight;
   for (let s = 1; s <= steps; s++) {
     const t = s / steps;
     bump(cellX(x0 + dx * t), cellZ(z0 + dz * t), each);

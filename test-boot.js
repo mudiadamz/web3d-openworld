@@ -2648,11 +2648,19 @@ if (measuring('survive')) {
               home.finds = [];
               p.x = spot.x; p.z = spot.z;
               EX.surveyDone(p);
+              /* Kept at the best ground in sight of where they stood, not at the
+                 exact spot: an explorer looks round before deciding (surveyDone).
+                 So the find sits inside the furthest ring, and it is never worse
+                 than the spot they were standing on - that is the promise. */
+              const found = home.finds[0], stood = EX.siteWorth(spot.x, spot.z);
               check('an explorer who finds good ground puts it on the band\'s list',
-                home.finds.length === 1 && Math.hypot(home.finds[0].x - spot.x, home.finds[0].z - spot.z) < 2,
+                home.finds.length === 1 && Boolean(found)
+                && Math.hypot(found.x - spot.x, found.z - spot.z) <= EX.EXPLORE.lookRings.at(-1) + 2
+                && found.worth >= stood - 1e-9,
                 JSON.stringify(home.finds));
               const site = EX.foundSite(home);
-              check('and a band splitting settles there', Boolean(site) && Math.hypot(site.x - spot.x, site.z - spot.z) < 2
+              check('and a band splitting settles there', Boolean(site) && Boolean(found)
+                && Math.hypot(site.x - found.x, site.z - found.z) < 2
                 && home.finds.length === 0, JSON.stringify(site));
             } else check('there is good ground somewhere to find', false, 'no spot on the island scored above nothing');
             home.finds = findsWas;

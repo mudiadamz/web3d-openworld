@@ -7142,6 +7142,21 @@ group('water');
     && /if \(!inWater\(x, z\) \|\| side < 0\) return/.test(moduleSource('wood.js')));
 }
 
+group('past the next valley');
+
+/* A crowded band sends more of its bold over the hill, and hunger stops being
+   the reason to stay: running out of ground is the reason to go. */
+check('crowding sends explorers out',
+  moduleSource('explore.js').includes('const crowd = crowding(p.camp);')
+  && moduleSource('explore.js').includes('(1 - 0.8 * hunger * (1 - crowd))')
+  && moduleSource('explore.js').includes('STAGES[camp.stage || 0]'));
+/* A valley counts for its best ground, not for the slope somebody stopped on. */
+check('an explorer looks round where they stop',
+  moduleSource('explore.js').includes('for (const r of EXPLORE.lookRings)'));
+/* And the way over is worn in by the one who went, not left for a dozen more. */
+check('an explorer blazes the trail',
+  moduleSource('move.js').includes("p.job === 'explore' ? PATH.blaze : 1")
+  && moduleSource('paths.js').includes('function tread(x0, z0, x1, z1, weight = 1)'));
 group('loading over a slow link');
 
 /* Over a tunnel every file is a round trip of half a second or more. The page

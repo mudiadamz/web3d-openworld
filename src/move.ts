@@ -24,7 +24,7 @@ import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPe
 import {
   CAMP_CLEARING, CITY, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
-import { buildPaths, groundPace, pathSwerve, TREAD, tread } from './paths.js';
+import { PATH, buildPaths, groundPace, pathSwerve, TREAD, tread } from './paths.js';
 import {
   LIFE, DUSK_AT, FISH, FOOD, GROUND, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, otherCamp, personAge, nearestShore, pickFishing, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, logEvent, updateEconomy
 } from './life.js';
@@ -110,7 +110,7 @@ export function stepPerson(p, step) {
        ground people got across — not the ground they aimed at. Somebody who
        spends the whole errand blocked by a spur wears the way round it, which
        is what a path round a spur is. */
-    tread(p.x, p.z, nx, nz);
+    tread(p.x, p.z, nx, nz, p.job === 'explore' ? PATH.blaze : 1);
     p.x = nx; p.z = nz; p.yaw = a;
     p.phase += (step / (PERSON.stride * p.scale)) * Math.PI * 2;
     return true;
