@@ -1657,8 +1657,14 @@ the middle of the island, and the sea's swell dies before the coast, so no
 wave stands up through the plains. The lowest inland ground is a valley floor above the
 water, so the only water inland is a lake where a creek ends.
 
-Bands split very rarely. A band holds together until it is eighty strong (more
-for a tribe, a village or a city), waits thirty years between one band leaving
+A city's wall is a wall: people go in and out only through its gates, and go
+round to one if that is the way. Roads between places are few: a trunk joins
+the cities, entering each by a gate, and only villages close to it get a road.
+A village next door that joins or is taken moves in, so the two become one town
+inside one wall; one further off keeps its own houses and flies the flag.
+
+Bands split very rarely. A band holds together until it is a hundred and sixty strong
+(four hundred for a tribe, eight hundred for a village, 1,440 for a city), waits thirty years between one band leaving
 and the next, and the whole island gets a new band no more often than every
 five years.
 

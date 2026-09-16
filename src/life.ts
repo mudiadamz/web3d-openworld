@@ -29,7 +29,7 @@ import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
 import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
-import { STAGES, calledOn, dealtWith, developmentOf, tradeEdge } from './society.js';
+import { STAGES, calledOn, dealtWith, developmentOf, mergeNeighbour, tradeEdge } from './society.js';
 
 /* -------------------------------------------------------------------------
    Food, and hunts that actually catch something
@@ -605,7 +605,7 @@ export function conquer(home, host, joined = false) {
   practise(home, 'conquest', CONQUEST.perTaking);
   logEvent('conquest', joined ? `${was} joined [${home.code}] ${home.name}, after years of dealing with them — it flies their flag now`
     : `[${home.code}] ${home.name} took ${was} — it flies their flag now`, host.x, host.z);
-  dressCamp(host);
+  if (!mergeNeighbour(home, host)) dressCamp(host);   // next door, they move in (society.js)
   renderTribes();
 }
 
@@ -894,8 +894,8 @@ export const SPLIT = {
      The multipliers above carry it the rest of the way: sixty for a tribe,
      eighty-four for a chiefdom, two hundred and forty for a city (society.js).
 
-     Now eighty, asked for: a band splitting is kept to the very least of it. */
-  at: 80,              // people in one camp before it is too many
+     Now a hundred and sixty, asked for: big settlements, splitting kept rare. */
+  at: 160,             // people in one camp before it is too many
   takes: 0.42,         // share of them who go
   /* Three and a half days is not a surplus, it is next week's dinner. Splitting
      on it turned one band that was coping into two that were not — measured

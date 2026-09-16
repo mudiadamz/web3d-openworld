@@ -25,6 +25,7 @@ import {
   CAMP_CLEARING, CITY, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, peopleSeed, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
 import { PATH, buildPaths, groundPace, pathSwerve, TREAD, tread } from './paths.js';
+import { viaGate, wallBlocks } from './walls.js';
 import {
   LIFE, DUSK_AT, FISH, FOOD, GROUND, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, illIn, findPrey, fishRichness, forageRichness, groundOf, huntReach, otherCamp, personAge, nearestShore, pickFishing, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, logEvent, updateEconomy
 } from './life.js';
@@ -104,7 +105,7 @@ export function canStand(x, z, flat = WALKABLE) {
 export function stepPerson(p, step) {
   const tryAt = (a, flat) => {
     const nx = p.x + Math.sin(a) * step, nz = p.z + Math.cos(a) * step;
-    if (!canStand(nx, nz, flat)) return false;
+    if (!canStand(nx, nz, flat) || wallBlocks(p.x, p.z, nx, nz)) return false;     // walls.js: through a gate or not at all
     /* Where the wear goes in, and the only place it can: this is the one
        function in the world that moves a person, so a path is exactly the
        ground people got across — not the ground they aimed at. Somebody who
@@ -1355,7 +1356,7 @@ export function updatePeople(dt, day) {
          the one you are playing, who goes where they are pointed; not after
          something that moves, or away from something that frightens; and not
          on the last few metres, where the goal is the goal. */
-      const aim = Math.atan2(tdx, tdz);
+      const [wx, wz] = viaGate(p.x, p.z, p.targetX, p.targetZ), aim = Math.atan2(wx - p.x, wz - p.z);
       if (p.onRaft || p.led || p.panic > 0 || p.prey || p.hiding || dist < TREAD.near) p.swerve = 0;
       else if ((p.swerveAt || 0) <= worldClock) {
         p.swerve = pathSwerve(p.x, p.z, aim, p.swerve || 0);

@@ -270,6 +270,7 @@ export interface Look {
     and is a piece of work of its own; this is the shape written down first, and
     the three places that build one are checked against it. */
 export interface Camp {
+  mergedInto?: number;          // the band this one moved in with (society.js)
   newcomers?: number; newcomersSaid?: number;   // who came to live in a city, and when that was last said (society.js)
   ill?: number;                 // how many lie ill, counted once a step (ill.js)
   // Who they are. The colour is a getter off the code, so it is never stored.

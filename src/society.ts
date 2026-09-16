@@ -1,6 +1,7 @@
 import { P } from './params.js';
 import { luck } from './clock.js';
-import { camps, dressCamp, homeward, paintPeople, people } from './people.js';
+import { camps, dressCamp, dressStores, homeward, paintPeople, people } from './people.js';
+import { campReach } from './settlement.js';
 import { CONQUEST, VISIT, conquer, logEvent, personAge, simDay } from './life.js';
 import { recordMove } from './wildlife.js';
 import { SKILL, SKILLS, practise } from './skills.js';
@@ -384,4 +385,45 @@ export function cityDraw(days) {
       to.newcomers = 0;
     }
   }
+}
+
+/* -------------------------------------------------------------------------
+   Moving in with the neighbours
+
+   A village that joins or is taken by a band next door does not stay a town of
+   its own behind its own wall a stone's throw away. Its people move in: they
+   become the other band's people, walk over, and are housed there, and what
+   they had put by goes with them, so the two are one town with one wall round
+   it. The ground they left keeps its dead and grows over. Further off than
+   MERGE.near, edge to edge, a village stays where it is and flies the flag,
+   as before.
+   ------------------------------------------------------------------------- */
+export const MERGE = { near: 120 };    // metres between the two places' edges
+
+export function mergeNeighbour(home, host) {
+  if (home.gone || host.gone || home === host) return false;
+  const gap = Math.hypot(home.x - host.x, home.z - host.z) - campReach(home) - campReach(host);
+  if (gap > MERGE.near) return false;
+  const moving = people.filter((p) => p.camp === host);
+  for (const p of moving) {
+    recordMove(p, host, home);
+    p.camp = home;
+    p.goingHome = true;                   // and they walk over (move.js)
+  }
+  home.food = Math.max(0, home.food) + Math.max(0, host.food);
+  home.stone = Math.min(SKILL.stoneMax, (home.stone || 0) + (host.stone || 0));
+  home.wood = (home.wood || 0) + (host.wood || 0);
+  home.stock = (home.stock || 0) + (host.stock || 0);
+  host.food = 0; host.stone = 0; host.wood = 0; host.stock = 0;
+  host.storesUp = 0;
+  home.pop = (home.pop || 0) + moving.length;
+  host.pop = 0;
+  dressStores(host);
+  dressCamp(host);                        // nobody left: its houses come down
+  host.gone = true;
+  host.mergedInto = home.index;
+  logEvent('conquest', `the people of ${host.villageName || host.name} moved in with [${home.code}] ${home.name}: one town now`, home.x, home.z);
+  dressCamp(home);                        // and are housed with them
+  paintPeople();
+  return true;
 }

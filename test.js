@@ -6093,7 +6093,7 @@ const comfortable = Number((html.match(/comfortable: ([\d.]+),/) || [, NaN])[1])
 /* Kept to a minimum since, on request: a band holds together well past what its
    ground feeds before anybody leaves, and the island gets one new band at a time. */
 check('a band splits only when it is big, and rarely',
-  splitAt >= 60 && splitAt <= 120, `at ${splitAt}`);
+  splitAt >= 120 && splitAt <= 300, `at ${splitAt}`);
 check('and a new band on the whole island no more often than every few years',
   /anyYears: (\d+),/.test(moduleSource('life.js'))
   && /!camps\.some\(\(k\) => simDay - \(k\.splitAt \?\? -Infinity\) <= SPLIT\.anyYears \* P\.yearLength\)/.test(moduleSource('life.js')));
@@ -8372,6 +8372,9 @@ group('roads');
   check('one network, not a road from a city to every village: each place joins the nearest road, at a junction',
     /const \[px, pz\] = nearestOnSeg\(s0\.x, s0\.z, ax, az, bx, bz\);/.test(st) && /segs\.push\(best\.road\);/.test(st)
     && !/paveRoad\(\.\.\.edge\(c, v\)/.test(st));
+  check('the trunk joins the cities, and only a village close to it gets a road',
+    /connect\(trunk\.slice\(1\), Infinity\);/.test(st) && /connect\(towns, ROADS\.spur\);/.test(st)
+    && /if \(!best \|\| least > most\) return;/.test(st));
   check('a road leaves and enters a city only by a gate, and never goes through a wall',
     /walled\.has\(c\) \? cityGates\(c\)\.map\(\(g\) => \(\{ x: g\.ox, z: g\.oz \}\)\)/.test(st)
     && /\(throughWall\(sx, sz, tx, tz\) \? 1e7 : 0\)/.test(st) && /const gates = cityGates\(camp\)\.map\(\(g\) => g\.a\);/.test(st));
@@ -8381,7 +8384,7 @@ group('roads');
   check('and the roads laid before are taken up before they are laid again',
     /roadsFor = key;\s*liftRoads\(\);/.test(st) && /function liftRoads\(\)/.test(moduleSource('paths.js')));
   check('and the cities are all joined, by the shortest roads that do it',
-    /every city is still\s+reachable from every other/.test(st) && /join\(nodes\[0\]\);/.test(st));
+    /every city\s+is still reachable from every other/.test(st) && /join\(trunk\[0\]\);/.test(st));
   check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
 }
 
@@ -8479,6 +8482,22 @@ group('what a city has going for it');
   check('more from a hungry band, to a fed city, and further for a better one',
     /most \* \(0\.6 \+ \(home\.hunger \|\| 0\)\)/.test(so) && /cityAppeal\(c\) \/ \(1 \+ Math\.hypot/.test(so));
   check('on the books, watched or run ahead', (moduleSource('main.js').match(/cityDraw\(owed\);/g) || []).length === 2);
+}
+
+group('walls and neighbours');
+{
+  const wl = moduleSource('walls.js'), mv = moduleSource('move.js'), so = moduleSource('society.js');
+  check('a step through a city wall is refused unless it is through a gate',
+    /if \(!canStand\(nx, nz, flat\) \|\| wallBlocks\(p\.x, p\.z, nx, nz\)\) return false;/.test(mv)
+    && /if \(in0 !== in1 && !inGate\(w, \(x0 \+ x1\) \/ 2, \(z0 \+ z1\) \/ 2\)\) return true;/.test(wl));
+  check('and whoever has to cross one heads for the gate on the way, and round the wall to it',
+    /const \[wx, wz\] = viaGate\(p\.x, p\.z, p\.targetX, p\.targetZ\), aim = Math\.atan2\(wx - p\.x, wz - p\.z\);/.test(mv)
+    && /round the wall, a stretch at a time/.test(wl));
+  check('the walls walked against are the walls built', /standing\.push\(\{ x: camp\.x, z: camp\.z, r: R, gates, half \}\)/.test(moduleSource('settlement.js'))
+    && /setWalls\(standing\);/.test(moduleSource('settlement.js')));
+  check('a neighbour joined or taken moves in: one town, one wall',
+    /if \(!mergeNeighbour\(home, host\)\) dressCamp\(host\);/.test(moduleSource('life.js'))
+    && /p\.camp = home;/.test(so) && /host\.gone = true;/.test(so) && /if \(gap > MERGE\.near\) return false;/.test(so));
 }
 
 /* ---- report ---- */
