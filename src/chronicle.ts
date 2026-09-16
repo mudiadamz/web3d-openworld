@@ -12,7 +12,7 @@ import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from '.
 import {
   FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood, wealthOf, energyOutOfTen, isMilestone, milestonesOnly, personAge, simDay, skillTier, runId, tollOf, traitWord, who
 } from './life.js';
-import { DIFFICULTY_WORDS, SKILL_DIFFICULTY, SKILL_HOW, SKILL_NEEDS } from './skills.js';
+import { DIFFICULTY_WORDS, SKILL_DIFFICULTY, skillHow, skillNeeds } from './skills.js';
 import { fruitNear } from './orchard.js';
 import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
 import { ORES, depositRadius, deposits } from './quarries.js';
@@ -259,7 +259,7 @@ export function renderTribeCard() {
     return `<tr><td class="n">${SKILLS[k].of}</td><td>${pct}<span>/100</span></td>`
       + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td>`
       + `<td class="n d${SKILL_DIFFICULTY[k] || 0}">${DIFFICULTY_WORDS[SKILL_DIFFICULTY[k]] || ''}</td>`
-      + `<td class="n how">${SKILL_NEEDS[k] || '—'}</td><td class="n how">${SKILL_HOW[k] || ''}</td></tr>`;
+      + `<td class="n how">${skillNeeds(camp, k)}</td><td class="n how">${skillHow(camp, k)}</td></tr>`;
   }).join('');
 
   /* A tribe of more than one village, and what a taken village used to be. */

@@ -4868,7 +4868,18 @@ check('with the number on it, out of a hundred',
   /<td>\$\{pct\}<span>\/100<\/span><\/td>/.test(html));
 check('and the rung it is on, in words',
   /<td class="n">\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/td>`/.test(html)
-  && /<td class="n how">\$\{SKILL_NEEDS\[k\] \|\| '—'\}<\/td><td class="n how">\$\{SKILL_HOW\[k\] \|\| ''\}<\/td><\/tr>/.test(html));
+  && moduleSource('chronicle.js').includes('${skillNeeds(camp, k)}</td><td class="n how">${skillHow(camp, k)}'));
+/* Both columns are about the next rung rather than the skill in general: what
+   has to be reached, and how much of it is left to do. */
+check('the needs column asks for the next rung',
+  moduleSource('skills.js').includes('function skillNeeds')
+  && moduleSource('skills.js').includes('if (v <= 0 && SKILL_NEEDS[k]) return SKILL_NEEDS[k];'));
+check('and how it is learned says how far there is left to go',
+  moduleSource('skills.js').includes('next.at - Math.round(v * 100)'));
+/* Mastery has no reachable step - a band caps at 1 and the last rise asks for
+   more than that - so it is never held out as something to work towards. */
+check('and no rung is offered that a band cannot reach',
+  moduleSource('skills.js').includes('at > 100 ? null'));
 /* How hard each is, and what it waits on — easiest first. */
 {
   const table = (name) => (html.match(new RegExp(`${name} = \\{([\\s\\S]*?)\\n\\};`)) || [, ''])[1];

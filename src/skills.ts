@@ -450,6 +450,44 @@ export function skillTier(v, told = 0) {
   return tier;
 }
 
+/** What the next rung asks for, out of a hundred, or null where there is no
+    next one to ask for.
+
+    Mastery has no reachable step. SKILL_STEPS tops out at 1 and a rise needs
+    SKILL_RISE past it, while practise caps a band at 1 exactly - so the last
+    rung is never announced, and nothing here offers it as something to aim
+    at. A band at 100/100 is simply as far along as it goes. */
+export function nextRung(v) {
+  const tier = skillTier(v);
+  if (tier >= SKILL_STEPS.length) return null;
+  const at = Math.round((SKILL_STEPS[tier] + SKILL_RISE) * 100);
+  return at > 100 ? null : { rung: SKILL_RUNGS[tier + 1], at };
+}
+
+/** The needs column on a band card: what has to happen before it climbs a
+    rung. While a skill has not started at all, the standing condition is the
+    answer - that is the thing in the way. After that it is the next rung and
+    the number that reaches it, rather than a fact about the skill that reads
+    the same at every level. */
+export function skillNeeds(camp, k) {
+  const v = camp?.skill?.[k] || 0;
+  if (v <= 0 && SKILL_NEEDS[k]) return SKILL_NEEDS[k];
+  const next = nextRung(v);
+  return next ? next.rung + ' at ' + next.at + '/100' : '\u2014';
+}
+
+/** And how to get there: where the work is done, and how much of it is left.
+    The place is the same at every rung - what changes is the distance, which
+    is the part worth reading. */
+export function skillHow(camp, k) {
+  const v = camp?.skill?.[k] || 0;
+  const how = SKILL_HOW[k] || '';
+  const next = nextRung(v);
+  if (!next) return how;
+  const left = Math.max(1, next.at - Math.round(v * 100));
+  const togo = left + ' to go';
+  return how ? how + ' \u00b7 ' + togo : togo;
+}
 export function announceSkill(camp, key) {
   const v = camp.skill[key];
   const told = camp.told[key] || 0;
