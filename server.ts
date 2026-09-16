@@ -37,7 +37,15 @@ function version() {
   if (versionKept && Date.now() - versionAt < 5000) return versionKept;
   let stated = '0.0.0';
   try { stated = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version || stated; } catch { /* keep 0.0.0 */ }
-  const git = (...args) => execFileSync('git', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  /* -c safe.directory, trusting this one repository for this one command. The
+     service runs as SYSTEM, the repository belongs to whoever cloned it, and
+     since 2.35.2 git refuses to read a repository somebody else owns - so run
+     as the person who cloned it this served 1.0.65, and run as the service it
+     quietly fell back to 1.0.0. Scoped to ROOT rather than safe.directory=*,
+     which would trust every repository on the machine. */
+  const trust = 'safe.directory=' + ROOT.split(String.fromCharCode(92)).join('/');
+  const git = (...args) => execFileSync('git', ['-c', trust, ...args],
+    { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
   let count = NaN;
   let commit = '';
   try { count = Number(git('rev-list', '--count', 'HEAD')); } catch { /* no repository here */ }
