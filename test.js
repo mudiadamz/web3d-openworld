@@ -7243,6 +7243,28 @@ check('and a village of the same tribe is not a border',
   moduleSource('society.js').includes('c.code === camp.code) continue;'));
 check('and it runs with the day\'s books, on both paths',
   (moduleSource('main.js').split('borderTension(owed);').length - 1) === 2);
+group('drawing a crowd');
+
+/* At two and a half thousand people every part of everybody went to the GPU
+   every frame: 7.7 million triangles, 6.8 million of them twice for shadows.
+   The person meshes are the record now, and only what is worth drawing is
+   copied out of them (crowd.js). */
+check('the record is not what is drawn',
+  moduleSource('crowd.js').includes('from.visible = false;'));
+check('and the copies go by another name, so whatever looks a part up by name still finds the record',
+  moduleSource('crowd.js').includes("mesh.name = 'crowd:' + from.name + suffix;"));
+check('nobody outside what the camera sees is drawn',
+  moduleSource('crowd.js').includes('if (!_frustum.intersectsSphere(_sphere)) continue;'));
+check('nor anything parked out of sight: a matrix of zeros is still every vertex to the GPU',
+  moduleSource('crowd.js').includes('if (src[o] === 0 && src[o + 1] === 0 && src[o + 2] === 0) return;'));
+check('and past a distance, a rougher figure without the parts too small to see', (() => {
+  const src = moduleSource('crowd.js');
+  const near = Number((src.match(/near: (\d+),/) || [])[1]);
+  return near >= 30 && near <= 150 && src.includes('const set = close ? body : bodyFar;')
+    && !/far: new Set\(\[[^\]]*'(hand|foot|neck)'/.test(src) ? true : `near ${near}`;
+})() === true);
+check('worked out every frame just before the render, so it sees the camera the render does',
+  /drawCrowd\(\);\s*renderer\.render\(scene, camera\);/.test(moduleSource('main.js')));
 group('which version this is');
 
 /* Worked out from the repository, so every commit is the next version without

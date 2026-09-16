@@ -40,6 +40,7 @@ import {
 } from './ui.js';
 import { updateLivestock } from './farming.js';
 import { borderTension, updateSociety } from './society.js';
+import { drawCrowd } from './crowd.js';
 
 /* -------------------------------------------------------------------------
    Loop
@@ -563,6 +564,8 @@ export function tick() {
   if (P.view === 'follow' && elapsed - lastCaption > 0.5) { lastCaption = elapsed; updateFollowCaption(); }
   renderTribes(elapsed);
 
+  // Only the people worth drawing, packed for the GPU (crowd.js).
+  drawCrowd();
   renderer.render(scene, camera);
 
   frames++;
