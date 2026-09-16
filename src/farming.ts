@@ -6,6 +6,7 @@ import { faunaMaterial, forageSeason, streamMaterial } from './scene.js';
 import { HIDDEN } from './world.js';
 import { lakeRadius, lakes, streams } from './creeks.js';
 import { luck } from './clock.js';
+import { cityEdge } from './society.js';
 import { CAMP_CLEARING, CAMP_PIECES, camps, dressCamp, joinGeometries, people, tribeGroup } from './people.js';
 import { practise } from './skills.js';
 import { BAG, bagAdd } from './bag.js';
@@ -308,7 +309,7 @@ export function farmDone(p) {
   if (learning || !watered) return;
   practise(camp, 'farming', FARM.perField);
   p.knows.farming = Math.max(p.knows.farming || 0, camp.skill.farming);
-  const got = FARM.crop * (0.3 + 0.7 * camp.skill.farming) * forageSeason * P.abundance;
+  const got = FARM.crop * (0.3 + 0.7 * camp.skill.farming) * forageSeason * P.abundance * cityEdge(camp, 'crop');
   if (!(got > 0)) return;
   p.haul += got;
   p.carry = 1;

@@ -29,7 +29,7 @@ import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
 import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
-import { STAGES, calledOn, dealtWith, developmentOf } from './society.js';
+import { STAGES, calledOn, dealtWith, developmentOf, tradeEdge } from './society.js';
 
 /* -------------------------------------------------------------------------
    Food, and hunts that actually catch something
@@ -722,7 +722,7 @@ export function arriveAtCamp(p, host) {
      who knows what to do with it learns faster than one that is handed stone. */
   const spareStone = (home.stone || 0) - SKILL.stonePerTool * 4;
   if (spareStone > 0 && (host.stone || 0) < SKILL.stoneMax * 0.5) {
-    const moved = spareStone * VISIT.gift * (1 + SKILL.tradeGift * home.skill.trade);
+    const moved = spareStone * VISIT.gift * (1 + SKILL.tradeGift * home.skill.trade) * tradeEdge(home, host);
     home.stone -= moved;
     host.stone = Math.min(SKILL.stoneMax, (host.stone || 0) + moved);
     dealtWith(home, host);                // and ties the two bands a little tighter (society.js)
@@ -733,7 +733,7 @@ export function arriveAtCamp(p, host) {
     /* How much of it actually moves. A band that is good at this gives more
        away, which reads backwards for about a second and then does not: the
        band with a name for dealing is the band that has dealt. */
-    const dealt = VISIT.gift * (1 + SKILL.tradeGift * ((home.skill.trade + host.skill.trade) / 2));
+    const dealt = VISIT.gift * (1 + SKILL.tradeGift * ((home.skill.trade + host.skill.trade) / 2)) * tradeEdge(home, host);
     const gift = surplus * Math.min(dealt, 1);
     home.food -= gift;
     host.food += gift;

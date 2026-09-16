@@ -6711,8 +6711,8 @@ check('it is made when there is time to make it',
 
 /* Trading: learned by doing it, like the graveyard pair. */
 check('trading is learned by trading, on both sides',
-  /practise\(home, 'trade', SKILL\.perCall\);\s*practise\(host, 'trade', SKILL\.perCall\);/.test(html)
-  && /practise\(home, 'trade', SKILL\.perDeal\);\s*practise\(host, 'trade', SKILL\.perDeal\);/.test(html));
+  /practise\(home, 'trade', SKILL\.perCall(?: \* cityEdge\(home, 'trade'\))?\);\s*practise\(host, 'trade', SKILL\.perCall(?: \* cityEdge\(host, 'trade'\))?\);/.test(html)
+  && /practise\(home, 'trade', SKILL\.perDeal(?: \* cityEdge\(home, 'trade'\))?\);\s*practise\(host, 'trade', SKILL\.perDeal(?: \* cityEdge\(host, 'trade'\))?\);/.test(html));
 check('a deal teaches more than the walk that led to it', (() => {
   const deal = Number((html.match(/perDeal: ([\d.]+)/) || [, 0])[1]);
   const call = Number((html.match(/perCall: ([\d.]+)/) || [, 0])[1]);
@@ -6810,7 +6810,7 @@ check('only what is spare, and only to a band that needs it',
   /if \(spareStone > 0 && \(host\.stone \|\| 0\) < SKILL\.stoneMax \* 0\.5\)/.test(html));
 check('and dealing in it teaches dealing',
   /host\.stone = Math\.min\(SKILL\.stoneMax, \(host\.stone \|\| 0\) \+ moved\);\s*dealtWith\(home, host\);/.test(html)
-  && /function dealtWith\(home, host\) \{\s*practise\(home, 'trade', SKILL\.perDeal\);\s*practise\(host, 'trade', SKILL\.perDeal\);/.test(html));
+  && /function dealtWith\(home, host\) \{\s*practise\(home, 'trade', SKILL\.perDeal(?: \* cityEdge\(home, 'trade'\))?\);\s*practise\(host, 'trade', SKILL\.perDeal(?: \* cityEdge\(host, 'trade'\))?\);/.test(html));
 
 /* -------------------------------------------------------------------------
    A save has to fit through the door
@@ -7942,7 +7942,7 @@ check('a saved memory comes back as it was, and an old save remembers nothing', 
     && back.places.length === 1 && back.places[0].x === 10 && back.places[0].z === -4
     && none.places.length === 0 && !none.famine ? true : JSON.stringify({ back, none });
 })() === true);
-check('a crop follows the season, and the island\'s ABUNDANCE', /\* forageSeason \* P\.abundance;/.test(farmSrc));
+check('a crop follows the season, and the island\'s ABUNDANCE', /\* forageSeason \* P\.abundance(?: \* cityEdge\(camp, 'crop'\))?;/.test(farmSrc));
 check('the job is chosen, sent, worked and told like the others',
   /\['farm', farmWeight\(p, hunger, rested\)\]/.test(html)
   && /if \(p\.job === 'farm'\) return farmSite\(p\);/.test(html)
@@ -8447,6 +8447,23 @@ group('the battery');
     /if \(now - lastDrawn < 1000 \/ cap - FRAME_SLACK_MS\) return;/.test(mn) && /const cap = ahead \? 0 : frameCap\(\);/.test(mn));
   check('thirty a second unless told otherwise, and less in the background',
     /maxFps: 30,/.test(moduleSource('params.js')) && /Math\.min\(P\.maxFps, FPS_UNFOCUSED\)/.test(mn));
+}
+
+group('what a city has going for it');
+{
+  const so = moduleSource('society.js');
+  check('a city deals better: learns trading faster, gives more, ties faster',
+    /practise\(home, 'trade', SKILL\.perDeal \* cityEdge\(home, 'trade'\)\);/.test(so)
+    && /TIES\[kind\] \* tradeEdge\(home, host\)/.test(so)
+    && /\) \* tradeEdge\(home, host\);/.test(moduleSource('life.js')));
+  check('and its field yields more', /P\.abundance \* cityEdge\(camp, 'crop'\);/.test(moduleSource('farming.js'))
+    && Number((so.match(/crop: ([\d.]+),/) || [, 1])[1]) > 1);
+  check('and the young come to it from all over the island, walking there',
+    /function cityDraw\(days\)/.test(so) && /p\.camp = to;/.test(so) && /p\.goingHome = true;/.test(so)
+    && /\(home\.pop \|\| 0\) >= CITY_EDGE\.keep/.test(so) && /!p\.moved/.test(so));
+  check('more from a hungry band, to a fed city, and further for a better one',
+    /most \* \(0\.6 \+ \(home\.hunger \|\| 0\)\)/.test(so) && /cityAppeal\(c\) \/ \(1 \+ Math\.hypot/.test(so));
+  check('on the books, watched or run ahead', (moduleSource('main.js').match(/cityDraw\(owed\);/g) || []).length === 2);
 }
 
 /* ---- report ---- */

@@ -1,6 +1,8 @@
 import { P } from './params.js';
-import { camps, dressCamp, people } from './people.js';
-import { CONQUEST, conquer, logEvent, simDay } from './life.js';
+import { luck } from './clock.js';
+import { camps, dressCamp, homeward, paintPeople, people } from './people.js';
+import { CONQUEST, VISIT, conquer, logEvent, personAge, simDay } from './life.js';
+import { recordMove } from './wildlife.js';
 import { SKILL, SKILLS, practise } from './skills.js';
 
 /* -------------------------------------------------------------------------
@@ -247,22 +249,22 @@ function tie(home, host, kind) {
   if (simDay - (tiedAt[key] ?? -Infinity) < P.yearLength / 4) return;
   tiedAt[key] = simDay;
   (host.tiedAt ||= {})[home.index + kind] = simDay;
-  const t = tieOf(home, host) + TIES[kind];
+  const t = tieOf(home, host) + TIES[kind] * tradeEdge(home, host);
   (home.ties ||= {})[host.index] = t;
   (host.ties ||= {})[home.index] = t;
 }
 
 /** A visit between two bands: both learn a little trading from the walk. */
 export function calledOn(home, host) {
-  practise(home, 'trade', SKILL.perCall);
-  practise(host, 'trade', SKILL.perCall);
+  practise(home, 'trade', SKILL.perCall * cityEdge(home, 'trade'));
+  practise(host, 'trade', SKILL.perCall * cityEdge(host, 'trade'));
   tie(home, host, 'call');
 }
 
 /** A deal between two bands: both learn trading from it properly. */
 export function dealtWith(home, host) {
-  practise(home, 'trade', SKILL.perDeal);
-  practise(host, 'trade', SKILL.perDeal);
+  practise(home, 'trade', SKILL.perDeal * cityEdge(home, 'trade'));
+  practise(host, 'trade', SKILL.perDeal * cityEdge(host, 'trade'));
   tie(home, host, 'deal');
 }
 
@@ -307,6 +309,79 @@ export function tradeTies(days) {
       if (other.ties) delete other.ties[camp.index];
       conquer(camp, other, true);
       return;
+    }
+  }
+}
+
+/* -------------------------------------------------------------------------
+   What a city has going for it
+
+   A city is where the island's dealing is done and its best fields are, and
+   people come to it. Three advantages, and each is one number:
+
+     - trading: a city learns it faster from every visit and every deal, gives
+       and gets more in a deal, and ties the bands it deals with to it faster —
+       which is how a city comes to have villages join it;
+     - farming: a city's field yields more a session, with the tools, the
+       stores and the hands to work it;
+     - and people: from anywhere on the island, the young leave a band that is
+       not a city and walk to one — more from a hungry band, more to a city that
+       is fed and good at dealing and farming, and further for a better one.
+       Once in a life, like staying with a band they visited, and never out of a
+       band too small to lose them.
+   ------------------------------------------------------------------------- */
+export const CITY_EDGE = {
+  trade: 1.5,          // trading learned, given and tied, dealing with a city
+  crop: 1.5,           // what a city's field yields a session
+  drawPerDay: 0.35,    // chance a day a band sends somebody to a city, at the most a city draws
+  far: 2000,           // metres at which a city draws half what it would next door
+  keep: 8,             // a band this small sends nobody
+  from: 16,            // years: old enough to go
+};
+
+export const isCity = (c) => (c?.stage || 0) >= STAGES.length - 1;
+/** A city's edge at this, or nothing for anywhere else. */
+export const cityEdge = (c, what) => (isCity(c) ? CITY_EDGE[what] : 1);
+/** Dealing with a city, on either side of the deal. */
+export const tradeEdge = (a, b) => (isCity(a) || isCity(b) ? CITY_EDGE.trade : 1);
+
+/* How much a city draws people: fed, and good at what makes a city worth
+   coming to. 0 to 1. */
+function cityAppeal(city) {
+  const s = city.skill || {};
+  return Math.max(0, 1 - (city.hunger || 0)) * (0.6 + 0.2 * Math.min(1, s.trade || 0) + 0.2 * Math.min(1, s.farming || 0));
+}
+
+/** On the books: the young of the island moving to its cities. */
+export function cityDraw(days) {
+  if (!(days > 0)) return;
+  const cities = camps.filter((c) => !c.gone && c.pop > 0 && isCity(c));
+  if (!cities.length) return;
+  for (const home of camps) {
+    if (home.gone || isCity(home) || !((home.pop || 0) >= CITY_EDGE.keep)) continue;
+    let to = null, most = 0;
+    for (const c of cities) {
+      const pull = cityAppeal(c) / (1 + Math.hypot(c.x - home.x, c.z - home.z) / CITY_EDGE.far);
+      if (pull > most) { most = pull; to = c; }
+    }
+    if (!to || luck() >= days * CITY_EDGE.drawPerDay * most * (0.6 + (home.hunger || 0))) continue;
+    const young = people.filter((p) => p.camp === home && !p.child && !p.moved && !p.sick && !p.led
+      && p.job !== 'raid' && personAge(p) >= CITY_EDGE.from && personAge(p) < VISIT.stayUnder);
+    if (!young.length) continue;
+    const p = young[(luck() * young.length) | 0];
+    p.moved = true;
+    recordMove(p, home, to);
+    p.camp = to;
+    p.hut = to.huts[(luck() * to.huts.length) | 0];
+    p.goingHome = true;                   // and they walk there, from wherever they are (move.js)
+    to.newcomers = (to.newcomers || 0) + 1;
+    paintPeople();
+    /* Said once a season a city, not once a person: a city that draws a dozen
+       a season would be most of the chronicle. */
+    if (simDay - (to.newcomersSaid ?? -Infinity) >= P.yearLength / 4) {
+      logEvent('joined', `${to.newcomers === 1 ? 'somebody' : `${to.newcomers} people`} came from across the island to live in [${to.code}] ${to.name}`, to.x, to.z);
+      to.newcomersSaid = simDay;
+      to.newcomers = 0;
     }
   }
 }

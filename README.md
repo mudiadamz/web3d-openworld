@@ -1656,6 +1656,12 @@ the middle of the island, and the sea's swell dies before the coast, so no
 wave stands up through the plains. The lowest inland ground is a valley floor above the
 water, so the only water inland is a lake where a creek ends.
 
+A city has advantages. It deals better: it learns trading faster from every
+visit and deal, a deal with it moves more, and the bands it deals with tie to
+it faster. Its field yields half as much again. And it draws people: the young
+leave bands all over the island and walk to the city — more from a hungry band,
+to a city that is fed and good at trading and farming.
+
 The big map has a Creeks layer: every creek, from the spring or glacier it
 rises at to the sea, lake or creek it ends in, drawn as wide as the water and
 widening downstream, sharp at any zoom, with a mark at each source.
