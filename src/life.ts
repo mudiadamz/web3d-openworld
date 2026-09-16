@@ -20,7 +20,7 @@ import { clearOfCamps, foundSite } from './explore.js';
 import { restHeal } from './vitals.js';
 import {
   type Camp, type Person,
-  BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, dressStores, drawGraves, growCamps, growPeople, layoutCamp, paintPeople, people, personParts, storesFor
+  BUILDS, GARMENT, HAIR, MONUMENT_MAX, SKIN, buryPerson, campCapacity, camps, dressCamp, dressStores, drawGraves, growCamps, growPeople, layoutCamp, paintPeople, people, peopleSeed, personParts, storesFor
 } from './people.js';
 import { PATH, fadePaths } from './paths.js';
 import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
@@ -1162,7 +1162,7 @@ export function splitCamp(parent) {
   /* Checked before a camp is built rather than after, because a split that
      cannot be made viable should leave no trace at all. */
   if (!pickLeavers(parent, chief)) return false;
-  const rng = mulberry32((P.seed ^ 0x5b1f7) + camps.length * 7717 + Math.floor(simDay));
+  const rng = mulberry32((peopleSeed() ^ 0x5b1f7) + camps.length * 7717 + Math.floor(simDay));
   // The best place the band's explorers found, or the old way (explore.js).
   const site = foundSite(parent) || newCampSite(rng);
   if (!site) return false;

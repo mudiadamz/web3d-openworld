@@ -22,7 +22,7 @@ import {
 } from './wildlife.js';
 import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
 import {
-  CAMP_CLEARING, CITY, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
+  CAMP_CLEARING, CITY, CIVIC, campReach, HEARTHS, buildCamps, buildGraves, buildNearParts, buildPeople, campParts, camps, chooseCampSites, hideNearParts, homeFire, homeward, inCamp, nearParts, nearestFire, people, peopleSeed, personParts, resetSmoke, setPersonParts, smoke, smokeUniforms, tribeGroup
 } from './people.js';
 import { PATH, buildPaths, groundPace, pathSwerve, TREAD, tread } from './paths.js';
 import {
@@ -1847,7 +1847,7 @@ export function buildWorld() {
      carry on from wherever the last one had got to — otherwise loading the same
      seed twice in one session gives two different histories, which is the bug
      this whole thing exists to remove. */
-  seedSim(P.seed);
+  seedSim(peopleSeed());
   disposeWorld();
   buildField(q.seg);
   // Nobody has walked anywhere yet, and this is the only place that is true.

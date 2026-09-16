@@ -1184,7 +1184,7 @@ check('the simulation has a stream of its own', /let simRng = mulberry32\(1\);/.
   && /const luck = \(\) => simRng\(\);/.test(html)
   && /function seedSim\(seed\)/.test(html));
 check('and building a world goes back to the start of it',
-  /seedSim\(P\.seed\);\n  disposeWorld\(\);/.test(html));
+  /seedSim\(peopleSeed\(\)\);\n  disposeWorld\(\);/.test(html));
 /* The rule that keeps it honest. Anything skipped while the world runs
    unwatched must not draw from this stream, or the same seed lands in two
    different places depending on whether somebody was looking. */
@@ -4431,8 +4431,50 @@ check('a restart is not held up by a page still listening for it',
   /for \(const stream of devStreams\) stream\.end\(\);\n\s*listening\.close\(/.test(serverSrc));
 
 check('the button clears the browser\'s copies as well as the server\'s',
-  ['WORLD_STORE', 'STATE_STORE', 'CHRONICLE_STORE'].every((k) =>
+  ['WORLD_STORE', 'STATE_STORE', 'CHRONICLE_STORE', 'MAP_LAYERS_STORE', 'FOCUS_STORE'].every((k) =>
     new RegExp(`for \\(const key of \\[[^\\]]*${k}`).test(html)));
+/* A list is how the map's layers and the person being followed were left
+   behind, so anything else under the page's prefix goes too. */
+check('and anything else the page ever kept under its name',
+  /const key = localStorage\.key\(i\);\s*if \(key\?\.startsWith\('openworld\.'\)\) localStorage\.removeItem\(key\);/.test(html)
+  && ['CHRONICLE_STORE', 'STATE_STORE', 'WORLD_STORE', 'MAP_LAYERS_STORE', 'FOCUS_STORE'].every((k) =>
+    new RegExp(`${k} = 'openworld\\.`).test(html)));
+check('and the server empties every table and then the file itself',
+  /const tables = \['events', 'samples', 'tribes', 'state', 'worlds', 'runs'\];/.test(dbSrc)
+  && /PRAGMA wal_checkpoint\(TRUNCATE\)/.test(dbSrc) && /db\.exec\('VACUUM'\)/.test(dbSrc));
+
+/* -------------------------------------------------------------------------
+   A new people on the same island
+
+   Delete world took the ground with the people. Reset population keeps the
+   ground - the seed - and puts different people on it.
+   ------------------------------------------------------------------------- */
+check('reset population asks twice, like everything that throws something away',
+  /arm\(\$\('resetPopulation'\), 'Reset population', resetPopulation\);/.test(html)
+  && /id="resetPopulation"[^>]*>Reset population<\/button>/.test(html) && !/id="deleteWorld"/.test(html));
+check('and keeps the island: the seed is not touched, and the world stays on the shelf', (() => {
+  const at = html.indexOf('async function resetPopulation');
+  const fn = html.slice(at, html.indexOf('\n}', at));
+  return at > 0 && !/P\.seed =/.test(fn) && !/worlds = /.test(fn) && /rebuild\(\);/.test(fn)
+    && /setPeopleSalt\(1 \+ /.test(fn) ? true : fn.slice(0, 120);
+})() === true);
+check('the people come from their own seed, and the ground does not', (() => {
+  const people = moduleSource('people.js');
+  const fromPeople = ['0x5eed0c47', '0xc0ffee', '0x77aa1234'].every((k) => people.includes('mulberry32(peopleSeed() ^ ' + k)
+    || people.includes('mulberry32((peopleSeed() ^ ' + k));
+  const ground = ['noise.js', 'creeks.js', 'world.js', 'quarries.js'].every((m) => !moduleSource(m).includes('peopleSeed'));
+  return fromPeople && ground && /const peopleSeed = \(\) => P\.seed \^ peopleSalt;/.test(people) ? true
+    : JSON.stringify({ fromPeople, ground });
+})() === true);
+check('and the island\'s first people are the ones it always had: salt nought changes nothing',
+  /let peopleSalt = 0;/.test(html));
+check('which people is kept with the world, and entering another world starts from its first',
+  /ps: peopleSalt \|\| undefined,/.test(html) && /setPeopleSalt\(st\.ps \| 0\);/.test(html)
+  && /P\.seed = seed \| 0;\s*\/\/[^\n]*\n\s*setPeopleSalt\(0\);/.test(html));
+check('the old people\'s chronicle goes, here and on the server, and nothing else there does',
+  html.includes("fetch(`/api/events?seed=${seed}`, { method: 'DELETE' })")
+  && /if \(path === '\/api\/events' && req\.method === 'DELETE'\) \{[\s\S]{0,300}?db\.forgetEvents\(seed\);/.test(serverSrc)
+  && /forgetEvents\(seed\) \{\s*db\.prepare\('DELETE FROM events WHERE seed = \?'\)\.run\(seed \| 0\);\s*\},/.test(dbSrc));
 /* The runs table goes with everything else, so the id the page is holding
    points at nothing — anything written afterwards would be orphaned. */
 check('and registers a new run, because the old id points at nothing',
@@ -6512,7 +6554,7 @@ check('a band raises something of its own over its dead',
    raised different things and neither of them chose to. */
 check('the form is theirs, and settled once',
   /if \(camp\.stonesPlan\) return camp\.stonesPlan;/.test(artSrc)
-  && /mulberry32\(\(camp\.index \+ 1\) \* 7919 \^ \(P\.seed \| 0\)\)/.test(artSrc));
+  && /mulberry32\(\(camp\.index \+ 1\) \* 7919 \^ \(peopleSeed\(\) \| 0\)\)/.test(artSrc));
 check('and it goes up over years rather than appearing',
   /const up = Math\.round\(plan\.length \* \(camp\.skill\?\.art \|\| 0\)\)/.test(artSrc));
 /* Four hundred graves redrawn for a number nobody can see is four hundred

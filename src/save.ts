@@ -9,8 +9,8 @@ import {
 } from './wildlife.js';
 import {
   type Person,
-  BUILDS, GARMENT, HAIR, SKIN, campFromRecord, camps, drawGraves, graves, growPeople, paintPeople, people,
-  setGraves
+  BUILDS, GARMENT, HAIR, SKIN, campFromRecord, camps, drawGraves, graves, growPeople, paintPeople, people, peopleSalt,
+  setGraves, setPeopleSalt
 } from './people.js';
 import {
   SKILLS, applyAge, bornCount, diedCount, hidePeopleFrom, knowsFrom, logEvent, peopleCapacity,
@@ -45,6 +45,8 @@ export function snapshot() {
   return {
     v: STATE_VERSION,
     seed: P.seed,
+    // Which people, when not the island's first (people.js, peopleSalt).
+    ps: peopleSalt || undefined,
     time: r2(P.time),
     day: r2(simDay),
     born: bornCount,
@@ -160,6 +162,7 @@ export function clearSavedState() {
 export function applySavedWorld(st) {
   if (!st) return;
   P.seed = st.seed | 0;
+  setPeopleSalt(st.ps | 0);
   P.time = st.time;
   setSimDay(st.day);
   setBornCount(st.born | 0);

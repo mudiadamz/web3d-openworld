@@ -285,6 +285,14 @@ const listening = createServer(async (req, res) => {
         return json(res, 200, { ok: true });
       }
       if (path === '/api/worlds') return json(res, 200, db.worlds());
+      /* One world's chronicle and nothing else: a new people on the same island
+         starts a history of its own, and the world stays on the shelf. */
+      if (path === '/api/events' && req.method === 'DELETE') {
+        const seed = Number(url.searchParams.get('seed'));
+        if (!Number.isFinite(seed)) return json(res, 400, { error: 'seed required' });
+        db.forgetEvents(seed);
+        return json(res, 200, { ok: true });
+      }
 
       /* Everything, gone. This was taken out once, on the reasoning that a
          single request should not be able to remove everything there is — and

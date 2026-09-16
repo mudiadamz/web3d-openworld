@@ -115,11 +115,22 @@ export function clearTribe() {
   smoke = null;
 }
 
+/* Which people this island has. The ground comes from P.seed alone; the bands
+   on it come from P.seed mixed with this, so "Reset population" (ui.js) can put
+   a different people on the same island by changing it - new sites, new names,
+   new ages, a new history - and leave every hill and stream where it was.
+
+   Nought is the island's first people, and XOR with nought changes nothing, so
+   every world built before there was such a thing is built exactly as it was. */
+export let peopleSalt = 0;
+export function setPeopleSalt(v) { peopleSalt = v | 0; }
+export const peopleSeed = () => P.seed ^ peopleSalt;
+
 /* Sites are chosen before the trees go in, so buildTrees can leave a clearing
    and fillTile can leave the ground bare. A camp in a thicket would be wrong,
    and cutting the trees afterwards would mean rebuilding them. */
 export function chooseCampSites(count) {
-  const rng = mulberry32(P.seed ^ 0x5eed0c47);
+  const rng = mulberry32(peopleSeed() ^ 0x5eed0c47);
   for (let i = 0; i < count; i++) {
     let best = null, bestFlat = 0;
     for (let t = 0; t < 200; t++) {
@@ -154,7 +165,7 @@ export function chooseCampSites(count) {
       if (flat > 0.985) break;                    // good enough, stop looking
     }
     if (!best) continue;
-    const crng = mulberry32((P.seed ^ 0xc0ffee) + i * 977);
+    const crng = mulberry32((peopleSeed() ^ 0xc0ffee) + i * 977);
     const voice = tribeVoice(crng);
     // The name first, because the code is a shorthand for it.
     const name = uniqueName(crng, 2 + ((crng() * 2) | 0), voice);
@@ -205,7 +216,7 @@ export function campFromRecord(index, x, z, name, founded) {
   if (index >= campCapacity) growCamps(index + 1);
   /* Its own rolls, as a camp founded in play gets them (life.js, splitCamp):
      the same band on the same day draws the same names for its children. */
-  const rng = mulberry32((P.seed ^ 0x5b1f7) + index * 7717 + Math.floor(founded || 0));
+  const rng = mulberry32((peopleSeed() ^ 0x5b1f7) + index * 7717 + Math.floor(founded || 0));
   const camp = {
     index, x, z, y: sampleHeight(x, z),
     rng, voice: tribeVoice(rng), name,
@@ -319,7 +330,7 @@ export const MONUMENT_MAX = 14;          // stones in the largest of them
 export function monumentPlan(camp) {
   if (!camp.barrow) return [];
   if (camp.stonesPlan) return camp.stonesPlan;
-  const rng = mulberry32((camp.index + 1) * 7919 ^ (P.seed | 0));
+  const rng = mulberry32((camp.index + 1) * 7919 ^ (peopleSeed() | 0));
   const form = MONUMENT_FORMS[(rng() * MONUMENT_FORMS.length) | 0];
   const { x, z, a } = camp.barrow;
   const plan = [];
@@ -1726,7 +1737,7 @@ export function buildPeople(count) {
   // And everything the body is dressed in, as much room again.
   buildLooks(tribeGroup, n);
 
-  const rng = mulberry32(P.seed ^ 0x77aa1234);
+  const rng = mulberry32(peopleSeed() ^ 0x77aa1234);
   for (let i = 0; i < count; i++) {
     const camp = camps[i % camps.length];
     /* An age spread rather than sixteen thirty-year-olds. A plain exponential

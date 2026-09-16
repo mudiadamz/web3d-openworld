@@ -246,9 +246,19 @@ megabytes against eighty kilobytes of tables and deleting rows does not touch
 it. It stops short of removing the file, so a running server can carry straight
 on with what is left.
 
-There is a **Delete everything** button too, which does the same and clears the
-browser's own copies with it. It asks twice, and it leaves a new world behind,
-because there is always a world.
+There is a **Delete everything** button too, which does the same and clears
+everything the page keeps in the browser with it - the worlds, the save, the
+chronicle, the map's layers, who you were following, and any other key under
+`openworld.`. It asks twice, and it leaves a new world behind, because there is
+always a world.
+
+**Reset population** is the smaller one. It keeps the island - the seed, so
+every hill, stream, lake and outcrop stays where it was, and the world stays on
+the shelf - and puts a different people on it: new sites, new bands, new names,
+from day one. The old people's save and chronicle lines go with them, here and
+on the server. The people come from the seed mixed with a population salt
+(`peopleSalt`, people.js) that the save keeps; nought is the people every
+island started with, so no world built before this changed.
 
 The command is the one that matters. This was taken out once, on the reasoning
 that a single request should not be able to remove everything there is — and
@@ -3285,7 +3295,8 @@ rather than what was assumed. The creek height and the polygon offsets stand on
 their own.
 
 **A confirmation that does not confirm is worse than none.** The boot check
-clicks *Delete world* once and asserts that nothing was deleted, then clicks
+clicks *Reset population* (once *Delete world*) once and asserts that nothing was
+reset, then clicks
 again and asserts it was. Removing the two-step and wiring the button straight
 to the action makes it fail on "deletes nothing yet" — which is the assertion
 that matters. Getting there also exposed a hole in the harness: its element stub

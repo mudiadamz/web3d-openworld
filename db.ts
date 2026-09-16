@@ -211,6 +211,9 @@ export function openDb(file = 'chronicle.db') {
       },
       /* Deleting a world takes its lines with it, or the chronicle fills up
          with entries pointing at worlds that are not on the shelf any more. */
+      forgetEvents(seed) {
+        db.prepare('DELETE FROM events WHERE seed = ?').run(seed | 0);
+      },
       forgetSeed(seed) {
         db.exec('BEGIN');
         try {

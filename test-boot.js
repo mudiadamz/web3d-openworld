@@ -743,23 +743,24 @@ if (modelsVendored) {
     here ? here.innerHTML.slice(0, 90) : 'missing');
 
   const before = worldNames();
-  const del = document.getElementById('deleteWorld');
-  check('the destructive button starts unarmed', del && del.textContent === 'Delete world',
+  const beforeShelf = shelf();
+  const del = document.getElementById('resetPopulation');
+  check('the destructive button starts unarmed', del && del.textContent === 'Reset population',
     del ? JSON.stringify(del.textContent) : 'missing');
   del.fire('click');
   check('one click only arms it', del.textContent === 'Sure?', JSON.stringify(del.textContent));
-  check('and deletes nothing yet', worldNames() === before, `${worldNames()} vs ${before}`);
+  check('and resets nothing yet', worldNames() === before, `${worldNames()} vs ${before}`);
   del.fire('click');
-  /* deleteThisWorld awaits the shelf being written before it moves you on, so
-     the microtasks have to drain before the result can be read. */
+  /* resetPopulation awaits the server forgetting the old chronicle before it
+     builds the new people, so the microtasks have to drain first. */
   await new Promise((r) => setTimeout(r, 20));
   for (let i = 0; i < 5; i++) stepFrame(0);
   check('the second click does it',
-    del.textContent === 'Delete world'
-      && /deleted /i.test(document.getElementById('toast').textContent),
+    del.textContent === 'Reset population'
+      && /a new people on /i.test(document.getElementById('toast').textContent),
     `${JSON.stringify(del.textContent)} ${JSON.stringify(document.getElementById('toast').textContent)}`);
-  check('there is still a world afterwards — there is always a world',
-    worldNames() > 0, shelf().slice(0, 80));
+  check('and the island is the same world, still on the shelf',
+    worldNames() === before && shelf() === beforeShelf, shelf().slice(0, 80));
 
   // MODELS=all was injected before the page loaded, so the quadruped is in too.
   check('the herd model loaded alongside the birds', stats && /4 models/.test(stats.innerHTML),

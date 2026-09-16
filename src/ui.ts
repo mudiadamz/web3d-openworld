@@ -5,16 +5,16 @@ import { RATES, rateIndex, setRateIndex } from './clock.js';
 import {
   CHRONICLE_STORE, chronicle, milestonesOnly, pendingEvents, renderChronicle, renderTribes, runId,
   saveChronicle, setBornCount, setChronicle, setDiedCount, setMilestonesOnly, setPendingEvents, setRunId,
-  startRun
+  setSimDay, startRun
 } from './life.js';
 import { VIEW_MODES, buildWorld, placeCamera } from './move.js';
 import {
   chronPage, closeChronicle, closeTribe, dropHere, eatHere, handBack, openChronicle, openTribe, orderJob,
   restHere, renderChronPage, renderTribeCard, sendHome, setChronFind, setChronPage, setTribeTab, showKeys,
-  storeHere, toggleKeys, tribeShown, actHere, pickFollow, setViewMode
+  storeHere, toggleKeys, tribeShown, actHere, pickFollow, setViewMode, FOCUS_STORE
 } from './chronicle.js';
-import { camps } from './people.js';
-import { stepMapSize, travelTo } from './map.js';
+import { camps, setPeopleSalt } from './people.js';
+import { MAP_LAYERS_STORE, stepMapSize, travelTo } from './map.js';
 import { $, STATE_STORE, clearSavedState, ui } from './save.js';
 import { elapsed, seeAhead, setAheadOnly, stopAhead, updateHud } from './main.js';
 
@@ -266,6 +266,8 @@ export function renderWorlds() {
 
 export function enterWorld(seed, name) {
   P.seed = seed | 0;
+  // Its first people: another world has never had its population reset.
+  setPeopleSalt(0);
   rebuild();
   renderWorlds();
   toast(name ? `${name} · seed ${P.seed}` : `seed ${P.seed}`, 2.2);
@@ -315,38 +317,38 @@ export function arm(button, label, action, seconds = 4) {
   return reset;
 }
 
-/* The only destructive action there is, and it reaches exactly one world: the
-   one you are standing in. Its place on the shelf, the bookmark that would put
-   you back in it, and its lines in the chronicle all go together — a chronicle
-   line pointing at a world that no longer exists is worse than no line. Then it
-   moves you somewhere, because there is always a world. */
-export async function deleteThisWorld() {
-  const gone = worlds.find((w) => w.seed === P.seed) || { name: nameForSeed(P.seed), seed: P.seed };
+/* A new people on the island you are standing on. The ground is the seed's and
+   stays exactly where it was - every hill, stream, lake and outcrop - and the
+   world keeps its place on the shelf. Everything that was the old people goes:
+   its bands, where it had got to (the save), and its lines in the chronicle,
+   here and on the server, because a history of people who never lived here is
+   worse than no history. Then the bands are built again from a new population
+   seed (people.js, peopleSalt): new sites, new names, a new start at day one. */
+export async function resetPopulation() {
   const seed = P.seed;
-
-  worlds = worlds.filter((w) => w.seed !== seed);
+  const here = worlds.find((w) => w.seed === seed);
   setChronicle(chronicle.filter((e) => e.seed !== seed));
   for (let i = pendingEvents.length - 1; i >= 0; i--) {
     if (pendingEvents[i].seed === seed) pendingEvents.splice(i, 1);
   }
   clearSavedState();
-
   if (runId) {
-    try { await fetch(`/api/worlds?seed=${seed}`, { method: 'DELETE' }); }
-    catch { localWorlds(worlds); }
-  } else {
-    localWorlds(worlds);
+    try { await fetch(`/api/events?seed=${seed}`, { method: 'DELETE' }); } catch { /* local only */ }
   }
   saveChronicle();
 
-  const next = worlds[0];
-  if (next) enterWorld(next.seed, next.name);
-  else await newWorld();
+  // Never nought, which is the people the island started with.
+  setPeopleSalt(1 + ((Math.random() * 2147483646) | 0));
+  setSimDay(0);
+  setBornCount(0);
+  setDiedCount(0);
+  rebuild();
+  renderWorlds();
   renderChronicle();
-  toast(`deleted ${gone.name}`, 2.6);
+  toast(`a new people on ${here ? here.name : nameForSeed(seed)}`, 2.6);
 }
 
-arm($('deleteWorld'), 'Delete world', deleteThisWorld);
+arm($('resetPopulation'), 'Reset population', resetPopulation);
 
 /* Everything this thing has ever written down, here and on the server. Asked
    for after a session where the page would not behave and there was no way to
@@ -359,9 +361,20 @@ export async function wipeEverything() {
   setPendingEvents([]);
   setBornCount(0);
   setDiedCount(0);
-  for (const key of [WORLD_STORE, STATE_STORE, CHRONICLE_STORE]) {
+  setPeopleSalt(0);
+  /* Everything this page keeps in the browser, not just the worlds: the map's
+     layers and the person you were following were left behind when this was a
+     list of three. The named ones first, then anything else under the same
+     prefix, so a key added later cannot be missed the same way. */
+  for (const key of [WORLD_STORE, STATE_STORE, CHRONICLE_STORE, MAP_LAYERS_STORE, FOCUS_STORE]) {
     try { localStorage.removeItem(key); } catch { /* private window */ }
   }
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('openworld.')) localStorage.removeItem(key);
+    }
+  } catch { /* private window, or no way to list them */ }
   if (runId) {
     try { await fetch('/api/data', { method: 'DELETE' }); } catch { /* local only */ }
     /* The runs table went with everything else, so the id this page is holding
