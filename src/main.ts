@@ -357,6 +357,55 @@ export function rebuildAfterAhead(y) {
   logEvent('ahead', `${y} years passed unwatched`, 0, 0);
 }
 
+/* ---- watching an island somebody else is running ----
+
+   ?watch=http://127.0.0.1:8100/stream and this page stops running a world of
+   its own. It still builds one - terrain, camps and every tent come off the
+   seed, and the seed is a number both ends already agree on - and then puts
+   the people where the island says they are.
+
+   Nothing else about a frame changes, which is the point of it: the browser
+   was never the half that could not keep up. spike/sim-headless.mjs measured
+   the whole simulation at 0.15 ms of a 28.6 ms frame, so this buys a world
+   that keeps going with no tab open and several people watching one island,
+   and it does not buy frames.
+
+   Guarded on `location` and `EventSource` both, because this module is also
+   imported by a harness with neither. Read-only, and only ever as fresh as
+   the last message. */
+const watchAt = typeof location === 'undefined' ? null
+  : new URLSearchParams(location.search || '').get('watch');
+let watchFrame: any = null;
+let watchById: Map<number, any> | null = null;
+if (watchAt && typeof EventSource !== 'undefined') {
+  const es = new EventSource(watchAt);
+  es.addEventListener('hello', (ev: any) => {
+    const hi = JSON.parse(ev.data);
+    /* Different seeds are different islands, and the coordinates would land
+       people in a sea this page has somewhere else. Say so rather than draw
+       a world that quietly does not match. */
+    if (hi.seed !== P.seed) {
+      console.warn(`watching seed ${hi.seed}, but this page built ${P.seed}`);
+    }
+  });
+  es.onmessage = (ev) => { watchFrame = JSON.parse(ev.data); };
+}
+
+/** Everybody where the island says they are. The map is rebuilt only when the
+    count changes, which is a birth or a death rather than every frame. */
+function applyWatched() {
+  if (!watchFrame) return;
+  if (!watchById || watchById.size !== people.length) {
+    watchById = new Map(people.map((p) => [p.id, p]));
+  }
+  for (const row of watchFrame.p) {
+    const p = watchById.get(row[0]);
+    if (!p) continue;
+    p.x = row[1]; p.z = row[2]; p.yaw = row[3]; p.phase = row[4];
+    p.asleep = Boolean(row[5] & 1);
+    p.hidden = Boolean(row[5] & 2);
+  }
+}
 export function tick() {
   requestAnimationFrame(tick);
   const real = Math.min(clock.getDelta(), 0.1); // a tab that slept must not lurch
@@ -481,7 +530,11 @@ export function tick() {
     updateLivestock(owed);
     updateSociety();
   }
-  updatePeople(paced, daylight);
+  /* Watching: the island says where everybody is, and a paced delta of
+     nothing stops this page moving them on its own. updatePeople still
+     draws, which is the half worth keeping. */
+  if (watchAt) applyWatched();
+  updatePeople(watchAt ? 0 : paced, daylight);
   // After the people have moved, so a bubble is over where somebody is now.
   updateBubbles();
   // The berries on the thickets follow the ground they grow on.

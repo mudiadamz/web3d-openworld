@@ -2781,7 +2781,7 @@ check('every bubble has a drawing', (() => {
 check('and they are drawn every frame, after the people move', (() => {
   const main = rawSource('main.js');
   if (!/import \{ updateBubbles \} from '\.\/bubbles\.js';/.test(main)) return 'never imported';
-  return /updatePeople\(paced, daylight\);\s*\/\/[^\n]*\n\s*updateBubbles\(\);/.test(main)
+  return /updatePeople\([^)]*daylight\);\s*\/\/[^\n]*\n\s*updateBubbles\(\);/.test(main)
     ? true : 'not called after updatePeople';
 })() === true);
 /* The atlas is painted with Path2D, which a browser has and the boot check
