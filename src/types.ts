@@ -361,6 +361,13 @@ export interface Camp {
   villageName?: string | null;
   pastCodes?: string[];
   conqueredAt?: number;
+  /** Joined the tribe without a fight, rather than taken (society.ts, tradeTies). */
+  joined?: boolean;
+  /** How tightly tied to each other band it deals with, by that band's index. */
+  ties?: Record<number, number>;
+  /** When each of those ties last grew, by index and kind ('3call', '3deal'):
+      once a season each. Not saved. */
+  tiedAt?: Record<string, number>;
 }
 
 /** One person. Built in two places — `newPerson` (life.ts) at birth and at the

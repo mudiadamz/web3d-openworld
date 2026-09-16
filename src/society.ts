@@ -1,7 +1,7 @@
 import { P } from './params.js';
 import { camps, dressCamp, people } from './people.js';
-import { logEvent, simDay } from './life.js';
-import { SKILLS, practise } from './skills.js';
+import { CONQUEST, conquer, logEvent, simDay } from './life.js';
+import { SKILL, SKILLS, practise } from './skills.js';
 
 /* -------------------------------------------------------------------------
    From band to city
@@ -196,6 +196,117 @@ export function borderTension(days) {
     const level = camp.skill?.war || 0;
     for (const p of people) {
       if (p.camp === camp && !p.child) p.knows.war = Math.max(p.knows.war || 0, level);
+    }
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Ties
+
+   Ruling was learned one way: winning raids, once a band could fight. So the
+   only tribes of more than one village were made by force, and a peaceful
+   island - the one a well-fed island is - never made any at all.
+
+   Which is not the only way it goes. Two bands that deal with each other year
+   after year - food over the hill in a bad winter, stone for the band with no
+   outcrop - come to depend on each other, and the one that does the dealing
+   best comes to be the one the other looks to. In the end the smaller simply
+   joins, and nobody had to be killed for it.
+
+   A season in which the two bands visited each other ties them a little, and
+   a season in which something changed hands - food, stone - ties them twice as
+   much again. By the season rather than by the visit or the deal, because
+   neighbours with stone to spare deal on nearly every visit, and counted that
+   way the first island measured was one tribe inside a year. A tie that is not
+   kept up loosens, over years. So bands that only ever visit never get there;
+   bands that trade goods every other season join in about six years, and every
+   season in about three. The better trader of the two leads the tie,
+   and learns ruling from it every day the way a border teaches fighting: by
+   enough to beat the fade once the tie is a third of the way to joining, and
+   lifting what its adults know, or practise would hold it at a step past
+   nothing. Once it can rule and the tie is full, the smaller band joins it -
+   the same as being taken (conquer, life.js), and told as joining.
+
+   Villages of one tribe do not tie: they already share a store. */
+export const TIES = {
+  keep: 4,             // years in which a tie left alone loosens to a third of itself
+  call: 0.5,           // tie from a season in which the two bands visited each other
+  deal: 1,             // and from a season in which something changed hands between them
+  join: 6,             // tie at which the smaller band joins the better trader
+  tradeFirst: 0.5,     // trading the leader needs before a tie teaches it to rule
+  perDay: 0.03,        // ruling a day for the leader of a full tie - three times SKILL.fade
+};
+
+const tieOf = (a, b) => a.ties?.[b.index] || 0;
+
+/* Once a season for each kind, per pair: `tiedAt` holds when each last counted,
+   by the other band's index and the kind. */
+function tie(home, host, kind) {
+  if (home.code === host.code) return;
+  const key = host.index + kind, tiedAt = (home.tiedAt ||= {});
+  if (simDay - (tiedAt[key] ?? -Infinity) < P.yearLength / 4) return;
+  tiedAt[key] = simDay;
+  (host.tiedAt ||= {})[home.index + kind] = simDay;
+  const t = tieOf(home, host) + TIES[kind];
+  (home.ties ||= {})[host.index] = t;
+  (host.ties ||= {})[home.index] = t;
+}
+
+/** A visit between two bands: both learn a little trading from the walk. */
+export function calledOn(home, host) {
+  practise(home, 'trade', SKILL.perCall);
+  practise(host, 'trade', SKILL.perCall);
+  tie(home, host, 'call');
+}
+
+/** A deal between two bands: both learn trading from it properly. */
+export function dealtWith(home, host) {
+  practise(home, 'trade', SKILL.perDeal);
+  practise(host, 'trade', SKILL.perDeal);
+  tie(home, host, 'deal');
+}
+
+/** Of two tied bands, the one the other looks to: the better trader, and the
+    bigger if they are as good as each other. */
+function leads(a, b) {
+  const ta = a.skill?.trade || 0, tb = b.skill?.trade || 0;
+  return ta !== tb ? ta > tb : (a.pop || 0) >= (b.pop || 0);
+}
+
+export function tradeTies(days) {
+  if (!(days > 0)) return;
+  const loosen = Math.exp(-days / (TIES.keep * P.yearLength) * Math.log(3));
+  const byIndex = new Map(camps.map((c) => [c.index, c]));
+  for (const camp of camps) {
+    if (!camp.ties) continue;
+    let rules = 0;
+    for (const key in camp.ties) {
+      const other = byIndex.get(Number(key));
+      const t = camp.ties[key] * loosen;
+      if (!other || other.gone || camp.gone || other.code === camp.code || t < 0.05) { delete camp.ties[key]; continue; }
+      camp.ties[key] = t;
+      if (leads(camp, other) && (camp.skill?.trade || 0) >= TIES.tradeFirst) rules = Math.max(rules, Math.min(1, t / TIES.join));
+    }
+    if (!(rules > 0)) continue;
+    practise(camp, 'conquest', TIES.perDay * rules * days);
+    const level = camp.skill?.conquest || 0;
+    for (const p of people) {
+      if (p.camp === camp && !p.child) p.knows.conquest = Math.max(p.knows.conquest || 0, level);
+    }
+  }
+  /* And joining, once a tie is full and its leader can rule. One a day at most,
+     so the chronicle says it once and nobody joins a band that has just joined
+     somebody else. */
+  for (const camp of camps) {
+    if (camp.gone || !(camp.pop > 0) || (camp.skill?.conquest || 0) < CONQUEST.from) continue;
+    for (const key in camp.ties || {}) {
+      const other = byIndex.get(Number(key));
+      if (!other || other.gone || !(other.pop > 0) || other.code === camp.code) continue;
+      if (camp.ties[key] < TIES.join || !leads(camp, other) || (other.pop || 0) >= (camp.pop || 0)) continue;
+      delete camp.ties[key];
+      if (other.ties) delete other.ties[camp.index];
+      conquer(camp, other, true);
+      return;
     }
   }
 }

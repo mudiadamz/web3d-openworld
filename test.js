@@ -6684,7 +6684,8 @@ check('stone is traded between bands',
 check('only what is spare, and only to a band that needs it',
   /if \(spareStone > 0 && \(host\.stone \|\| 0\) < SKILL\.stoneMax \* 0\.5\)/.test(html));
 check('and dealing in it teaches dealing',
-  /host\.stone = Math\.min[^]*?practise\(home, 'trade', SKILL\.perDeal\)/.test(html));
+  /host\.stone = Math\.min\(SKILL\.stoneMax, \(host\.stone \|\| 0\) \+ moved\);\s*dealtWith\(home, host\);/.test(html)
+  && /function dealtWith\(home, host\) \{\s*practise\(home, 'trade', SKILL\.perDeal\);\s*practise\(host, 'trade', SKILL\.perDeal\);/.test(html));
 
 /* -------------------------------------------------------------------------
    A save has to fit through the door
@@ -7909,6 +7910,34 @@ check('a taken village comes back under its new name and flag',
   && /if \(typeof c\.cd === 'string' && c\.cd\) \{ usedCodes\.add\(c\.cd\); camps\[i\]\.code = c\.cd; \}/.test(html));
 check('and keeps the dead it had under its old name', /const mine = \(code\) => code === camp\.code \|\| \(camp\.pastCodes \|\| \[\]\)\.includes\(code\);/.test(html));
 check('a conquest is worth telling', /'conquest',   \/\/ a band took another's village/.test(html));
+
+/* And ruling without a fight: two bands that keep dealing with each other tie,
+   the better trader learns to rule from it, and the smaller band joins. */
+check('a visit ties two bands, and a season in which something changed hands ties them more',
+  /function calledOn\(home, host\) \{[^}]*tie\(home, host, 'call'\);/.test(html)
+  && /function dealtWith\(home, host\) \{[^}]*tie\(home, host, 'deal'\);/.test(html)
+  && Number((html.match(/deal: ([\d.]+),\s+\/\/ and from a season/) || [])[1]) > Number((html.match(/call: ([\d.]+),\s+\/\/ tie from a season/) || [])[1]));
+check('once a season a pair, not once a visit, and never between villages of one tribe',
+  /if \(simDay - \(tiedAt\[key\] \?\? -Infinity\) < P\.yearLength \/ 4\) return;/.test(html)
+  && /function tie\(home, host, kind\) \{\s*if \(home\.code === host\.code\) return;/.test(html));
+check('a tie not kept up loosens',
+  /const loosen = Math\.exp\(-days \/ \(TIES\.keep \* P\.yearLength\) \* Math\.log\(3\)\);/.test(html));
+check('the better trader of a tie learns to rule from it, and its people know it',
+  /practise\(camp, 'conquest', TIES\.perDay \* rules \* days\);/.test(html)
+  && /p\.knows\.conquest = Math\.max\(p\.knows\.conquest \|\| 0, level\);/.test(html));
+check('and teaches more than the fade once the tie is well on the way', (() => {
+  const per = Number((html.match(/perDay: ([\d.]+),\s+\/\/ ruling a day/) || [])[1]);
+  const fade = Number((html.match(/fade: ([\d.]+),/) || [])[1]);
+  return per > fade * 2 ? true : `${per} a day against a fade of ${fade}`;
+})() === true);
+check('a full tie with a band that can rule brings the smaller band in, told as joining',
+  /if \(camp\.ties\[key\] < TIES\.join \|\| !leads\(camp, other\) \|\| \(other\.pop \|\| 0\) >= \(camp\.pop \|\| 0\)\) continue;/.test(html)
+  && /conquer\(camp, other, true\);/.test(html)
+  && /logEvent\('conquest', joined \? `\$\{was\} joined/.test(html));
+check('and a joined village says so, and remembers it across a save',
+  /\$\{camp\.joined \? 'joined' : 'taken'\} on day/.test(html)
+  && /jn: c\.joined \? 1 : undefined/.test(html) && /camps\[i\]\.joined = c\.jn === 1;/.test(html)
+  && /ti: c\.ties && Object\.keys\(c\.ties\)\.length/.test(html));
 
 /* A field grows with the band that works it, wider and longer both, and is
    never planted in the creek or on the camp's trampled ground. */

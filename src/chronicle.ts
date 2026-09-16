@@ -265,7 +265,7 @@ export function renderTribeCard() {
   const villages = camps.filter((c) => !c.gone && c.code === camp.code).length;
   const held = (villages > 1 ? `<div><span>one of</span> ${villages} <span>villages of</span> ${camp.name}</div>` : '')
     + (camp.villageName
-      ? `<div><span>once</span> ${camp.villageName}<span>, taken on day ${Math.floor(camp.conqueredAt || 0)}</span></div>` : '');
+      ? `<div><span>once</span> ${camp.villageName}<span>, ${camp.joined ? 'joined' : 'taken'} on day ${Math.floor(camp.conqueredAt || 0)}</span></div>` : '');
   /* What it has become, and how far it is through holding the next rung's marks
      (society.js). */
   const next = nextStage(camp), rising = stageProgress(camp);

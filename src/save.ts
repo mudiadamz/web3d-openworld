@@ -62,7 +62,9 @@ export function snapshot() {
       fd: c.finds?.length ? c.finds.map((f) => [Math.round(f.x), Math.round(f.z), r2(f.worth)]) : undefined,
       // A village taken by another tribe: its code now, its name then (life.js, conquer).
       cd: c.code, vn: c.villageName || undefined, pc: c.pastCodes?.length ? c.pastCodes : undefined,
-      ca: c.conqueredAt,
+      ca: c.conqueredAt, jn: c.joined ? 1 : undefined,
+      // Who it deals with, and how tightly (society.js, tradeTies).
+      ti: c.ties && Object.keys(c.ties).length ? Object.fromEntries(Object.entries(c.ties).map(([k, t]) => [k, r2(t)])) : undefined,
       // From band to city (society.js): the rung, since when, and how long the next has held.
       sg: c.stage || undefined, sd: c.stageSince != null ? r2(c.stageSince) : undefined,
       sr: c.risingSince != null ? r2(c.risingSince) : undefined })),
@@ -250,6 +252,9 @@ export function applySavedLife(st) {
     camps[i].villageName = c.vn || null;
     camps[i].pastCodes = Array.isArray(c.pc) ? c.pc : [];
     camps[i].conqueredAt = Number.isFinite(c.ca) ? c.ca : undefined;
+    camps[i].joined = c.jn === 1;
+    camps[i].ties = c.ti && typeof c.ti === 'object'
+      ? Object.fromEntries(Object.entries(c.ti).filter(([, t]) => Number.isFinite(t)).map(([k, t]) => [Number(k), Number(t)])) : {};
     camps[i].stage = c.sg | 0;
     camps[i].stageFrom = camps[i].stage;
     camps[i].stageSince = Number.isFinite(c.sd) ? c.sd : null;

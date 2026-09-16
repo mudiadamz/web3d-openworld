@@ -400,7 +400,7 @@ export const SKILL_HOW = {
   farming: 'working the field, once the band has a fair hand at watering',
   building: 'at the fire, when the band is fed',
   stonework: 'at the graveyard, with quarried stone in the pile',
-  conquest: 'winning raids once the band has a fair hand at fighting, and taking villages',
+  conquest: 'winning raids once the band has a fair hand at fighting, or dealing with a neighbour once it has a fair hand at trading, and bringing villages in',
   clothing: 'at the fire, most in the autumn',
 };
 
@@ -436,7 +436,7 @@ export const SKILL_NEEDS = {
   farming: 'a fair hand at watering',
   war: 'a band hungry enough to raid, and a neighbour worth it',
   stonework: 'somebody buried, and quarrying: stone in the pile',
-  conquest: 'a fair hand at fighting, and winning',
+  conquest: 'a fair hand at fighting, or at trading, and a neighbour',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be

@@ -27,7 +27,7 @@ import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
 import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
-import { STAGES, developmentOf } from './society.js';
+import { STAGES, calledOn, dealtWith, developmentOf } from './society.js';
 
 /* -------------------------------------------------------------------------
    Food, and hunts that actually catch something
@@ -572,7 +572,7 @@ function canTake(home, host, mine, theirs) {
   return (home.skill.conquest || 0) >= CONQUEST.from && mine > theirs * CONQUEST.margin && host.code !== home.code;
 }
 
-export function conquer(home, host) {
+export function conquer(home, host, joined = false) {
   const was = `[${host.code}] ${host.name}`;
   // One store, shared by the mouths in each; one pile and one stack, halved.
   const need = (home.need || 1) + (host.need || 1);
@@ -599,8 +599,10 @@ export function conquer(home, host) {
   host.name = home.name;
   host.code = home.code;
   host.conqueredAt = simDay;
+  host.joined = joined;
   practise(home, 'conquest', CONQUEST.perTaking);
-  logEvent('conquest', `[${home.code}] ${home.name} took ${was} — it flies their flag now`, host.x, host.z);
+  logEvent('conquest', joined ? `${was} joined [${home.code}] ${home.name}, after years of dealing with them — it flies their flag now`
+    : `[${home.code}] ${home.name} took ${was} — it flies their flag now`, host.x, host.z);
   dressCamp(host);
   renderTribes();
 }
@@ -707,9 +709,8 @@ export function arriveAtCamp(p, host) {
      of the surplus away; a camp with nothing gets what it can carry. */
   /* A visit is a dealing whether or not anything is spared for it, so the walk
      itself teaches a little and a gift teaches properly. Both bands learn: you
-     cannot trade with somebody who is not also trading. */
-  practise(home, 'trade', SKILL.perCall);
-  practise(host, 'trade', SKILL.perCall);
+     cannot trade with somebody who is not also trading. And it ties them (society.js). */
+  calledOn(home, host);
   p.knows.trade = Math.max(p.knows.trade || 0, home.skill.trade);
 
   /* And stone goes the same way food does, which is what makes it a good worth
@@ -722,8 +723,7 @@ export function arriveAtCamp(p, host) {
     const moved = spareStone * VISIT.gift * (1 + SKILL.tradeGift * home.skill.trade);
     home.stone -= moved;
     host.stone = Math.min(SKILL.stoneMax, (host.stone || 0) + moved);
-    practise(home, 'trade', SKILL.perDeal);
-    practise(host, 'trade', SKILL.perDeal);
+    dealtWith(home, host);                // and ties the two bands a little tighter (society.js)
   }
 
   const surplus = home.food - home.need * FOOD.comfortable;
@@ -740,8 +740,7 @@ export function arriveAtCamp(p, host) {
        so every time is a chronicle nobody can read. */
     if (simDay - (host.lastGift || -99) > P.yearLength / 4) {
       host.lastGift = simDay;
-      practise(home, 'trade', SKILL.perDeal);
-      practise(host, 'trade', SKILL.perDeal);
+      dealtWith(home, host);
       logEvent('trade', `[${home.code}] ${home.name} sent food to [${host.code}] ${host.name}`,
         host.x, host.z);
     }

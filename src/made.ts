@@ -5,6 +5,7 @@ import { WOOD } from './wood.js';
 import { FARM } from './farming.js';
 import { CONQUEST } from './life.js';
 import { SKILL, SKILL_HOW, SKILL_NEEDS, nextRung } from './skills.js';
+import { TIES } from './society.js';
 
 /* -------------------------------------------------------------------------
    What a skill has made, counted
@@ -95,7 +96,7 @@ export function skillMade(camp, k) {
       return { n: Math.floor(camp.stone || 0), of: SKILL.stoneMax, what: 'stone' };
     case 'conquest': {
       const held = camps.filter((c) => !c.gone && c.code === camp.code);
-      return { n: held.filter((c) => c.villageName).length, of: held.length, what: 'villages taken' };
+      return { n: held.filter((c) => c.villageName).length, of: held.length, what: 'villages brought in' };
     }
   }
   return { n: 0, of: 0, what: '' };
@@ -106,7 +107,7 @@ export function skillMade(camp, k) {
    than a table, because FARM, WOOD and CONQUEST belong to modules that import
    skills.js, and a table built while the imports are still settling would read
    them before they exist. */
-function perGo(k): [number, string, string] {
+function perGo(k, camp): [number, string, string] {
   switch (k) {
     case 'rites': return [SKILL.perVisit, 'visit', 'visits'];
     case 'art': return [SKILL.perStone, 'visit', 'visits'];
@@ -118,7 +119,10 @@ function perGo(k): [number, string, string] {
     case 'irrigation': return [FARM.perDitch, 'session', 'sessions'];
     case 'farming': return [FARM.perField, 'session', 'sessions'];
     case 'war': return [SKILL.perRaid, 'raid', 'raids'];
-    case 'conquest': return [CONQUEST.perWin, 'won raid', 'won raids'];
+    /* A band tied to a neighbour learns it a little every day (tradeTies,
+       society.js); one that is not learns it from winning. */
+    case 'conquest': return Object.keys(camp?.ties || {}).length
+      ? [TIES.perDay - SKILL.fade, 'day of dealing', 'days of dealing'] : [CONQUEST.perWin, 'won raid', 'won raids'];
   }
   return [SKILL.perCraft, 'session', 'sessions'];
 }
@@ -142,7 +146,7 @@ export function skillHow(camp, k) {
   const how = SKILL_HOW[k] || '';
   const next = nextRung(v);
   if (!next) return how;
-  const [each, one, many] = perGo(k);
+  const [each, one, many] = perGo(k, camp);
   const left = Math.max(1, Math.ceil((next.at / 100 - v) / each - 1e-9));
   const togo = `about ${left} ${left === 1 ? one : many} to go`;
   return how ? how + ' · ' + togo : togo;
