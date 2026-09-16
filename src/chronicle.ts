@@ -12,7 +12,7 @@ import { camps, homeFire, inStoreArea, people, storeAreaOf, tribeGroup } from '.
 import {
   FOOD, SKILL, SKILLS, SKILL_RUNGS, TOLL_WORDS, VISIT, chiefOf, childrenOf, chronicle, daysOfFood, wealthOf, energyOutOfTen, isMilestone, milestonesOnly, personAge, simDay, skillTier, runId, tollOf, traitWord, who
 } from './life.js';
-import { DIFFICULTY_WORDS, SKILL_DIFFICULTY, skillHow, skillNeeds } from './skills.js';
+import { DIFFICULTY_WORDS, SKILL_DIFFICULTY } from './skills.js';
 import { fruitNear } from './orchard.js';
 import { bagKind, bagWords, carryCap, hasLoad, loadOf } from './bag.js';
 import { ORES, depositRadius, deposits } from './quarries.js';
@@ -28,6 +28,7 @@ import { $ } from './save.js';
 import { PATCHES_MARKED, stepMapSize } from './map.js';
 import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, togglePanel, tribeChips } from './ui.js';
 import { stopAhead } from './main.js';
+import { skillHow, skillMade, skillNeeds } from './made.js';
 import { nextStage, stageName, stageProgress } from './society.js';
 
 /* -------------------------------------------------------------------------
@@ -246,17 +247,15 @@ export function renderTribeCard() {
     if (p.child) kids++;
     if (p.sick) ill++;
   }
-  /* A row each, in a table like the rest of the card: which skill, how much of
-     it they have out of a hundred, and the rung that amounts to. A number
-     rather than a bar — 62/100 says exactly what a bar could only suggest, and
-     the whole reason skills are interesting is watching one climb while the
-     others do not. */
+  /* A row each, in a table like the rest of the card: which skill, what it has
+     made - 3/5 courses, 1/1 raft - and the rung that amounts to (made.js).
+     Counted rather than out of a hundred: a thing you could go and look at. */
   /* Easiest first: the ones any band picks up at its fire, then the ones that
      wait on something, then the chains. Within a step, in the order they came. */
   const skills = Object.keys(SKILLS).sort((a, b) => (SKILL_DIFFICULTY[a] || 9) - (SKILL_DIFFICULTY[b] || 9)).map((k) => {
     const v = camp.skill[k] || 0;
-    const pct = Math.round(v * 100);
-    return `<tr><td class="n">${SKILLS[k].of}</td><td>${pct}<span>/100</span></td>`
+    const made = skillMade(camp, k);
+    return `<tr><td class="n">${SKILLS[k].of}</td><td class="n">${made.of ? `${made.n}/${made.of}` : ''} <span>${made.what}</span></td>`
       + `<td class="n">${SKILL_RUNGS[skillTier(v)]}</td>`
       + `<td class="n d${SKILL_DIFFICULTY[k] || 0}">${DIFFICULTY_WORDS[SKILL_DIFFICULTY[k]] || ''}</td>`
       + `<td class="n how">${skillNeeds(camp, k)}</td><td class="n how">${skillHow(camp, k)}</td></tr>`;

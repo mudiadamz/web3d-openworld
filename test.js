@@ -4864,18 +4864,37 @@ check('the card lists the skills one to a row, in a table like the rest of it',
   /<table class="skills"><thead><tr><th>skill<\/th><th>acquired<\/th><th>level<\/th><th>difficulty<\/th><th>needs<\/th><th>how it is learned<\/th><\/tr><\/thead>/.test(html)
   && /<tr><td class="n">\$\{SKILLS\[k\]\.of\}<\/td>/.test(html)
   && /#tribeList table, #tribeHead table \{/.test(html));
-check('with the number on it, out of a hundred',
-  /<td>\$\{pct\}<span>\/100<\/span><\/td>/.test(html));
+check('with what the skill has made on it, counted rather than out of a hundred',
+  moduleSource('chronicle.js').includes('const made = skillMade(camp, k);')
+  && moduleSource('chronicle.js').includes('${made.n}/${made.of}')
+  && !/\$\{pct\}<span>\/100/.test(html));
 check('and the rung it is on, in words',
   /<td class="n">\$\{SKILL_RUNGS\[skillTier\(v\)\]\}<\/td>`/.test(html)
   && moduleSource('chronicle.js').includes('${skillNeeds(camp, k)}</td><td class="n how">${skillHow(camp, k)}'));
+/* Every skill counts in a thing of its own: read off the world where there is
+   something there to read, and the kinds a band comes by where there is not. */
+check('and every skill has something to count', (() => {
+  const made = moduleSource('made.js');
+  const kinds = (made.match(/const KINDS = \{([\s\S]*?)\n\};/) || [, ''])[1];
+  const counted = new Set([...kinds.matchAll(/^\s{2}(\w+): \[/gm)].map((m) => m[1]));
+  for (const m of made.matchAll(/case '(\w+)':/g)) counted.add(m[1]);
+  const skills = [...(html.match(/SKILLS = \{([\s\S]*?)\n\};/) || [, ''])[1].matchAll(/^\s{2}(\w+): \{ label:/gm)].map((m) => m[1]);
+  const missing = skills.filter((k) => !counted.has(k));
+  return skills.length > 20 && missing.length === 0 ? true : `nothing counted for ${missing.join(', ')}`;
+})() === true);
+check('and the courses and stones it counts are the ones people.js raises',
+  moduleSource('made.js').includes('Math.round(PYRAMID_COURSES * v)')
+  && moduleSource('people.js').includes('Math.round(PYRAMID_COURSES * (camp.skill?.stonework || 0))')
+  && moduleSource('made.js').includes('Math.round(plan.length * v)')
+  && moduleSource('people.js').includes('Math.round(plan.length * (camp.skill?.art || 0))'));
 /* Both columns are about the next rung rather than the skill in general: what
    has to be reached, and how much of it is left to do. */
 check('the needs column asks for the next rung',
-  moduleSource('skills.js').includes('function skillNeeds')
-  && moduleSource('skills.js').includes('if (v <= 0 && SKILL_NEEDS[k]) return SKILL_NEEDS[k];'));
-check('and how it is learned says how far there is left to go',
-  moduleSource('skills.js').includes('next.at - Math.round(v * 100)'));
+  moduleSource('made.js').includes('function skillNeeds')
+  && moduleSource('made.js').includes('if (v <= 0 && SKILL_NEEDS[k]) return SKILL_NEEDS[k];'));
+check('and how it is learned says how many goes at it are left',
+  moduleSource('made.js').includes('(next.at / 100 - v) / each')
+  && moduleSource('made.js').includes('to go`'));
 /* Mastery has no reachable step - a band caps at 1 and the last rise asks for
    more than that - so it is never held out as something to work towards. */
 check('and no rung is offered that a band cannot reach',
@@ -4892,10 +4911,11 @@ check('and no rung is offered that a band cannot reach',
     /Object\.keys\(SKILLS\)\.sort\(\(a, b\) => \(SKILL_DIFFICULTY\[a\] \|\| 9\) - \(SKILL_DIFFICULTY\[b\] \|\| 9\)\)/.test(html));
   const needs = Object.fromEntries([...table('SKILL_NEEDS').matchAll(/^\s{2}(\w+): '((?:[^'\\]|\\.)*)',/gm)].map((m) => [m[1], m[2]]));
   const num = (re) => Number((html.match(re) || [])[1]);
-  const at = (v) => `${Math.round(v * 100)}/100`;
+  const rungOf = (v) => (html.match(/SKILL_RUNGS = \[([^\]]*)\]/) || [, ''])[1].split(',').map((s) => s.trim().slice(1, -1))
+    [(html.match(/SKILL_STEPS = \[([^\]]*)\]/) || [, ''])[1].split(',').map(Number).indexOf(v) + 1];
   check('what a skill waits on is what the code waits on',
-    needs.farming === `watering at ${at(num(/irrigateFirst: ([\d.]+)/))}`
-    && needs.conquest?.startsWith(`fighting at ${at(num(/warFirst: ([\d.]+)/))}`)
+    needs.farming === `${rungOf(num(/irrigateFirst: ([\d.]+)/))} at watering`
+    && needs.conquest?.startsWith(`${rungOf(num(/warFirst: ([\d.]+)/))} at fighting`)
     && /raft/.test(needs.fishing || '') && /stone/.test(needs.tools || '') && /stone/.test(needs.stonework || ''),
     JSON.stringify({ farming: needs.farming, conquest: needs.conquest, fishing: needs.fishing }));
   check('and nothing needs a skill that is itself easier to say nothing about',
@@ -4912,10 +4932,11 @@ check('and no rung is offered that a band cannot reach',
   check('every skill says how it is learned', skills.length > 20 && missing.length === 0,
     missing.length ? `nothing for ${missing.join(', ')}` : `${skills.length} skills`);
   const num = (re) => Number((html.match(re) || [])[1]);
-  const at = (v) => `${Math.round(v * 100)}/100`;
+  const rungOf = (v) => (html.match(/SKILL_RUNGS = \[([^\]]*)\]/) || [, ''])[1].split(',').map((s) => s.trim().slice(1, -1))
+    [(html.match(/SKILL_STEPS = \[([^\]]*)\]/) || [, ''])[1].split(',').map(Number).indexOf(v) + 1];
   check('and the two levels it names are the ones the code uses',
-    said.farming?.includes(`watering is at ${at(num(/irrigateFirst: ([\d.]+)/))}`)
-    && said.conquest?.includes(`war is at ${at(num(/warFirst: ([\d.]+)/))}`),
+    said.farming?.includes(`${rungOf(num(/irrigateFirst: ([\d.]+)/))} at watering`)
+    && said.conquest?.includes(`${rungOf(num(/warFirst: ([\d.]+)/))} at fighting`),
     `${said.farming} / ${said.conquest}`);
 }
 check('and no bar: the number says it', (() => {

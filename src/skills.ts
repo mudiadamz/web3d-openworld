@@ -397,10 +397,10 @@ export const SKILL_HOW = {
   fishing: 'fishing, from the bank or from a raft',
   woodcraft: 'cutting wood at a tree',
   irrigation: 'digging ditches and carrying water at the band\'s field',
-  farming: 'working the field, once watering is at 50/100',
+  farming: 'working the field, once the band has a fair hand at watering',
   building: 'at the fire, when the band is fed',
   stonework: 'at the graveyard, with quarried stone in the pile',
-  conquest: 'winning raids once war is at 50/100, and taking villages',
+  conquest: 'winning raids once the band has a fair hand at fighting, and taking villages',
   clothing: 'at the fire, most in the autumn',
 };
 
@@ -433,10 +433,10 @@ export const SKILL_NEEDS = {
   mining: 'an outcrop within reach',
   woodcraft: 'trees within a walk',
   fishing: 'woodcutting: the band\'s raft, and a shore',
-  farming: 'watering at 50/100',
+  farming: 'a fair hand at watering',
   war: 'a band hungry enough to raid, and a neighbour worth it',
   stonework: 'somebody buried, and quarrying: stone in the pile',
-  conquest: 'fighting at 50/100, and winning',
+  conquest: 'a fair hand at fighting, and winning',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be
@@ -464,30 +464,6 @@ export function nextRung(v) {
   return at > 100 ? null : { rung: SKILL_RUNGS[tier + 1], at };
 }
 
-/** The needs column on a band card: what has to happen before it climbs a
-    rung. While a skill has not started at all, the standing condition is the
-    answer - that is the thing in the way. After that it is the next rung and
-    the number that reaches it, rather than a fact about the skill that reads
-    the same at every level. */
-export function skillNeeds(camp, k) {
-  const v = camp?.skill?.[k] || 0;
-  if (v <= 0 && SKILL_NEEDS[k]) return SKILL_NEEDS[k];
-  const next = nextRung(v);
-  return next ? next.rung + ' at ' + next.at + '/100' : '\u2014';
-}
-
-/** And how to get there: where the work is done, and how much of it is left.
-    The place is the same at every rung - what changes is the distance, which
-    is the part worth reading. */
-export function skillHow(camp, k) {
-  const v = camp?.skill?.[k] || 0;
-  const how = SKILL_HOW[k] || '';
-  const next = nextRung(v);
-  if (!next) return how;
-  const left = Math.max(1, next.at - Math.round(v * 100));
-  const togo = left + ' to go';
-  return how ? how + ' \u00b7 ' + togo : togo;
-}
 export function announceSkill(camp, key) {
   const v = camp.skill[key];
   const told = camp.told[key] || 0;
