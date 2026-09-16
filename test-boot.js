@@ -287,8 +287,10 @@ const extra = JSON.parse(process.env.BOOT_CONFIG || '{}');
    band the world started with is luck, so the runtime white-people sweep is a
    bonus rather than the guard — the guard is in test.js, where the calls that
    repaint the band are checked directly. */
-const values = { models: 'all', fertility: 3 };
-const explicit = ['models', 'fertility'];
+/* And uncapped: the frames here are driven 16 ms apart on a fake clock, and a
+   cap of thirty a second would run every other one. */
+const values = { models: 'all', fertility: 3, maxFps: 0 };
+const explicit = ['models', 'fertility', 'maxFps'];
 for (const [path, v] of Object.entries(extra)) {
   const parts = path.split('.');
   let node = values;

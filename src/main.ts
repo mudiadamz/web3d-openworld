@@ -409,8 +409,29 @@ function applyWatched() {
     p.hidden = Boolean(row[5] & 2);
   }
 }
+/* The frame cap (P.maxFps). A frame that comes too soon after the last one
+   drawn does nothing at all and waits for the next refresh: the clock is read
+   on the frame that runs, so the time a skipped frame would have had is still
+   there to be spent. Never while the world is being run ahead, which is as fast
+   as the machine will go on purpose. A window in the background draws at most
+   FPS_UNFOCUSED: still moving, for a second screen, at a third of the cost. */
+export const FPS_UNFOCUSED = 10;
+const FRAME_SLACK_MS = 1;           // a refresh that lands a hair early still counts
+let lastDrawn = -Infinity;
+export function frameCap() {
+  if (!(P.maxFps > 0)) return 0;
+  const away = typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus();
+  return away ? Math.min(P.maxFps, FPS_UNFOCUSED) : P.maxFps;
+}
+
 export function tick() {
   requestAnimationFrame(tick);
+  const cap = ahead ? 0 : frameCap();
+  if (cap > 0) {
+    const now = performance.now();
+    if (now - lastDrawn < 1000 / cap - FRAME_SLACK_MS) return;
+    lastDrawn = now;
+  }
   const real = Math.min(clock.getDelta(), 0.1); // a tab that slept must not lurch
   /* While the world is being run on, nothing else happens: no camera, no
      tiles, no sound, and nothing is rendered. The canvas keeps whatever it last

@@ -8435,6 +8435,20 @@ group('the sea stays at sea');
     `calm inside ${calm} of the half-width, the land starts down to the sea at ${inland}`);
 }
 
+group('the battery');
+{
+  const lf = moduleSource('ill.js') + moduleSource('life.js'), mv = moduleSource('move.js'), mn = moduleSource('main.js');
+  check('who is ill is counted once a step, not once per person asking',
+    /if \(illCountedAt === worldStep\) return;/.test(lf) && /return illIn\(camp\) > 0;/.test(lf)
+    && /const ill = illIn\(p\.camp\);/.test(mv) && !/for \(const q of people\) if \(q\.camp === p\.camp && q\.sick\) ill\+\+;/.test(mv));
+  check('and counted again whenever it changes: falling ill, getting up, a world put back',
+    (lf.match(/forgetIll\(\);/g) || []).length >= 2 && /forgetIll\(\);/.test(moduleSource('save.js')));
+  check('a frame too soon after the last one drawn does nothing',
+    /if \(now - lastDrawn < 1000 \/ cap - FRAME_SLACK_MS\) return;/.test(mn) && /const cap = ahead \? 0 : frameCap\(\);/.test(mn));
+  check('thirty a second unless told otherwise, and less in the background',
+    /maxFps: 30,/.test(moduleSource('params.js')) && /Math\.min\(P\.maxFps, FPS_UNFOCUSED\)/.test(mn));
+}
+
 /* ---- report ---- */
 console.log(`\n${pass} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);

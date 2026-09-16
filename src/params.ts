@@ -47,6 +47,7 @@ export interface Params {
   quality: QualityName;
   nightSkip: boolean;
   nightSkipRate: number;
+  maxFps: number;
   nightFrom: number;
   nightDeep: number;
   shadows: boolean;
@@ -118,6 +119,12 @@ export const P = {
      night — which is a long time to watch nothing at 1×. */
   nightSkip: true,
   nightSkipRate: 6,
+  /* How many frames a second are drawn, at most. A screen refreshes at sixty or
+     a hundred and twenty and the page drew every one: the whole island, every
+     frame, which is what a laptop's battery went on. Thirty is smooth for a
+     world seen from above, and half the work of sixty. 0 draws every refresh.
+     A window in the background draws at most FPS_UNFOCUSED (main.js). */
+  maxFps: 30,
   /* The two ends of the night window, in sun height — the sine of the sun's
      elevation, so 0 is the horizon and -1 is midnight at the pole.
 

@@ -9,6 +9,8 @@ import {
   NAME_ONSET, lineage, packs, recordDeath, recordMove, recordPerson, recountAnimals, takePersonId, tribeVoice, uniqueName
 } from './wildlife.js';
 import { luck, partsPer } from './clock.js';
+import { campIsIll, forgetIll } from './ill.js';
+export { campIsIll, forgetIll, illIn } from './ill.js';
 /* Used here as well as passed through — a re-export binds nothing locally. */
 import {
   ROLES, SKILL, SKILLS, SKILL_RUNGS, announceSkill, assignRoles, craftChoice, emptySkills,
@@ -1293,11 +1295,6 @@ export function updateEconomy(days) {
    people in it, runs its course and leaves the survivors with some immunity.
    Everything here is a per-day probability scaled by `days`, which is however
    much of a day went past this frame. */
-/** Anybody in this band lying ill. */
-export function campIsIll(camp) {
-  for (const p of people) if (p.camp === camp && p.sick) return true;
-  return false;
-}
 
 export function updateSickness(days) {
   if (!camps.length) return;
@@ -1369,6 +1366,7 @@ export function updateSickness(days) {
     p.tended = false;
     if (p.sick <= 0) {
       p.sick = 0;
+      forgetIll();
       p.immuneUntil = simDay + PLAGUE.immuneYears * P.yearLength;
       p.energy = Math.min(p.energy, 0.35);      // up, but not up to much
     }
@@ -1381,6 +1379,7 @@ export function immune(p) {
 
 export function fallIll(p) {
   p.sick = PLAGUE.runs * (0.6 + luck() * 0.8);
+  forgetIll();
   p.energy = Math.min(p.energy, 0.5);
 }
 

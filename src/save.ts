@@ -12,7 +12,7 @@ import {
   BUILDS, GARMENT, HAIR, SKIN, campFromRecord, camps, drawGraves, graves, growPeople, paintPeople, people, peopleSalt,
   setGraves, setPeopleSalt
 } from './people.js';
-import {
+import { forgetIll,
   SKILLS, applyAge, bornCount, diedCount, hidePeopleFrom, knowsFrom, logEvent, peopleCapacity,
   renderTribes, runId, setBornCount, setDiedCount, setSimDay, simDay, skillTier, updateEconomy
 } from './life.js';
@@ -315,6 +315,7 @@ export function applySavedLife(st) {
     1));
   growPeople(st.people.length);
   for (const r of st.people) people.push(personFromRecord(r));
+  forgetIll();                       // who is ill is theirs now, not the last world's
   hidePeopleFrom(people.length);
   paintPeople();
   stats.people = people.length;

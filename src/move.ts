@@ -26,7 +26,7 @@ import {
 } from './people.js';
 import { PATH, buildPaths, groundPace, pathSwerve, TREAD, tread } from './paths.js';
 import {
-  LIFE, DUSK_AT, FISH, FOOD, GROUND, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, findPrey, fishRichness, forageRichness, groundOf, huntReach, otherCamp, personAge, nearestShore, pickFishing, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, logEvent, updateEconomy
+  LIFE, DUSK_AT, FISH, FOOD, GROUND, PLAGUE, RAID, SKILL, VISIT, _mBody, _mTorso, arriveAtCamp, buildForaged, campIsIll, craftChoice, illIn, findPrey, fishRichness, forageRichness, groundOf, huntReach, otherCamp, personAge, nearestShore, pickFishing, practise, raidTarget, resolveRaid, simDay, takeForage, tryKill, logEvent, updateEconomy
 } from './life.js';
 import { ORCHARD, nearestFruit, pickFruit } from './orchard.js';
 import { followIdx, leadRunning, syncLookFromCamera } from './chronicle.js';
@@ -671,8 +671,7 @@ export function chooseJob(p, day) {
        sends everybody home from wherever they have got to. Somebody setting out
        at four in the afternoon is somebody who will be turned round halfway and
        never arrive, which is what happened every time. */
-    let ill = 0;
-    for (const q of people) if (q.camp === p.camp && q.sick) ill++;
+    const ill = illIn(p.camp);           // counted once a step (life.js)
     const host = otherCamp(p.camp);
     const enough = host
       ? (Math.hypot(host.x - p.camp.x, host.z - p.camp.z) * 2 / PERSON.walk) * 1.4
