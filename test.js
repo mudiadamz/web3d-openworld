@@ -6090,8 +6090,13 @@ check('but the village is lit by one light, not one per hearth',
 const splitAt = Number((html.match(/^\s*at: (\d+),\s*\/\/ people in one camp/m) || [, NaN])[1]);
 const splitFood = Number((html.match(/needFood: ([\d.]+),\s*\/\/ days of store before/) || [, NaN])[1]);
 const comfortable = Number((html.match(/comfortable: ([\d.]+),/) || [, NaN])[1]);
-check('a band splits at the size its own ground feeds, not one it never reaches',
-  splitAt >= 16 && splitAt <= 40, `at ${splitAt}`);
+/* Kept to a minimum since, on request: a band holds together well past what its
+   ground feeds before anybody leaves, and the island gets one new band at a time. */
+check('a band splits only when it is big, and rarely',
+  splitAt >= 60 && splitAt <= 120, `at ${splitAt}`);
+check('and a new band on the whole island no more often than every few years',
+  /anyYears: (\d+),/.test(moduleSource('life.js'))
+  && /!camps\.some\(\(k\) => simDay - \(k\.splitAt \?\? -Infinity\) <= SPLIT\.anyYears \* P\.yearLength\)/.test(moduleSource('life.js')));
 check('and only with food to spare, but an amount a band can actually put by',
   splitFood >= comfortable && splitFood <= comfortable * 1.5, `${splitFood} days against comfortable ${comfortable}`);
 /* The trampled ground has to cover the village, and so does the ground a
@@ -7350,7 +7355,7 @@ check('every rung holds more than the one under it', (() => {
    world sends out six times as many bands for the same number written here -
    which is most of why an island can end up covered in tribes. */
 check('and a band waits a good while before sending another out',
-  Number((moduleSource('life.js').match(/everyYears: (\d+),/) || [, 0])[1]) >= 6);
+  Number((moduleSource('life.js').match(/everyYears: (\d+),/) || [, 0])[1]) >= 20);
 group('a border teaches fighting');
 
 /* A raid needs hunger, and it is held above begging on purpose, so an island

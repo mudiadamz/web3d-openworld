@@ -894,8 +894,8 @@ export const SPLIT = {
      The multipliers above carry it the rest of the way: sixty for a tribe,
      eighty-four for a chiefdom, two hundred and forty for a city (society.js).
 
-     Past forty wants a long run behind it, not an argument. */
-  at: 40,              // people in one camp before it is too many
+     Now eighty, asked for: a band splitting is kept to the very least of it. */
+  at: 80,              // people in one camp before it is too many
   takes: 0.42,         // share of them who go
   /* Three and a half days is not a surplus, it is next week's dinner. Splitting
      on it turned one band that was coping into two that were not — measured
@@ -914,7 +914,8 @@ export const SPLIT = {
   /* And not twice in quick succession. A settlement that has just sent a band
      out is short of the people it was crowded with, and splitting again on the
      next full store is how one that ought to be growing stays small. */
-  everyYears: 8,       // sim-years between splits, so a short YEAR_LENGTH is a short wait
+  everyYears: 30,      // sim-years between splits, so a short YEAR_LENGTH is a short wait
+  anyYears: 5,         // and a new band anywhere on the island no more often than this
   pairs: 3,            // fertile adults of each sex who go, at most
   keepPairs: 2,        // and who must be left behind, at least
 };
@@ -1246,7 +1247,8 @@ export function updateEconomy(days) {
   for (const c of camps) {
     // A settlement holds more before it splits as it climbs (society.js).
     if (c.pop >= SPLIT.at * STAGES[c.stage || 0].split && daysOfFood(c) > SPLIT.needFood
-        && simDay - (c.splitAt || -999) > SPLIT.everyYears * P.yearLength) {
+        && simDay - (c.splitAt || -999) > SPLIT.everyYears * P.yearLength
+        && !camps.some((k) => simDay - (k.splitAt ?? -Infinity) <= SPLIT.anyYears * P.yearLength)) {
       splitCamp(c);
       break;                       // one at a time; the next can go tomorrow
     }

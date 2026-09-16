@@ -1657,6 +1657,11 @@ the middle of the island, and the sea's swell dies before the coast, so no
 wave stands up through the plains. The lowest inland ground is a valley floor above the
 water, so the only water inland is a lake where a creek ends.
 
+Bands split very rarely. A band holds together until it is eighty strong (more
+for a tribe, a village or a city), waits thirty years between one band leaving
+and the next, and the whole island gets a new band no more often than every
+five years.
+
 A city has advantages. It deals better: it learns trading faster from every
 visit and deal, a deal with it moves more, and the bands it deals with tie to
 it faster. Its field yields half as much again. And it draws people: the young
