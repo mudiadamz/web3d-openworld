@@ -10,8 +10,9 @@
  */
 
 import { createServer } from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnv, parseArgs, resolveConfig, resolveServer, describe } from './config.js';
@@ -19,6 +20,40 @@ import { openDb } from './db.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PLACEHOLDER = '<!--CONFIG-->';
+
+/* Which version this is, worked out from the repository rather than written
+   down. Major and minor are package.json's; the patch is how many commits
+   there are. So it goes up on every commit and nobody has to remember to bump
+   it - which a hook could not promise either, because .git/hooks is not
+   committed and does not come with a clone.
+
+   Kept for five seconds rather than for the life of the process, so a commit
+   shows on the next reload instead of the next restart. A copy with no .git
+   in it - unpacked from an archive, say - falls back to package.json as it
+   stands, and says which commit only when there is one to say. */
+let versionAt = 0;
+let versionKept = null;
+function version() {
+  if (versionKept && Date.now() - versionAt < 5000) return versionKept;
+  let stated = '0.0.0';
+  try { stated = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version || stated; } catch { /* keep 0.0.0 */ }
+  const git = (...args) => execFileSync('git', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  let count = NaN;
+  let commit = '';
+  try { count = Number(git('rev-list', '--count', 'HEAD')); } catch { /* no repository here */ }
+  try { commit = git('rev-parse', '--short', 'HEAD'); } catch { /* no repository here */ }
+  const [major = '0', minor = '0'] = stated.split('.');
+  versionKept = { version: Number.isFinite(count) ? `${major}.${minor}.${count}` : stated, commit };
+  versionAt = Date.now();
+  return versionKept;
+}
+
+/* A script of its own rather than a field on the config: the config is what
+   the settings resolved to, and a version is not a setting. */
+function versionScript() {
+  const json = JSON.stringify(version()).replace(/</g, '\\u003c');
+  return `<script>window.__VERSION__ = ${json};</script>`;
+}
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -144,7 +179,7 @@ async function serveIndex() {
   // says; escaping `<` is the usual, boring fix.
   const json = JSON.stringify(payload).replace(/</g, '\\u003c');
   return html.replace(PLACEHOLDER,
-    `<script>window.__CONFIG__ = ${json};</script>` + (DEV ? DEV_SCRIPT : ''));
+    `<script>window.__CONFIG__ = ${json};</script>` + versionScript() + (DEV ? DEV_SCRIPT : ''));
 }
 
 function safePath(urlPath) {

@@ -405,6 +405,14 @@
     cursor: pointer; padding: 0 4px;
   }
   #keysClose:hover { color: var(--text); }
+  /* What this is and which version of it, above the keys - on the card the ?
+     already opens, rather than behind another button in a corner. The version
+     is filled in by the page from what the server worked out (ui.js). */
+  #about { margin: 2px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  #about .aboutTitle { font-size: 12px; font-weight: 600; color: var(--text); }
+  #aboutVersion { margin-left: 6px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #about p { margin: 6px 0 0; line-height: 1.55; color: var(--muted); }
+  #about a { color: var(--accent); }
   .keyGroup {
     display: flex; justify-content: space-between; align-items: baseline;
     margin: 13px 0 5px; font-size: 8px; letter-spacing: 0.13em;
@@ -915,6 +923,17 @@
       <h2>Keys</h2>
       <button id="keysClose" aria-label="Close">×</button>
     </header>
+
+    <section id="about">
+      <div class="aboutTitle">Open World Sandbox<span id="aboutVersion">standalone</span></div>
+      <p>An island that runs itself: procedural terrain, a sky on a running clock, wildlife, and a few hundred
+        people who forage, hunt, learn their crafts, trade, found new bands and bury their dead. Nobody scripts
+        any of it &mdash; the history is whatever happens.</p>
+      <p>Built on three.js. The people are
+        <a href="https://github.com/mudiadamz/humans-threejs" target="_blank" rel="noopener">humans-threejs</a>;
+        the birds and the horse are the three.js example models, originally from ro.me by Mirada.
+        <a href="https://github.com/mudiadamz/web3d-openworld" target="_blank" rel="noopener">Source</a>.</p>
+    </section>
 
     <div class="keyGroup">Moving</div>
     <div class="keyRow"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><em><i>(in Orbit)</i> slide the rig across the ground, so you can leave the meadow without losing the pivot. Clicking the map is the quicker way to get anywhere</em></div>

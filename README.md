@@ -8,8 +8,9 @@ new bands, bury their dead, and are still at it a century later.
 Nobody scripts any of that. It is a simulation, and the history is whatever
 happens.
 
-**No build step, no assets, one dependency.** `index.html` and a folder of ES
-modules are the whole program; `node:http` and `node:fs` are the whole server.
+**One build step, no assets, one dependency.** `index.html` and a folder of
+TypeScript modules, compiled to the ES modules the page loads, are the whole
+program; `node:http` and `node:fs` are the whole server.
 The dependency is the people: the low-poly body from
 [humans-threejs](https://github.com/mudiadamz/humans-threejs), installed from its
 GitHub repository on its main branch, loaded by the page straight out of

@@ -7222,6 +7222,20 @@ check('and a village of the same tribe is not a border',
   moduleSource('society.js').includes('c.code === camp.code) continue;'));
 check('and it runs with the day\'s books, on both paths',
   (moduleSource('main.js').split('borderTension(owed);').length - 1) === 2);
+group('which version this is');
+
+/* Worked out from the repository, so every commit is the next version without
+   anybody bumping a number - and a hook could not promise that, since hooks
+   are not committed. The patch is the commit count. */
+check('the version is the commit count, so every commit is the next one', (() => {
+  const src = readFileSync(join(ROOT, 'server.ts'), 'utf8');
+  return src.includes("git('rev-list', '--count', 'HEAD')") && src.includes('window.__VERSION__')
+    ? true : 'not derived from the commit count, or not handed to the page';
+})() === true);
+check('and it goes to the page without disturbing the config',
+  readFileSync(join(ROOT, 'server.ts'), 'utf8').includes('+ versionScript() + (DEV ? DEV_SCRIPT'));
+check('and the page shows it, in the about box on the card ? opens',
+  html.includes('id="aboutVersion"') && moduleSource('ui.js').includes("$('aboutVersion')"));
 group('loading over a slow link');
 
 /* Over a tunnel every file is a round trip of half a second or more. The page

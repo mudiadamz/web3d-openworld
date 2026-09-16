@@ -554,6 +554,19 @@ $('chronFind').addEventListener('input', (ev: any) => {
   renderChronPage();
 });
 
+/* The version the server worked out from the repository (server.ts,
+   version): package.json's major and minor, and the commit count as the
+   patch, so it moves with every commit. A page opened straight off the disk
+   has no server to ask and keeps saying "standalone" rather than inventing a
+   number. */
+{
+  const stamp = (globalThis as any).__VERSION__;
+  const el = $('aboutVersion');
+  if (el && stamp?.version) {
+    el.textContent = `v${stamp.version}`;
+    if (stamp.commit) el.title = `commit ${stamp.commit}`;
+  }
+}
 $('keysOpen').addEventListener('click', toggleKeys);
 $('keysClose').addEventListener('click', () => showKeys(false));
 // Clicking the dimmed area behind the card closes it; clicking the card does not.
