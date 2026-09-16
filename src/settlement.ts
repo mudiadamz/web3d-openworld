@@ -117,13 +117,15 @@ function addOuterHearth(camp, o, spot, slot) {
   const fire = { x: spot.x, y: sampleHeight(spot.x, spot.z), z: spot.z };
   const huts = [];
   for (let k = 0; k < OUTSKIRTS.seats; k++) {
-    const a = (k / OUTSKIRTS.seats) * Math.PI * 2 + jitter() * 0.5;
-    const r = 6.5 + jitter() * 2.6;
-    const sc = 0.85 + jitter() * 0.4, tall = 0.9 + jitter() * 0.3;
+    // Scattered, for the reason the core is (people.ts, layoutCamp).
+    const slot = (Math.PI * 2) / OUTSKIRTS.seats;
+    const a = (k / OUTSKIRTS.seats) * Math.PI * 2 + (jitter() - 0.5) * slot * 1.7;
+    const r = 5.2 + jitter() * 3.9;
+    const sc = 0.78 + jitter() * 0.47, tall = 0.84 + jitter() * 0.5;
     const hide = 0x6d5740 + ((jitter() * 0x101010) | 0);
     const x = fire.x + Math.cos(a) * r, z = fire.z + Math.sin(a) * r;
     if (sampleHeight(x, z) < SEA + 1 || trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.6)) continue;
-    _e.set(0, -a, 0); _q.setFromEuler(_e);
+    _e.set(0, -a + (sc - 1.015) * 1.9, 0); _q.setFromEuler(_e);
     _v.set(x, sampleHeight(x, z) - 0.15, z);
     _s.set(sc, sc * tall, sc);
     huts.push({ hut: { x, z }, at: _m4.compose(_v, _q, _s).clone(), hide });

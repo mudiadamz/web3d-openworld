@@ -612,7 +612,7 @@ export const STORE_FLAT = 0.8;       // stilts take a slope a tent would not, bu
 /* The far edge of the biggest tent at the back of its ring: huts stand 6.5 to
    9.1 m from their fire and the largest is 1.95 m across the base at 1.25
    scale. Every fire a village could light has one, lit or not. */
-export const TENT_REACH = 6.5 + 2.6 + 1.95 * 1.25;
+export const TENT_REACH = 5.2 + 3.9 + 1.95 * 1.25;
 export const STORE_ROOF = 1.2;       // the thatch's radius, as built in buildCamps
 /* Where the fallbacks go: out past every ring of tents, between two fires. */
 export const STORE_FAR = 22;
@@ -1106,8 +1106,17 @@ export function layoutCamp(camp, index) {
     const mine = (i / HUTS_PER_HEARTH) | 0;
     const seat = i % HUTS_PER_HEARTH;
     const fire = hearthAt(camp, mine);
-    let a = (seat / HUTS_PER_HEARTH) * Math.PI * 2 + rng() * 0.5;
-    const r = 6.5 + rng() * 2.6;
+    /* Scattered round the fire rather than set out on a ring. The slot is
+       kept because it is what holds them apart - ten tents dropped at random
+       angles leave a gap on one side and a wall on the other - but each sits
+       most of a slot either way of where the ring would have put it, and at
+       its own distance from the fire. What that costs is the look of a camp
+       laid out by somebody with a compass, which is not how anybody pitches.
+       The old numbers were an eighth of a slot of wiggle and two and a half
+       metres of depth, which is a ring with a tremble in it. */
+    const gap = (Math.PI * 2) / HUTS_PER_HEARTH;
+    let a = (seat / HUTS_PER_HEARTH) * Math.PI * 2 + (rng() - 0.5) * gap * 1.7;
+    const r = 5.2 + rng() * 3.9;
     /* Never standing in water: round its own ring, a little either way at a
        time, to the first dry ground. No draw off the stream for it, which the
        rest of the camp's layout is still reading. */
@@ -1115,11 +1124,11 @@ export function layoutCamp(camp, index) {
       a += (k % 2 ? 1 : -1) * k * 0.16;
     }
     const x = fire.x + Math.cos(a) * r, z = fire.z + Math.sin(a) * r;
-    const sc = 0.85 + rng() * 0.4;
+    const sc = 0.78 + rng() * 0.47;
     camp.huts.push({ x, z });
-    _e.set(0, -a, 0); _q.setFromEuler(_e);
+    _e.set(0, -a + (sc - 1.015) * 1.9, 0); _q.setFromEuler(_e);
     _v.set(x, sampleHeight(x, z) - 0.15, z);
-    _s.set(sc, sc * (0.9 + rng() * 0.3), sc);
+    _s.set(sc, sc * (0.84 + rng() * 0.5), sc);
     camp.hutAt = camp.hutAt || [];
     /* Composed first, and only then kept. This was the wrong way round, and
        what it stored was not this hut.

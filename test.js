@@ -1760,8 +1760,8 @@ check('nor in a tent, round any fire the village could light',
    it is kept clear of. Checked against each other so moving one moves both. */
 check('and the reach it keeps clear of is the tents as built', (() => {
   const n = (re) => Number(html.match(re)?.[1]);
-  const built = 6.5 + n(/const r = 6\.5 \+ rng\(\) \* ([\d.]+);/)
-    + n(/new THREE\.ConeGeometry\(([\d.]+), 2\.5, 7\)/) * (0.85 + n(/const sc = 0\.85 \+ rng\(\) \* ([\d.]+);/));
+  const built = 5.2 + n(/const r = 5\.2 \+ rng\(\) \* ([\d.]+);/)
+    + n(/new THREE\.ConeGeometry\(([\d.]+), 2\.5, 7\)/) * (0.78 + n(/const sc = 0\.78 \+ rng\(\) \* ([\d.]+);/));
   const said = new Function(`return ${html.match(/const TENT_REACH = ([^;]+);/)?.[1]};`)();
   return Math.abs(built - said) < 1e-9 ? true : `TENT_REACH ${said} but tents reach ${built}`;
 })() === true);
@@ -1785,9 +1785,9 @@ check('a spot for every granary', (() => {
    camp is actually laid out with, so moving a tent ring moves this. */
 check('and none of them stands in a tent', (() => {
   const n = (re) => Number(html.match(re)?.[1]);
-  const ringOut = n(/const r = 6\.5 \+ rng\(\) \* ([\d.]+);/) + 6.5;
+  const ringOut = n(/const r = 5\.2 \+ rng\(\) \* ([\d.]+);/) + 5.2;
   const tent = n(/new THREE\.ConeGeometry\(([\d.]+), 2\.5, 7\)/)
-    * (0.85 + n(/const sc = 0\.85 \+ rng\(\) \* ([\d.]+);/));
+    * (0.78 + n(/const sc = 0\.78 \+ rng\(\) \* ([\d.]+);/));
   const roof = n(/new THREE\.ConeGeometry\(([\d.]+), 1\.05, 8\)/) * n(/STORE_SCALE = ([\d.]+);/);
   const out = n(/STORE_OUT = ([\d.]+);/), apart = n(/HEARTH_SPACING = ([\d.]+);/), fires = n(/HEARTHS = (\d+);/);
   const spots = JSON.parse(html.match(/const STORE_SPOTS = (\[.*\]);/)[1]);
@@ -7168,6 +7168,20 @@ check('an explorer looks round where they stop',
 check('an explorer blazes the trail',
   moduleSource('move.js').includes("p.job === 'explore' ? PATH.blaze : 1")
   && moduleSource('paths.js').includes('function tread(x0, z0, x1, z1, weight = 1)'));
+group('a camp is pitched, not drawn with a compass');
+
+/* Tents keep their slot round the fire, because that is what stops them all
+   ending up on one side - but they sit most of a slot either way of it, at
+   their own distance, facing their own way. A ring with a tremble in it is
+   still a ring. */
+check('tents are scattered round the fire rather than set on a ring',
+  moduleSource('people.js').includes('(rng() - 0.5) * gap * 1.7')
+  && moduleSource('people.js').includes('const r = 5.2 + rng() * 3.9;'));
+check('and none of them faces the fire square on',
+  moduleSource('people.js').includes('-a + (sc - 1.015) * 1.9'));
+check('and the outskirts are pitched the same way',
+  moduleSource('settlement.js').includes('(jitter() - 0.5) * slot * 1.7')
+  && moduleSource('settlement.js').includes('const r = 5.2 + jitter() * 3.9;'));
 group('loading over a slow link');
 
 /* Over a tunnel every file is a round trip of half a second or more. The page
