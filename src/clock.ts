@@ -181,8 +181,19 @@ export const LOD = {
 
      So watching gets grouped too, gently: never coarser than this, which at the
      distances a crowd is actually seen from is not visible, and below the
-     threshold it is still nobody at all. */
-  watchedMost: 4,
+     threshold it is still nobody at all.
+
+     Eight rather than four, for a crowd. At four hundred and forty-five people
+     a stride of four still takes a hundred and eleven figures a frame, and
+     writing figures out is where the frame goes - the note above says a drawn
+     frame cost more than a year of running unwatched. Eight halves it.
+
+     What it costs is that everybody in the group thinks and steps half as
+     often, moving twice as far each time. That is the judder this number
+     exists to bound, and eight is the top of the range test.js allows. The one
+     you are following is exempt, which is the only figure close enough for it
+     to show. */
+  watchedMost: 8,
 };
 
 export let worldStep = 0;
