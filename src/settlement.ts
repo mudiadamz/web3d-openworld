@@ -5,7 +5,7 @@ import { flatnessAt, mulberry32, sampleHeight, inWater } from './noise.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, treeSpots } from './world.js';
 import { FIELD, fieldReach } from './farming.js';
 import { CITYHALL_TOP, civicGeometries, houseGeometry, storeGeometry, tentMaterial, tentStyle } from './village.js';
-import { pathEpoch, paveDisc, paveRoad } from './paths.js';
+import { liftRoads, pathEpoch, paveDisc, paveRoad } from './paths.js';
 import { DWELLING, dwellingsNear, footprint, pitch } from './footprint.js';
 import {
   CAMP_CLEARING, CAMP_PIECES, campCapacity, campParts, camps, GRAVE_SPACING, HEARTHS, PALE, people, STORE_FLAT, STORE_SCALE, STORE_SPOTS, STORE_STAND, STORE_THATCH, STORE_WALL, STORES, TENT_REACH, tribeGroup
@@ -565,6 +565,26 @@ function place(x, z, turn, lift = 0) {
   return _m4.compose(_v, _q, _s).clone();
 }
 
+/* Where a city's four gates are: in the wall, at each end of the street that
+   runs past the middle one way and of the first cross street the other, so the
+   road through a gate goes straight on down a street and never through a house.
+   Each as its angle round the middle (for the wall), the point just outside
+   (where a road out of the city starts), and the point on the plaza that street
+   runs to (where the avenue in from the gate ends). */
+export const GATE_OUT = 4;             // metres outside the wall a road starts
+export function cityGates(camp) {
+  const R = campReach(camp) + CIVIC.wallOut, th = camp.hearthTurn || 0;
+  const ux = Math.cos(th), uz = Math.sin(th), vx = -uz, vz = ux;
+  const street = CITY.pair / 2, cross = -CITY.along;   // the street past the middle, and the cross street
+  const at = (u, v) => ({ x: camp.x + ux * u + vx * v, z: camp.z + uz * u + vz * v });
+  return [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([su, sv]) => {
+    const u = su ? su * Math.sqrt(R * R - street * street) : cross;
+    const v = su ? street : sv * Math.sqrt(R * R - cross * cross);
+    const out = at(u + su * GATE_OUT, v + sv * GATE_OUT), inner = at(su ? 0 : u, su ? v : 0);
+    return { a: th + Math.atan2(v, u), ox: out.x, oz: out.z, ix: inner.x, iz: inner.z };
+  });
+}
+
 export function dressCivic() {
   if (!campParts?.huts) return;
   const halls = [], stalls = [], wells = [], walls = [], towers = [], cityHalls = [];
@@ -597,7 +617,7 @@ export function dressCivic() {
       const R = campReach(camp) + CIVIC.wallOut;
       const n = Math.ceil((2 * Math.PI * R) / CIVIC.wallGap);
       const half = CIVIC.gate / R;
-      const gates = [0, 1, 2, 3].map((g) => (camp.hearthTurn || 0) + (g * Math.PI) / 2);
+      const gates = cityGates(camp).map((g) => g.a);
       const off = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
       for (let j = 0; j < n; j++) {
         const a = (j / n) * Math.PI * 2;
@@ -635,31 +655,43 @@ export function dressCivic() {
 /* -------------------------------------------------------------------------
    Roads
 
-   A city paves its plaza and a street in front of every house, and the cross
-   streets through them; and there is a road from every city to each village of
-   its tribe, and between the cities — the shortest set of roads that joins all
-   of them, so every city can be reached from every other. Laid into the ground
-   the footpaths are worn into (paths.js), but as road: it never grows back,
-   grass never comes up through it, and it has a colour of its own on the ground
-   and on the map. Straight, and not across the water.
+   A city paves its plaza, a street in front of every house, the cross streets
+   through them, and an avenue from the plaza out through each of its gates.
 
+   Between places, one network rather than a road from a city to everywhere.
+   The places on it are the cities and the villages of their tribes. Starting at
+   the biggest city, whichever place is nearest the roads already laid joins
+   them next: at the nearest point on any road, which makes a junction, or at
+   a place already on the network. So a village joins the road that passes it
+   instead of laying its own all the way to the city, and every city is still
+   reachable from every other. A road leaves and enters a city only by a gate,
+   and a road that would cross any city's wall is only taken if there is no
+   other way.
+
+   Laid into the ground the footpaths are worn into (paths.js), but as road: it
+   never grows back, grass never comes up through it, and it has a colour of
+   its own on the ground and on the map. Straight, and not across the water.
    Laid again only when something it depends on changes — a city grows, one is
-   made or lost, a village changes hands — or the ground is thrown away.
+   made or lost, a village changes hands — and the roads laid before are taken
+   up first, so a gate that moved does not leave its old road behind.
    ------------------------------------------------------------------------- */
 let roadsFor = '';
+type Pt = { x: number; z: number };
+function nearestOnSeg(px, pz, ax, az, bx, bz): [number, number] {
+  const dx = bx - ax, dz = bz - az, len = dx * dx + dz * dz;
+  const t = len > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / len)) : 0;
+  return [ax + dx * t, az + dz * t];
+}
 export function layRoads() {
-  const cities = camps.filter((c) => !c.gone && (c.stage || 0) >= CITY.at && c.city && people.some((q) => q.camp === c));
-  const key = pathEpoch + '#' + cities.map((c) => `${c.index}:${c.cityShown || 0}:`
-    + camps.filter((v) => !v.gone && v !== c && v.code === c.code).map((v) => v.index).join('.')).join('|');
+  const peopled = new Set(people.map((q) => q.camp));
+  const cities = camps.filter((c) => !c.gone && (c.stage || 0) >= CITY.at && c.city && peopled.has(c));
+  const codes = new Set(cities.map((c) => c.code));
+  const towns = camps.filter((v) => !v.gone && !cities.includes(v) && codes.has(v.code) && peopled.has(v));
+  const key = pathEpoch + '#' + cities.map((c) => `${c.index}:${c.cityShown || 0}:${Math.round(campReach(c))}`).join('|')
+    + '#' + towns.map((v) => v.index).join('.');
   if (key === roadsFor) return;
   roadsFor = key;
-  // Four numbers — two ends of a road — spread into paveRoad, so: a tuple.
-  const edge = (from, to): [number, number, number, number] => {
-    // From the edge of one place to the edge of the other; inside, the streets.
-    const dx = to.x - from.x, dz = to.z - from.z, d = Math.hypot(dx, dz) || 1;
-    const a = Math.min(campReach(from), d / 2) / d, b = Math.min(campReach(to), d / 2) / d;
-    return [from.x + dx * a, from.z + dz * a, to.x - dx * b, to.z - dz * b];
-  };
+  liftRoads();
   for (const c of cities) {
     paveDisc(c.x, c.z, CITY.plaza - 1);
     const th = c.hearthTurn || 0, ux = Math.cos(th), uz = Math.sin(th), vx = -uz, vz = ux;
@@ -675,20 +707,55 @@ export function layRoads() {
       if ((((i % (CITY.block + 1)) + CITY.block + 1) % (CITY.block + 1)) !== CITY.block) continue;
       paveRoad(...at(i * CITY.along, vmin), ...at(i * CITY.along, vmax), 4.2);
     }
-    for (const v of camps) if (!v.gone && v !== c && v.code === c.code) paveRoad(...edge(c, v), 3.5);
+    // And from the plaza out through each gate, down the street it opens onto.
+    for (const g of cityGates(c)) paveRoad(g.ix, g.iz, g.ox, g.oz, 4.2);
   }
-  // Between the cities, the shortest roads that join them all (Prim's).
-  const joined = cities.slice(0, 1), left = cities.slice(1);
+
+  const nodes = cities.slice().sort((a, b) => (b.pop || 0) - (a.pop || 0)).concat(towns);
+  if (nodes.length < 2) return;
+  const walled = new Set(cities);
+  // The edge of a place without a wall, toward somewhere.
+  const edgeOf = (c, x, z): Pt => {
+    const dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) || 1, r = Math.min(campReach(c), d / 2) / d;
+    return { x: c.x + dx * r, z: c.z + dz * r };
+  };
+  // Where a road out of this place toward (x, z) may start: a gate, or the edge facing it.
+  const exits = (c, x, z): Pt[] => (walled.has(c) ? cityGates(c).map((g) => ({ x: g.ox, z: g.oz })) : [edgeOf(c, x, z)]);
+  const throughWall = (ax, az, bx, bz) => cities.some((w) => {
+    const [px, pz] = nearestOnSeg(w.x, w.z, ax, az, bx, bz);
+    return Math.hypot(px - w.x, pz - w.z) < campReach(w) + CIVIC.wallOut - 0.5;
+  });
+  const ends: ({ camp: any } | Pt)[] = [];
+  const segs: [number, number, number, number][] = [];
+  const join = (c) => { if (walled.has(c)) for (const g of cityGates(c)) ends.push({ x: g.ox, z: g.oz }); else ends.push({ camp: c }); };
+  join(nodes[0]);
+  const left = nodes.slice(1);
   while (left.length) {
-    let best = null, near = Infinity;
-    for (const a of joined) {
-      for (const b of left) {
-        const d = Math.hypot(a.x - b.x, a.z - b.z);
-        if (d < near) { near = d; best = [a, b]; }
+    let best = null, least = Infinity;
+    const consider = (n, sx, sz, tx, tz) => {
+      const d = Math.hypot(tx - sx, tz - sz) + (throughWall(sx, sz, tx, tz) ? 1e7 : 0);
+      if (d < least) { least = d; best = { n, road: [sx, sz, tx, tz] }; }
+    };
+    for (const n of left) {
+      for (const e of ends) {
+        const to = 'camp' in e ? e.camp : e;
+        for (const s of exits(n, to.x, to.z)) {
+          const t = 'camp' in e ? edgeOf(e.camp, s.x, s.z) : e;
+          consider(n, s.x, s.z, t.x, t.z);
+        }
+      }
+      // A junction: the nearest point on a road already laid.
+      for (const [ax, az, bx, bz] of segs) {
+        for (const s0 of exits(n, (ax + bx) / 2, (az + bz) / 2)) {
+          const [px, pz] = nearestOnSeg(s0.x, s0.z, ax, az, bx, bz);
+          const s = walled.has(n) ? s0 : edgeOf(n, px, pz);
+          consider(n, s.x, s.z, px, pz);
+        }
       }
     }
-    paveRoad(...edge(best[0], best[1]), 3.5);
-    joined.push(best[1]);
-    left.splice(left.indexOf(best[1]), 1);
+    paveRoad(best.road[0], best.road[1], best.road[2], best.road[3], 3.5);
+    segs.push(best.road);
+    join(best.n);
+    left.splice(left.indexOf(best.n), 1);
   }
 }

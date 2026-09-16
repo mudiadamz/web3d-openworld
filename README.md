@@ -1642,8 +1642,9 @@ the field.
 A city is laid out in streets rather than rings round fires, and has **no fire**
 at all: where its last one burned, in the middle of the plaza, stands the **city
 hall**, with the band's flag on its tower. Its plaza and streets are **paved**,
-and roads run from it to every village of its tribe and between the cities —
-the shortest set that joins them all — in a colour of their own on the ground
+and roads leave it only through its gates, into one network joining the cities and
+their villages, where each place joins the nearest road at a junction rather than
+laying its own road to a city. Roads have a colour of their own on the ground
 and on the map. A road is laid, not worn: it never grows back.
 
 People walk slower through grass and scrub than on a trodden path, and faster

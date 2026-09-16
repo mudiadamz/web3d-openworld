@@ -339,6 +339,17 @@ export function paveDisc(x, z, radius) {
   pathVersion++;
 }
 
+/** Takes up every road, before they are laid again: the ground under one goes
+    back to a bare trail, which grows over like any trail nobody walks. Without
+    it a road laid where a gate used to be stayed there for good. */
+export function liftRoads() {
+  if (!wear) return;
+  for (const k of roads) wear[k] = TRAIL_MAX;
+  roads.clear();
+  dirty = true;
+  pathVersion++;
+}
+
 /** Tiles whose grass is out of date, handed over once. */
 export function takeWornTiles() {
   if (!worn.size) return null;

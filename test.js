@@ -8364,9 +8364,19 @@ group('roads');
   check('a city paves its plaza, its streets and the cross streets through them',
     /paveDisc\(c\.x, c\.z, CITY\.plaza - 1\);/.test(st) && /const street = h\.v \+ h\.side \* 4\.0;/.test(st)
     && /!== CITY\.block\) continue;\s*paveRoad/.test(st));
-  check('and a road to each village of its tribe', /v\.code === c\.code\) paveRoad\(\.\.\.edge\(c, v\), 3\.5\);/.test(st));
+  check('one network, not a road from a city to every village: each place joins the nearest road, at a junction',
+    /const \[px, pz\] = nearestOnSeg\(s0\.x, s0\.z, ax, az, bx, bz\);/.test(st) && /segs\.push\(best\.road\);/.test(st)
+    && !/paveRoad\(\.\.\.edge\(c, v\)/.test(st));
+  check('a road leaves and enters a city only by a gate, and never goes through a wall',
+    /walled\.has\(c\) \? cityGates\(c\)\.map\(\(g\) => \(\{ x: g\.ox, z: g\.oz \}\)\)/.test(st)
+    && /\(throughWall\(sx, sz, tx, tz\) \? 1e7 : 0\)/.test(st) && /const gates = cityGates\(camp\)\.map\(\(g\) => g\.a\);/.test(st));
+  check('and a gate opens onto a street, with an avenue in from it to the plaza',
+    /const u = su \? su \* Math\.sqrt\(R \* R - street \* street\) : cross;/.test(st)
+    && /for \(const g of cityGates\(c\)\) paveRoad\(g\.ix, g\.iz, g\.ox, g\.oz, 4\.2\);/.test(st));
+  check('and the roads laid before are taken up before they are laid again',
+    /roadsFor = key;\s*liftRoads\(\);/.test(st) && /function liftRoads\(\)/.test(moduleSource('paths.js')));
   check('and the cities are all joined, by the shortest roads that do it',
-    /Between the cities, the shortest roads that join them all \(Prim's\)/.test(st) && /joined\.push\(best\[1\]\);/.test(st));
+    /every city is still\s+reachable from every other/.test(st) && /join\(nodes\[0\]\);/.test(st));
   check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
 }
 
