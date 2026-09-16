@@ -45,13 +45,13 @@ export const SOCIETY = {
 export const STAGES = [
   { name: 'band', split: 1.0,
     mix: { gather: 1.0, hunt: 1.0, fish: 1.0, farm: 0.7, craft: 0.9, visit: 1.0, raid: 0.6, mourn: 1.0, quarry: 0.9 } },
-  { name: 'tribe', split: 1.5,
+  { name: 'tribe', split: 2.5,
     mix: { gather: 0.9, hunt: 0.9, fish: 1.0, farm: 1.2, craft: 1.0, visit: 1.0, raid: 0.8, mourn: 1.1, quarry: 1.0 } },
-  { name: 'chiefdom', split: 2.1,
+  { name: 'chiefdom', split: 3.5,
     mix: { gather: 0.75, hunt: 0.8, fish: 0.9, farm: 1.4, craft: 1.1, visit: 1.1, raid: 1.3, mourn: 1.3, quarry: 1.2 } },
-  { name: 'village', split: 3.0,
+  { name: 'village', split: 5.0,
     mix: { gather: 0.6, hunt: 0.6, fish: 0.8, farm: 1.7, craft: 1.3, visit: 1.3, raid: 1.1, mourn: 1.3, quarry: 1.3 } },
-  { name: 'city', split: 6.0,
+  { name: 'city', split: 9.0,
     mix: { gather: 0.45, hunt: 0.45, fish: 0.7, farm: 1.9, craft: 1.5, visit: 1.6, raid: 1.4, mourn: 1.4, quarry: 1.5 } },
 ];
 

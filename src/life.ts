@@ -913,7 +913,7 @@ export const SPLIT = {
   /* And not twice in quick succession. A settlement that has just sent a band
      out is short of the people it was crowded with, and splitting again on the
      next full store is how one that ought to be growing stays small. */
-  everyYears: 3,       // sim-years before the same camp may send another band out
+  everyYears: 8,       // sim-years between splits, so a short YEAR_LENGTH is a short wait
   pairs: 3,            // fertile adults of each sex who go, at most
   keepPairs: 2,        // and who must be left behind, at least
 };

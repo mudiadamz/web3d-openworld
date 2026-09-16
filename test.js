@@ -7182,6 +7182,27 @@ check('and none of them faces the fire square on',
 check('and the outskirts are pitched the same way',
   moduleSource('settlement.js').includes('(jitter() - 0.5) * slot * 1.7')
   && moduleSource('settlement.js').includes('const r = 5.2 + jitter() * 3.9;'));
+group('a settlement holds more the higher it climbs');
+
+/* Measured rather than argued: on a rich island a band reached 58 and stopped
+   under its rung, which was 60. The ground was not what held it. So each rung
+   above a plain band holds a good deal more than the one below, and the plain
+   band keeps the forty its own check fences it to. */
+check('every rung holds more than the one under it', (() => {
+  const src = moduleSource('society.js');
+  const splits = [...src.matchAll(/split: ([\d.]+),/g)].map((m) => Number(m[1]));
+  if (splits.length < 5) return `${splits.length} rungs`;
+  const rising = splits.every((v, i) => i === 0 || v > splits[i - 1]);
+  return rising && splits[0] === 1 && splits[1] >= 2 ? true : splits.join(" ");
+})() === true);
+/* The wait between one band leaving and the next is counted in years, and a
+   year is a setting, so it is not the same wait on every island. At the default
+   twenty-four days a year, eight years is a hundred and ninety-two days between
+   one band leaving and the next. At a four-day year it is thirty-two, and that
+   world sends out six times as many bands for the same number written here -
+   which is most of why an island can end up covered in tribes. */
+check('and a band waits a good while before sending another out',
+  Number((moduleSource('life.js').match(/everyYears: (\d+),/) || [, 0])[1]) >= 6);
 group('loading over a slow link');
 
 /* Over a tunnel every file is a round trip of half a second or more. The page
