@@ -1686,14 +1686,14 @@ check('everybody is put in the tent they belong in',
    nought, so sixty people walked past four burning fires to stand at the
    first. */
 check('and at the fire it stands round',
-  /const fire = seat \? seat\.fire : camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\];/.test(html));
+  /const fire = seat \? seat\.fire : camp\.fireAt\?\.\[camp\.huts\[at\]\.fire \?\? Math\.floor\(at \/ HUTS_PER_HEARTH\)\];/.test(html));
 check('and that happens whenever the band changes', (() => {
   const i = html.indexOf('function dressCamp');
   return i > 0 && /assignHuts\(camp\);/.test(html.slice(i, i + 900));
 })());
 /* Laying the camp out again would shuffle it around them, because the layout
    comes off the camp's own rng and that rng moves on every call. */
-check('without laying the camp out again', /camp\.hutAt\[i\] = _m4\.clone\(\);/.test(html)
+check('without laying the camp out again', /camp\.hutAt\[n\] = _m4\.clone\(\);/.test(html)
   && /mesh\.setMatrixAt\(slot, key === style && i < coreWant && camp\.hutAt\?\.\[i\] \? camp\.hutAt\[i\] : HIDDEN\)/.test(html));
 check('the drying rack only stands once they know what it is for',
   /RACK_KNOWN = [\d.]+;/.test(html)
@@ -1806,6 +1806,88 @@ check('and none of them stands in a tent', (() => {
   }
   return worst > 0 ? true : `overlap by ${(-worst).toFixed(2)}m`;
 })() === true);
+
+/* -------------------------------------------------------------------------
+   Room to stand
+
+   No tent or house stands in another (footprint.js). Run, not read: the
+   placement is laid out the way a village's core is, fifty tents round five
+   fires, and every pair is measured.
+   ------------------------------------------------------------------------- */
+{
+  const src = moduleSource('footprint.js');
+  const num = (re) => Number((html.match(re) || [])[1]);
+  const reach = new Function(`return ${html.match(/const TENT_REACH = ([^;]+);/)[1]};`)();
+  const code = src.slice(src.indexOf('const DWELLING'), src.indexOf('function dwellingsNear'))
+    + src.slice(src.indexOf('function clearOf'));
+  const F = new Function('TENT_REACH', code + '\nreturn { DWELLING, footprint, clearOf, pitch };')(reach);
+
+  /* The footprint is the widest thing that can ever stand on the spot: a
+     house's eaves, corner to corner, a lodge's thatch, a townhouse's slab. */
+  check('a footprint is as wide as the widest shelter that will ever stand on it', (() => {
+    const W = num(/const W = ([\d.]+), L = [\d.]+, H = 1\.6;/), L = num(/const W = [\d.]+, L = ([\d.]+), H = 1\.6;/);
+    const eave = num(/new THREE\.ConeGeometry\(([\d.]+), 1\.5, 4\)\.rotateY/) * Math.SQRT1_2;
+    const house = Math.hypot(Math.max(W / 2, eave), Math.max(L / 2, eave * L / W));
+    const lodge = num(/new THREE\.ConeGeometry\(([\d.]+), 1\.8, 12\)/);
+    const tent = num(/const R = ([\d.]+), H = 2\.9;/);
+    const widest = Math.max(house, lodge, tent);
+    return F.DWELLING.radius >= widest ? true : `footprint ${F.DWELLING.radius} m, a house reaches ${widest.toFixed(2)} m`;
+  })() === true);
+
+  check('fifty tents round five fires: none in another, none in a fire, none past the reach', (() => {
+    const apart = num(/HEARTH_SPACING = (\d+);/), fires = num(/HEARTHS = (\d+);/), per = num(/HUTS_PER_HEARTH = (\d+);/);
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    let worst = Infinity, placed = 0, far = 0;
+    for (let trial = 0; trial < 20; trial++) {
+      const hearths = [[0, 0]];
+      for (let f = 1; f < fires; f++) hearths.push([Math.cos((f / fires) * Math.PI * 2) * apart, Math.sin((f / fires) * Math.PI * 2) * apart]);
+      const near = hearths.map(([x, z]) => ({ x, z, r: F.DWELLING.fire }));
+      const tents = [];
+      for (let i = 0; i < fires * per; i++) {
+        const [hx, hz] = hearths[(i / per) | 0];
+        const a = ((i % per) / per) * Math.PI * 2 + (rnd() - 0.5) * ((Math.PI * 2) / per) * 1.7;
+        const r = 5.2 + rnd() * 3.9, sc = 0.78 + rnd() * 0.47;
+        const spot = F.pitch(near, hx, hz, a, r, F.footprint(sc), () => true);
+        if (!spot) continue;
+        const t = { x: spot.x, z: spot.z, r: F.footprint(sc), hx, hz };
+        near.push(t);
+        tents.push(t);
+      }
+      placed += tents.length;
+      for (const t of tents) {
+        far = Math.max(far, Math.hypot(t.x - t.hx, t.z - t.hz) + t.r - reach);
+        for (const [x, z] of hearths) worst = Math.min(worst, Math.hypot(t.x - x, t.z - z) - t.r - F.DWELLING.fire);
+      }
+      for (let i = 0; i < tents.length; i++) for (let j = i + 1; j < tents.length; j++) {
+        worst = Math.min(worst, Math.hypot(tents[i].x - tents[j].x, tents[i].z - tents[j].z) - tents[i].r - tents[j].r);
+      }
+    }
+    return worst > 0 && far <= 1e-9 && placed > 20 * 20
+      ? true : `closest ${worst.toFixed(2)} m, furthest past the reach ${far.toFixed(2)} m, ${placed / 20} a camp`;
+  })() === true);
+
+  check('the outskirts keep the same rule, and so does the core',
+    moduleSource('people.js').includes('const spot = pitch(near, fire.x, fire.z, drawn, r, footprint(sc), (x, z) => !inWater(x, z));')
+    && moduleSource('settlement.js').includes('const spot = pitch(near, fire.x, fire.z, a, r, footprint(sc), (x, z) => sampleHeight(x, z) >= SEA + 1);')
+    && /const near = dwellingsNear\(camp\.x, camp\.z, HEARTH_SPACING \+ TENT_REACH\);/.test(html)
+    && /const near = dwellingsNear\(spot\.x, spot\.z, TENT_REACH\);/.test(html));
+  check('and every other camp\'s tents, houses and outskirts count, and the trees',
+    /for \(const h of c\.huts \|\| \[\]\) out\.push\(h\);/.test(src) && /for \(const t of hearth\.huts\) out\.push\(t\.hut\);/.test(src)
+    && /for \(const h of c\.city\?\.homes \|\| \[\]\) out\.push\(h\);/.test(src) && /for \(const t of treeSpots\)/.test(src));
+  check('a household past the tents that fit goes to the outskirts',
+    /Math\.max\(0, \(camp\.families \|\| 0\) - camp\.huts\.length\)/.test(html));
+
+  /* A city's rows are back to back, and a townhouse is deeper than the gap
+     they used to leave. */
+  check('back-to-back townhouses do not stand in each other', (() => {
+    const D = num(/const W = [\d.]+, D = ([\d.]+), H = 3\.2;/), slab = num(/new THREE\.BoxGeometry\(W \+ ([\d.]+), 0\.22, D \+ [\d.]+\)/);
+    const most = 0.95 + num(/const sc = 0\.95 \+ jitter\(\) \* ([\d.]+);/);
+    const back = num(/pair: [\d.]+, back: ([\d.]+),/);
+    const deep = (D + slab) * most;
+    return 2 * back > deep ? true : `rows ${2 * back} m apart, a townhouse ${deep.toFixed(2)} m deep`;
+  })() === true);
+}
 
 group('nursing');
 
@@ -6426,7 +6508,8 @@ check('and "am I home yet" is asked of that fire too',
 /* Which fire is theirs comes off their tent, so a household sits together —
    the same rule that put their tents beside each other. */
 check('a household shares a hearth because it shares a tent',
-  /const fire = seat \? seat\.fire : camp\.fireAt\?\.\[Math\.floor\(at \/ HUTS_PER_HEARTH\)\]/.test(html));
+  /const fire = seat \? seat\.fire : camp\.fireAt\?\.\[camp\.huts\[at\]\.fire \?\? Math\.floor\(at \/ HUTS_PER_HEARTH\)\]/.test(html)
+  && /camp\.huts\.push\(\{ x, z, r: footprint\(sc\), fire: mine \}\);/.test(html));
 check('and somebody with no tent yet still has somewhere to go',
   /function homeFire\(p\) \{\s*return p\.hearth \|\| p\.camp;\s*\}/.test(html));
 
@@ -7201,7 +7284,8 @@ group('water');
     && /if \(inWater\(x, z\)\) return false;/.test(bodyOf('outerGround') || '')
     && /if \(inWater\(q\.x, q\.z\) \|\| inWater\(sx, sz\)\) return false;/.test(bodyOf('cityGround') || ''));
   check('and a tent in the water is moved round its ring, without a draw off the stream',
-    /for \(let k = 1; k <= 20 && inWater\(fire\.x \+ Math\.cos\(a\) \* r, fire\.z \+ Math\.sin\(a\) \* r\); k\+\+\) \{\s*a \+= \(k % 2 \? 1 : -1\) \* k \* 0\.16;/.test(html));
+    moduleSource('people.js').includes('const spot = pitch(near, fire.x, fire.z, drawn, r, footprint(sc), (x, z) => !inWater(x, z));')
+    && !/rng\(\)/.test(moduleSource('footprint.js')));
   /* A preference, not a wall: an island threaded with water whose every flat
      spot is within twenty metres of a creek had no camp on it at all, and no
      people. Beside a creek is allowed when nothing else is; in one never is. */

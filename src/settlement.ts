@@ -6,6 +6,7 @@ import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, treeSpots } from './w
 import { FIELD, fieldReach } from './farming.js';
 import { CITYHALL_TOP, civicGeometries, houseGeometry, storeGeometry, tentMaterial, tentStyle } from './village.js';
 import { pathEpoch, paveDisc, paveRoad } from './paths.js';
+import { DWELLING, dwellingsNear, footprint, pitch } from './footprint.js';
 import {
   CAMP_CLEARING, CAMP_PIECES, campCapacity, campParts, camps, GRAVE_SPACING, HEARTHS, PALE, people, STORE_FLAT, STORE_SCALE, STORE_SPOTS, STORE_STAND, STORE_THATCH, STORE_WALL, STORES, TENT_REACH, tribeGroup
 } from './people.js';
@@ -113,8 +114,10 @@ function spread(camp, x, z, edge) {
    moves the next. */
 function addOuterHearth(camp, o, spot, slot) {
   const jitter = mulberry32(outerSeed(camp, slot));
-  const trees = treeSpots.filter((t) => Math.abs(t.x - spot.x) < 12 && Math.abs(t.z - spot.z) < 12);
   const fire = { x: spot.x, y: sampleHeight(spot.x, spot.z), z: spot.z };
+  // Clear of every tent and house about, and of the trees (footprint.js).
+  const near = dwellingsNear(spot.x, spot.z, TENT_REACH);
+  near.push({ x: fire.x, z: fire.z, r: DWELLING.fire });
   const huts = [];
   for (let k = 0; k < OUTSKIRTS.seats; k++) {
     // Scattered, for the reason the core is (people.ts, layoutCamp).
@@ -123,12 +126,15 @@ function addOuterHearth(camp, o, spot, slot) {
     const r = 5.2 + jitter() * 3.9;
     const sc = 0.78 + jitter() * 0.47, tall = 0.84 + jitter() * 0.5;
     const hide = 0x6d5740 + ((jitter() * 0x101010) | 0);
-    const x = fire.x + Math.cos(a) * r, z = fire.z + Math.sin(a) * r;
-    if (sampleHeight(x, z) < SEA + 1 || trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.6)) continue;
-    _e.set(0, -a + (sc - 1.015) * 1.9, 0); _q.setFromEuler(_e);
+    const spot = pitch(near, fire.x, fire.z, a, r, footprint(sc), (x, z) => sampleHeight(x, z) >= SEA + 1);
+    if (!spot) continue;
+    const { x, z } = spot;
+    const hut = { x, z, r: footprint(sc) };
+    near.push(hut);
+    _e.set(0, -spot.a + (sc - 1.015) * 1.9, 0); _q.setFromEuler(_e);
     _v.set(x, sampleHeight(x, z) - 0.15, z);
     _s.set(sc, sc * tall, sc);
-    huts.push({ hut: { x, z }, at: _m4.compose(_v, _q, _s).clone(), hide });
+    huts.push({ hut, at: _m4.compose(_v, _q, _s).clone(), hide });
   }
   if (huts.length < OUTSKIRTS.minSeats) return;
   const stones = [], logs = [];
@@ -207,7 +213,10 @@ export function extendOutskirts(camp, seats) {
    them), among trees, or crowding the next place. Every twelfth good plot is a
    granary rather than a house.
    ------------------------------------------------------------------------- */
-export const CITY = { at: 4, along: 4.2, block: 6, pair: 11.4, back: 1.7, plaza: 10, reach: 150, storeEvery: 12,
+/* Back to back at 1.95 either side of the line, not 1.7: a townhouse is 3.25 m
+   deep with its roof slab and a city builds them a tenth over, so at 1.7 the
+   two rows stood a sixth of a metre into each other. */
+export const CITY = { at: 4, along: 4.2, block: 6, pair: 11.4, back: 1.95, plaza: 10, reach: 150, storeEvery: 12,
   hallRoof: CITYHALL_TOP };
 
 function cityCandidates(camp) {

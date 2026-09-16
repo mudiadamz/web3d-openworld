@@ -15,6 +15,7 @@ import { codeColor, takeTribeCode } from './ui.js';
 import { FIELD, dressField, farmGeometries } from './farming.js';
 import { HOUSE_KEYS, TENT_KEYS, tentGeometries, tentMaterial, tentStyle } from './village.js';
 import { campReach, CITY, cityPlotsFor, CIVIC, claimCivic, dressCivic, dressOutskirts, extendOutskirts, makeHouses, OUTSKIRTS } from './settlement.js';
+import { DWELLING, dwellingsNear, footprint, pitch } from './footprint.js';
 export { CITY, CIVIC, OUTSKIRTS, campReach, claimCivic, cityPlotsFor, dressCivic, dressOutskirts, extendOutskirts, storeKind } from './settlement.js';
 /* The outskirts and what a larger place builds were lifted out into settlement.js
    when this file passed the length of the page it came from; see there. */
@@ -796,7 +797,7 @@ export function assignHuts(camp) {
 
        It comes off the tent rather than off the person, so a household sits at
        one fire: the same rule that put their tents beside each other. */
-    const fire = seat ? seat.fire : camp.fireAt?.[Math.floor(at / HUTS_PER_HEARTH)];
+    const fire = seat ? seat.fire : camp.fireAt?.[camp.huts[at].fire ?? Math.floor(at / HUTS_PER_HEARTH)];
     for (const p of [...f.adults, ...f.kids]) { p.hut = hut; p.hearth = fire; }
   });
 }
@@ -883,7 +884,7 @@ export function dressCamp(camp, pack = true) {
   const coreWant = city ? 0 : want;
   camp.cityShown = city && here > 0 ? Math.min(camp.families || 0, camp.city?.homes.length || 0) : 0;
   // And every household past the core's fifty, in the outskirts (dressOutskirts).
-  camp.outerShown = city || here === 0 || !camp.outer ? 0 : Math.min(Math.max(0, (camp.families || 0) - P0.huts), camp.outer.seats.length);
+  camp.outerShown = city || here === 0 || !camp.outer ? 0 : Math.min(Math.max(0, (camp.families || 0) - camp.huts.length), camp.outer.seats.length);
   /* Which kind of tent they put up is how well they build (village.js): the
      plain cone, then hides on poles, then painted, then a lodge. Every kind has
      a slot for every tent; the kinds this band does not build are parked. */
@@ -1107,8 +1108,15 @@ export function layoutCamp(camp, index) {
     const x = camp.x + CAMP_CLEARING + 4, z = camp.z;
     camp.barrow = { x, z, y: sampleHeight(x, z), a: 0 };
   }
+  /* What every tent here has to keep clear of (footprint.js): the camps round
+     about, this camp's own fires, and each tent as it goes up. */
+  const near = dwellingsNear(camp.x, camp.z, HEARTH_SPACING + TENT_REACH);
+  for (let f = 0; f < HEARTHS; f++) {
+    const h = hearthAt(camp, f);
+    near.push({ x: h.x, z: h.z, r: DWELLING.fire });
+  }
+  camp.hutAt = [];
   for (let i = 0; i < P0.huts; i++) {
-    const slot = index * P0.huts + i;
     /* A ring of shelters facing a fire, which is what a camp actually is — and
        one ring per fire, which is what a village is. Tents fill their own
        hearth's ring before the next hearth is used at all, so a band that grows
@@ -1126,21 +1134,24 @@ export function layoutCamp(camp, index) {
        The old numbers were an eighth of a slot of wiggle and two and a half
        metres of depth, which is a ring with a tremble in it. */
     const gap = (Math.PI * 2) / HUTS_PER_HEARTH;
-    let a = (seat / HUTS_PER_HEARTH) * Math.PI * 2 + (rng() - 0.5) * gap * 1.7;
+    const drawn = (seat / HUTS_PER_HEARTH) * Math.PI * 2 + (rng() - 0.5) * gap * 1.7;
     const r = 5.2 + rng() * 3.9;
-    /* Never standing in water: round its own ring, a little either way at a
-       time, to the first dry ground. No draw off the stream for it, which the
-       rest of the camp's layout is still reading. */
-    for (let k = 1; k <= 20 && inWater(fire.x + Math.cos(a) * r, fire.z + Math.sin(a) * r); k++) {
-      a += (k % 2 ? 1 : -1) * k * 0.16;
-    }
-    const x = fire.x + Math.cos(a) * r, z = fire.z + Math.sin(a) * r;
     const sc = 0.78 + rng() * 0.47;
-    camp.huts.push({ x, z });
+    const tall = 0.84 + rng() * 0.5;
+    const hide = 0x6d5740 + ((rng() * 0x101010) | 0);
+    /* Never standing in water, nor in another tent (footprint.js): the nearest
+       free spot round its own fire, or none. Every draw for this tent is made
+       first, so a tent that finds no room moves nothing after it. */
+    const spot = pitch(near, fire.x, fire.z, drawn, r, footprint(sc), (x, z) => !inWater(x, z));
+    if (!spot) continue;
+    const { x, z, a } = spot;
+    const n = camp.huts.length, slot = index * P0.huts + n;
+    // Which fire it stands round, now that the tents round a fire are however many fit.
+    camp.huts.push({ x, z, r: footprint(sc), fire: mine });
+    near.push(camp.huts[n]);
     _e.set(0, -a + (sc - 1.015) * 1.9, 0); _q.setFromEuler(_e);
     _v.set(x, sampleHeight(x, z) - 0.15, z);
-    _s.set(sc, sc * (0.84 + rng() * 0.5), sc);
-    camp.hutAt = camp.hutAt || [];
+    _s.set(sc, sc * tall, sc);
     /* Composed first, and only then kept. This was the wrong way round, and
        what it stored was not this hut.
 
@@ -1163,8 +1174,7 @@ export function layoutCamp(camp, index) {
          · every other hut — the hut before it, so tents stood inside each other
            and the last hut in the ring was never placed at all. */
     campParts.huts.setMatrixAt(slot, _m4.compose(_v, _q, _s));
-    camp.hutAt[i] = _m4.clone();
-    const hide = 0x6d5740 + ((rng() * 0x101010) | 0);
+    camp.hutAt[n] = _m4.clone();
     campParts.huts.setColorAt(slot, _c.setHex(hide));
     /* The better tents carry their colours in the hide itself, so the instance
        only tints them — the same hide, paled, and no new draw off the camp's
