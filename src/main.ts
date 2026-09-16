@@ -39,7 +39,7 @@ import {
   codeChip, ensureCurrentWorld, hhmm, setRate, syncLabels, toast, tribeChips, updateToast
 } from './ui.js';
 import { updateLivestock } from './farming.js';
-import { updateSociety } from './society.js';
+import { borderTension, updateSociety } from './society.js';
 
 /* -------------------------------------------------------------------------
    Loop
@@ -141,6 +141,7 @@ export function stepWorld(dt) {
     repopulate(owed);
     updateLivestock(owed);
     updateSociety();
+    borderTension(owed);
   }
   updatePeople(paced, smoothstep(-0.10, 0.14, sunDir.y));
   setDrawingWorld(true);
@@ -529,6 +530,7 @@ export function tick() {
     repopulate(owed);
     updateLivestock(owed);
     updateSociety();
+    borderTension(owed);
   }
   /* Watching: the island says where everybody is, and a paced delta of
      nothing stops this page moving them on its own. updatePeople still

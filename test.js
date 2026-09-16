@@ -7203,6 +7203,25 @@ check('every rung holds more than the one under it', (() => {
    which is most of why an island can end up covered in tribes. */
 check('and a band waits a good while before sending another out',
   Number((moduleSource('life.js').match(/everyYears: (\d+),/) || [, 0])[1]) >= 6);
+group('a border teaches fighting');
+
+/* A raid needs hunger, and it is held above begging on purpose, so an island
+   that feeds everybody never raided and never learned to fight. A foreign
+   camp close by teaches it instead - but only if it beats the daily fade,
+   and only if it lifts what people know, or practise caps it at a step past
+   nothing and it stalls where it started. */
+check('a close border teaches fighting faster than it fades', (() => {
+  const soc = moduleSource('society.js');
+  const per = Number((soc.match(/perDay: ([\d.]+),/) || [, 0])[1]);
+  const fade = Number((moduleSource('skills.js').match(/fade: ([\d.]+),/) || [, 0])[1]);
+  return per > fade ? true : `teaches ${per} a day against a fade of ${fade}`;
+})() === true);
+check('and lifts what people know, so it does not stall at the cap',
+  moduleSource('society.js').includes('p.knows.war = Math.max(p.knows.war || 0, level);'));
+check('and a village of the same tribe is not a border',
+  moduleSource('society.js').includes('c.code === camp.code) continue;'));
+check('and it runs with the day\'s books, on both paths',
+  (moduleSource('main.js').split('borderTension(owed);').length - 1) === 2);
 group('loading over a slow link');
 
 /* Over a tunnel every file is a round trip of half a second or more. The page

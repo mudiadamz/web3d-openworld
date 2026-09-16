@@ -131,8 +131,10 @@ for (const f of readdirSync(DIST).filter((f) => f.endsWith('.js'))) {
 }
 
 /** Boots an island and hands back the modules that hold it. */
-export async function bootWorld({ people = 60, camps = 6, abundance = 3, map = 1500, seed } = {}) {
-  const values = { counts: { people, camps }, abundance, map };
+export async function bootWorld({ people = 60, camps = 6, abundance = 3, map = 1500, seed, ...extra } = {}) {
+  /* Anything else passed in is a setting path too - dayLength, yearLength - so a
+     measurement can run a short day without this growing a parameter a time. */
+  const values = { counts: { people, camps }, abundance, map, ...extra };
   if (seed !== undefined) values.seed = seed;
   globalThis.__CONFIG__ = { values, explicit: ['abundance'] };
 
@@ -146,5 +148,5 @@ export async function bootWorld({ people = 60, camps = 6, abundance = 3, map = 1
      itself into a frame again, because from here the steps are ours. */
   drain(8);
   frames.length = 0;
-  return { main, people: folk, life, params, bootMs: Date.now() - t0 };
+  return { main, people: folk, life, params, load, bootMs: Date.now() - t0 };
 }

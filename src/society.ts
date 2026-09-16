@@ -1,7 +1,7 @@
 import { P } from './params.js';
-import { camps, dressCamp } from './people.js';
+import { camps, dressCamp, people } from './people.js';
 import { logEvent, simDay } from './life.js';
-import { SKILLS } from './skills.js';
+import { SKILLS, practise } from './skills.js';
 
 /* -------------------------------------------------------------------------
    From band to city
@@ -145,4 +145,57 @@ export function jobMix(camp, job, hunger) {
   const farmed = job === 'gather' || job === 'hunt'
     ? (camp.skill?.farming || 0) * (1 - Math.min(1, Math.max(0, hunger))) : 0;
   return farmed > 0 ? mixed * (1 - SOCIETY.farmAway * farmed) : mixed;
+}
+
+/* -------------------------------------------------------------------------
+   A border
+
+   Fighting used to be learned in one way only: a raid, from either end of
+   it. And a raid is a hungry band taking food - test.js holds it above
+   begging, because a band that could still walk over and ask, asks. So on an
+   island that feeds everybody nobody ever raided, and nobody ever learned to
+   fight, however close two tribes pitched their fires.
+
+   Which is not how it goes. People who live within sight of somebody else's
+   smoke keep a watch, square up at the stream, and know what they would do.
+   A foreign camp close by teaches fighting slowly, every day, with nobody
+   hurt - and the raid is still what it was, for when there is no food.
+
+   Two things it has to do or it does nothing at all:
+
+   - Beat the fade. Every skill loses SKILL.fade a day whether or not it was
+     practised, so a border has to teach more than that or the number only
+     ever falls. At its tightest it teaches two and a half times the fade;
+     at forty percent of the reach it breaks even, and past that it fades,
+     as a peaceful band's fighting should.
+
+   - Lift what people know. practise caps a band at a step past the best of
+     what its living people know, and nothing raised anybody's knowing of
+     war - so the camp's number alone would stop at fourteen and stay there,
+     looking fixed and not being. The adults know what the band knows.
+
+   Villages of the same tribe do not count: raidTarget skips them for the
+   same reason. It is somebody else's smoke. */
+export const BORDER = {
+  reach: 300,          // metres: a foreign camp this close is somebody you watch
+  perDay: 0.025,       // fighting a day at the tightest - two and a half times SKILL.fade
+};
+
+export function borderTension(days) {
+  if (!(days > 0)) return;
+  for (const camp of camps) {
+    if (camp.gone) continue;
+    let near = Infinity;
+    for (const c of camps) {
+      if (c === camp || c.gone || c.code === camp.code) continue;
+      near = Math.min(near, Math.hypot(c.x - camp.x, c.z - camp.z));
+    }
+    if (!(near < BORDER.reach)) continue;
+    const tight = 1 - near / BORDER.reach;      // nothing at the edge, all of it next door
+    practise(camp, 'war', BORDER.perDay * tight * days);
+    const level = camp.skill?.war || 0;
+    for (const p of people) {
+      if (p.camp === camp && !p.child) p.knows.war = Math.max(p.knows.war || 0, level);
+    }
+  }
 }
