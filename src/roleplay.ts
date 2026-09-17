@@ -379,5 +379,13 @@ export function wireRoleplay() {
     save();
     drawLobby();
   });
-  if (P.roleplay) $('rpOpen') && ($('rpOpen').hidden = false);
+  if (!P.roleplay) return;
+  if ($('rpOpen')) $('rpOpen').hidden = false;
+  /* On a phone: over the shoulder, and nothing that would look at anybody else -
+     follow picks somebody, and view switches away from them. */
+  if ($('touchShoulder')) $('touchShoulder').hidden = false;
+  for (const what of ['follow', 'view']) {
+    const b = document.querySelector?.(`#touch [data-touch="${what}"]`) as HTMLElement;
+    if (b) b.hidden = true;
+  }
 }

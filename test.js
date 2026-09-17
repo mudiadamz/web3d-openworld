@@ -2756,9 +2756,9 @@ check('the row reads the two of them', (() => {
 })() === true);
 /* Nothing to undo is a thing the button has to say. Pressing it and having
    nothing happen reads as the button being broken. */
-check('and the one that undoes is greyed when there is nothing to undo',
+check('and the one that undoes is not there when there is nothing to undo',
   /button\[data-act="free"\]/.test(bodyOf('updateOrders') || '')
-  && /free\.disabled/.test(bodyOf('updateOrders') || ''));
+  && /free\.hidden/.test(bodyOf('updateOrders') || ''));
 
 /* -------------------------------------------------------------------------
    Bringing it in
@@ -3111,8 +3111,8 @@ check('too heavy to walk is not too heavy to do what is in reach',
 check('and the prompt says how to get moving', /put one down — too heavy to walk/.test(bodyOf('updateActPrompt') || ''));
 check('but too heavy to walk is too heavy to be sent anywhere: no order, no walk home, no letting go',
   ['orderJob', 'handBack', 'sendHome'].every((f) => /if \(tooHeavyToSend\(p\)\) return false;/.test(bodyOf(f) || ''))
-  && /if \(b\.dataset\?\.order && b\.disabled !== heavy\) b\.disabled = heavy;/.test(bodyOf('updateOrders') || '')
-  && /if \(home && home\.disabled !== heavy\) home\.disabled = heavy;/.test(bodyOf('updateOrders') || ''));
+  && /const gone = Boolean\(job\) && \(heavy \|\| \(job in can && !can\[job\]\)\);/.test(bodyOf('updateOrders') || '')
+  && /if \(home && home\.hidden !== heavy\) home\.hidden = heavy;/.test(bodyOf('updateOrders') || ''));
 check('and the one you are playing is weighed by what is in the basket, whatever the carry flag says',
   /if \(p\.carry \|\| p\.led\) want \*= carryFactor\(p\);/.test(html));
 /* One handful at a time, and the pile and the basket add up to what there was. */
@@ -8478,6 +8478,25 @@ group('role play');
     && rp.includes('topUpGoals(p);'));
   check('a death is a death: a new character, and what was achieved stays on the record',
     rp.includes('write(STORE, null);') && rp.includes('showSetup();') && rp.includes("MARKS = 'openworld.heroMarks'"));
+}
+
+group('a phone, and what is shown');
+{
+  const ch = moduleSource('chronicle.js');
+  check('who they are and what they are doing is on the basket, not in the corner',
+    ch.includes(`'<div class="who">' + whoLine + '</div>'`) && ch.includes("  el.innerHTML = ''"));
+  check('an action is only there when it can be done',
+    ch.includes('if (free.hidden !== !can) free.hidden = !can;') && ch.includes('if (store.hidden !== !can) store.hidden = !can;')
+    && ch.includes('if (drop && drop.hidden !== !loadNow) drop.hidden = !loadNow;') && ch.includes('if (food.hidden !== !can) food.hidden = !can;')
+    && ch.includes('const gone = Boolean(job) && (heavy || (job in can && !can[job]));')
+    && ch.includes('if (touchAct && touchAct.hidden !== !t) touchAct.hidden = !t;'));
+  check('in role play a phone has over the shoulder, and no follow or view',
+    html.includes('data-touch="shoulder"') && moduleSource('ui.js').includes("if (what === 'shoulder' && !shoulderView())")
+    && moduleSource('roleplay.js').includes("for (const what of ['follow', 'view'])"));
+  check('no keys button on a phone', html.includes('#touch .btn[data-touch="keys"], #ui header #keysOpen { display: none; }'));
+  check('and Safari never zooms: not on a double tap, not into a field',
+    html.includes('maximum-scale=1, user-scalable=no') && html.includes('touch-action: manipulation')
+    && html.includes('input, select, textarea { font-size: 16px; }'));
 }
 
 group('which place is which');

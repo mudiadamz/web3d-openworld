@@ -11,7 +11,7 @@ import { VIEW_MODES, buildWorld, placeCamera } from './move.js';
 import {
   chronPage, closeChronicle, closeTribe, dropHere, eatHere, handBack, openChronicle, openTribe, orderJob,
   restHere, renderChronPage, renderTribeCard, sendHome, setChronFind, setChronPage, setTribeTab, showKeys,
-  storeHere, toggleKeys, tribeShown, actHere, pickFollow, setViewMode, FOCUS_STORE
+  storeHere, toggleKeys, tribeShown, actHere, pickFollow, setViewMode, shoulderView, FOCUS_STORE
 } from './chronicle.js';
 import { camps, setPeopleSalt } from './people.js';
 import { MAP_LAYERS_STORE, stepMapSize, travelTo } from './map.js';
@@ -505,6 +505,7 @@ $('touch')?.addEventListener('click', (ev: any) => {
   // F: into Follow, then again for somebody else — the same one key, twice over.
   if (what === 'follow') { if (P.view !== 'follow') setViewMode('follow'); else pickFollow(); }
   if (what === 'act') actHere();
+  if (what === 'shoulder' && !shoulderView()) toast('nobody to stand behind');
   if (what === 'map') stepMapSize(1);
   /* One sheet at a time. Each of these covers the whole screen, and opening a
      second over the first left them stacked with nothing to close them but

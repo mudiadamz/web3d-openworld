@@ -573,13 +573,13 @@ check('the keyboard reaches the page', (windowListeners.keydown || []).length > 
   for (let i = 0; i < 5; i++) stepFrame(0);
   check('follow names somebody in the corner', following && following.hidden === false,
     following ? `hidden=${following.hidden}` : 'no element');
-  // "[MW] Wirik, 6♂ · at the fire" — band code, name, age, sex, job.
-  check('and says whose they are, who they are, their sex and what they are doing',
-    following && /^\[[A-Z0-9]{2}\] \w+, \d+[♀♂] · \S/.test(following.textContent),
-    following ? JSON.stringify(following.textContent) : '');
+  // "[MW] Wirik, 6♂ · at the fire" — band code, name, age, sex, job: on the basket now.
+  const bagWho = (document.getElementById('bagHud')?.innerHTML.match(/<div class="who">(.*?)<\/div>/) || [, ''])[1];
+  check('and the basket says whose they are, who they are, their sex and what they are doing',
+    /^\[?[A-Z0-9]{2}\]? \w+, \d+[♀♂] · \S/.test(bagWho.replace(/<[^>]*>/g, '')),     // the code is a chip here, so no brackets
+    JSON.stringify(bagWho.replace(/<[^>]*>/g, '')));
   check('and the band code is drawn in its own colour',
-    following && /class="wcode" style="background:hsl\(/.test(following.innerHTML),
-    following ? following.innerHTML.slice(0, 80) : '');
+    /class="wcode" style="background:hsl\(/.test(bagWho), bagWho.slice(0, 80));
 
   /* The energy meter was here. How much they have left is the life bar on the
      basket at the bottom of the screen now, which is showing whenever this is

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Open World Sandbox</title>
 <style>
   :root {
@@ -14,6 +14,9 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #05070a; }
+  /* Never zoomed by a tap: a double tap on small text in Safari zoomed the page
+     and left it there. The canvas keeps its own touch-action: none. */
+  html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
   body {
     font: 11px/1.45 ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
     color: var(--text);
@@ -613,6 +616,9 @@
     font-size: 10px; line-height: 1.25; color: var(--text);
   }
   #orders .bag b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Who they are and what they are doing, above what they carry. */
+  #orders .bag .who { color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
+  #orders .bag .who b { font-weight: 600; }
   #orders .bag .bar {
     display: block; height: 3px; margin: 3px 0 2px; border-radius: 2px;
     background: rgba(255, 255, 255, 0.12); overflow: hidden;
@@ -702,6 +708,13 @@
     #touch .btn { min-width: 60px; min-height: 44px; font-size: 11px; }
     /* Shut, the fold button is the whole rail — the other corner's bargain. */
     #touch.collapsed .btn:not(#touchFold) { display: none; }
+    /* Anything the page has hidden is hidden: `.btn` sets a display, which
+       outranks the browser's own [hidden] rule. */
+    #touch .btn[hidden] { display: none; }
+    /* No keys on a phone, so no list of them. */
+    #touch .btn[data-touch="keys"], #ui header #keysOpen { display: none; }
+    /* A phone zooms into a field whose text is under 16px, and stays there. */
+    input, select, textarea { font-size: 16px; }
     /* And the row stops short of it. Both corners sit on the bottom now, and
        the rail is the one with a z-index: without this an opened row runs the
        width of the screen underneath it, and the buttons it covers are not
@@ -1081,7 +1094,9 @@
 <div id="touch" aria-label="Touch controls">
   <button class="btn" data-touch="view" title="Switch view (C)">view</button>
   <button class="btn" data-touch="follow" title="Follow somebody (F)">follow</button>
-  <button class="btn" data-touch="act" title="Do what is in front of them (E)">do</button>
+  <!-- Over the shoulder (V), in role play, where view and follow have nothing to do. -->
+  <button class="btn" data-touch="shoulder" id="touchShoulder" title="Over the shoulder (V)" hidden>behind</button>
+  <button class="btn" data-touch="act" id="touchAct" title="Do what is in front of them (E)" hidden>do</button>
   <button class="btn" data-touch="map" title="The map (M)">map</button>
   <button class="btn" data-touch="band" title="The band (T)">band</button>
   <button class="btn" data-touch="panel" title="The world panel (H)">panel</button>

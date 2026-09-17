@@ -895,7 +895,7 @@ export function sendHome() {
 
    Rewritten only when what it says changes: it is asked every frame.
    ------------------------------------------------------------------------- */
-let bagShown = '';
+let bagShown = '', whoLine = '';   // who they are and what they are doing, for the basket
 
 /* The life bar, beside what they carry: out of a hundred, spent walking,
    running, working, carrying and in the cold, won back resting (X) and eating
@@ -931,7 +931,7 @@ export function updateBagHud(p) {
     where = off < 0 ? '<em class="here">at the granaries · E puts it away</em>'
       : '<em>granaries ' + Math.ceil(off) + ' m</em>';
   }
-  const html = '<b>' + (shoulder ? 'on the shoulder: ' : '') + what + '</b>'
+  const html = (whoLine ? '<div class="who">' + whoLine + '</div>' : '') + '<b>' + (shoulder ? 'on the shoulder: ' : '') + what + '</b>'
     + where
     + '<span class="bar' + (full >= 1 ? ' full' : '') + '"><i style="width:' + Math.round(full * 100) + '%"></i></span>'
     + '<small>' + slow + 'store '
@@ -955,9 +955,9 @@ export function updateOrders() {
     const mine = b.dataset && b.dataset.order === (p.orders || p.job);
     if (b.classList.contains('on') !== !!mine) b.classList.toggle('on', !!mine);
     // Too heavy to walk: no errand can be set off on (tooHeavyToSend).
-    if (b.dataset?.order && b.disabled !== heavy) b.disabled = heavy;
-    const job = b.dataset?.order;          // gone where the band has no such errand
-    if (job && job in can && b.hidden !== !can[job]) b.hidden = !can[job];
+    const job = b.dataset?.order;          // gone where the band has no such errand, or while too heavy to set off
+    const gone = Boolean(job) && (heavy || (job in can && !can[job]));
+    if (job && b.hidden !== gone) b.hidden = gone;
   }
   /* Greyed while nothing is holding them. A button whose whole job is to undo
      something has to say when there is nothing to undo: pressing it and having
@@ -966,28 +966,28 @@ export function updateOrders() {
   if (free) {
     const held = !!(p.led || p.orders);
     const can = held && !heavy;
-    if (free.disabled !== !can) free.disabled = !can;
+    if (free.hidden !== !can) free.hidden = !can;
   }
   const home = box.querySelector?.('button[data-act="home"]') as HTMLButtonElement;
-  if (home && home.disabled !== heavy) home.disabled = heavy;
+  if (home && home.hidden !== heavy) home.hidden = heavy;
   /* Put away: only in the storage area with something to put, and lit green
      when it is — the same green as the ring. Drop: whenever there is a load. */
   const loadNow = hasLoad(p);
   const store = box.querySelector?.('button[data-act="store"]') as HTMLButtonElement;
   if (store) {
     const can = loadNow && inStoreArea(p);
-    if (store.disabled !== !can) store.disabled = !can;
+    if (store.hidden !== !can) store.hidden = !can;
     store.classList?.toggle?.('ready', can);
   }
   const drop = box.querySelector?.('button[data-act="drop"]') as HTMLButtonElement;
-  if (drop && drop.disabled !== !loadNow) drop.disabled = !loadNow;
+  if (drop && drop.hidden !== !loadNow) drop.hidden = !loadNow;
   // Rest lit while they are resting; eat only with something to eat.
   const rest = box.querySelector?.('button[data-act="rest"]');
   if (rest) rest.classList?.toggle?.('ready', Boolean(p.resting));
   const food = box.querySelector?.('button[data-act="eat"]') as HTMLButtonElement;
   if (food) {
     const can = canEat(p);
-    if (food.disabled !== !can) food.disabled = !can;
+    if (food.hidden !== !can) food.hidden = !can;
   }
 }
 
@@ -1142,7 +1142,8 @@ export function actHere() {
 export function updateActPrompt() {
   const el = $('actPrompt');
   const p = P.view === 'follow' ? followedPerson() : null;
-  if (!p) { if (el && !el.hidden) el.hidden = true; return; }
+  const touchAct = $('touchAct');
+  if (!p) { if (el && !el.hidden) el.hidden = true; if (touchAct) touchAct.hidden = true; return; }
   // A throw is decided in the step; it is said the frame after.
   if (p.actResult) { toast(p.actResult); p.actResult = null; }
   const now = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -1159,6 +1160,7 @@ export function updateActPrompt() {
     return;
   }
   const t = whatHere(p);
+  if (touchAct && touchAct.hidden !== !t) touchAct.hidden = !t;
   /* Too heavy to walk: what is in reach can still be done, and G is how to
      get moving again — a handful at a time, where it can be picked up. */
   const heavy = tooHeavy(p);
@@ -1495,7 +1497,8 @@ export function updateFollowCaption() {
   }
   p.lastSeen = [p.x, p.z, worldClock];
 
-  el.innerHTML = sexMarks(tribeChips(el.textContent))
+  whoLine = sexMarks(tribeChips(el.textContent));   // said on the basket now (updateBagHud); the corner keeps the numbers
+  el.innerHTML = ''
     + (hud ? '' : ` <span class="meter${ten <= 2 ? ' low' : ''}" title="energy">${meter} ${ten}/10</span>`)
     + `<span class="where">`
     + `x ${p.x.toFixed(1)}  z ${p.z.toFixed(1)}  alt ${alt.toFixed(1)}m`
