@@ -18,7 +18,7 @@ import { nearestRock,
 import {
   PANIC, PERSON_STAMINA, RECOVERY_SECONDS, REFEED, SLEEP_SECONDS, STARVE_DRAIN,
   STARVE_FROM, _eAnim, _mChain, _mHead, _mLocal, _mLower, _mOff, _mUpper, _pAnim, _qAnim,
-  _sAnim, buildAnimals, clearFauna, energyRate, nearestPredator
+  _sAnim, buildAnimals, clearFauna, energyRate, nearestPredator, safeGround
 } from './wildlife.js';
 import { PERSON, SHIN_MAX, drawingWorld, lodStride, lodTurn, luck, pace, partsPer, seedSim, turnStart, worldClock } from './clock.js';
 import {
@@ -53,6 +53,7 @@ import { arm } from './ui.js';
 import { updateHud } from './main.js';
 import { traceStreams, carveStreams, buildStreamWater } from './creeks.js';
 import { farmDone, farmSite, farmWeight } from './farming.js';
+import { pickHerd, riding, tameDone, tameWeight } from './riding.js';
 import { jobMix } from './society.js';
 
 /* -------------------------------------------------------------------------
@@ -557,6 +558,7 @@ export function pickWork(p) {
   }
   // Far out into the emptiest country they can see (explore.js).
   if (p.job === 'explore') { if (pickFar(p, camp, luck)) return true; p.job = 'gather'; }
+  if (p.job === 'tame') { if (pickHerd(p)) return true; p.job = 'gather'; }
   // A tree, for wood (wood.js): to the foot of it.
   if (p.job === 'wood') {
     const t = pickTree(camp, luck);
@@ -727,6 +729,7 @@ export function chooseJob(p, day) {
          irrigate, then a crop — something a fed band learns and a hungry one
          leans on once it pays. */
       ['farm', farmWeight(p, hunger, rested)],
+      ['tame', tameWeight(p, hunger, rested)],             // an afternoon at a wild herd (riding.js)
       /* Going to take it. Only past the hunger at which a band would rather
          walk over and ask, only if there is somebody near enough holding
          enough, and only if this band has not just tried — see RAID. A warrior
@@ -871,7 +874,7 @@ export const MOURN = { chance: 0.10 };
    anybody will go for a stone. */
 export const QUARRY_TRIP = { chance: 0.12, reach: 220 };
 
-const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore']);
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame']);
 
 /* Where somebody at the fire actually sits: inside the ring of tents and
    outside the ring of stones. The huts stand 6.5-9.1m out and are a couple of
@@ -1006,7 +1009,7 @@ export function updatePeople(dt, day) {
        closer in, which costs them metres they cannot spare — the whole margin
        between getting home and not is four of them. */
     const notice = PANIC.sees / (p.traits?.bold ?? 1);
-    if (!p.led && !p.asleep && p.panic <= 0 && nearestPredator(p.x, p.z, notice)) {
+    if (!p.led && !p.asleep && p.panic <= 0 && !inCamp(p.x, p.z, safeGround(p.camp)) && nearestPredator(p.x, p.z, notice)) {   // behind the fire already: nothing to run to
       p.panic = PANIC.runs;
       p.state = 'return';
       p.prey = null;
@@ -1152,6 +1155,7 @@ export function updatePeople(dt, day) {
           // Logs off a tree, onto the shoulder (wood.js).
           if (p.job === 'wood') chopDone(p);
           if (p.job === 'explore') surveyDone(p);
+          if (p.job === 'tame') tameDone(p);
           // A field: ditches until the band can water it, then a crop (farming.js).
           if (p.job === 'farm') farmDone(p);
           // A morning at the market: the band a little better at dealing.
@@ -1253,13 +1257,9 @@ export function updatePeople(dt, day) {
         if (p.led) { /* nothing to finish */ }
         else if (p.state === 'goto') {
           p.state = 'work';
-          // Sleep has to outlast the night. Give it the same 10-30 seconds as
-          // every other task and people shuttle in and out of the huts until
-          // dawn instead of sleeping in them.
-          /* And tools are what make the work quick. Everything but sleeping,
-             because a good axe does not shorten a night — at mastery an errand
-             takes a little over half as long, so a day holds nearly twice the
-             errands of a band with nothing but its hands. */
+          /* Sleep outlasts the night, or people shuttle in and out of the huts
+             until dawn. Tools make everything else quick: at mastery an errand
+             takes a little over half as long (SKILL.toolSpeed). */
           const quick = 1 - SKILL.toolSpeed * (p.camp.skill?.tools || 0);
           p.timer = p.job === 'hunt' ? (8 + luck() * 14) * quick
                   : p.job === 'gather' ? (6 + luck() * 10) * quick
@@ -1297,7 +1297,7 @@ export function updatePeople(dt, day) {
         }
         if (p.sick) want *= PLAGUE.drag;
         // Off the path, slower; on a road, quicker (paths.js).
-        if (!p.onRaft) want *= groundPace(p.x, p.z);
+        if (!p.onRaft) want = riding(p, want * groundPace(p.x, p.z));     // and on a horse, much quicker (riding.js)
         // Frightened, and whatever is left in them goes into running.
         if (p.panic > 0) want = Math.max(want, PERSON.jog * (p.child ? 0.8 : 1));
       }
@@ -1309,7 +1309,7 @@ export function updatePeople(dt, day) {
        with nothing in the store pays back slowly — which is the loop closing:
        hunger makes people tired, tired people hunt worse, and hunting worse is
        what made them hungry. */
-    const effort = p.speed / PERSON.jog;
+    const effort = (p.mounted ? Math.min(p.speed, PERSON.walk) : p.speed) / PERSON.jog;   // a rider sits: the horse runs (riding.js)
     const fed = 1 - 0.55 * p.camp.hunger;
     const rate = energyRate(effort, PERSON_STAMINA, p.asleep ? SLEEP_SECONDS : RECOVERY_SECONDS);
     /* Rest does a sick person much less good than it does a well one — and
@@ -1390,7 +1390,7 @@ export function updatePeople(dt, day) {
     else if (working && p.job === 'farm') { wantCrouch = 0.15; wantBend = 0.3; }
     else if (working && p.job === 'fish') { wantCrouch = 0.3; wantBend = 0.45; }
     // Kneeling on the raft.
-    else if (p.onRaft) { wantCrouch = 0.6; wantBend = 0.2; }
+    else if (p.onRaft || p.mounted) { wantCrouch = 0.6; wantBend = 0.2; }
     // Down in cover: as low as a person goes.
     else if (p.hiding) { wantCrouch = 1; wantBend = 0.55; }
     // Sat down to rest.

@@ -1246,7 +1246,7 @@ export const JOB_WORDS = {
   fish: 'fishing',
   wood: 'cutting wood',
   explore: 'exploring',
-  farm: 'working the fields',
+  farm: 'working the fields', tame: 'taming a horse',
   market: 'trading at the market',
   visit: 'walking to the next band',
   led: 'going where you point',

@@ -18,6 +18,7 @@ import { forgetIll,
 } from './life.js';
 import { setLastClock, updateHud } from './main.js';
 import { packLessons, unpackLessons } from './lessons.js';
+import { horsesOf, restoreHorses } from './riding.js';
 
 /* -------------------------------------------------------------------------
    Keeping your place
@@ -65,6 +66,8 @@ export function snapshot() {
       // A village taken by another tribe: its code now, its name then (life.js, conquer).
       cd: c.code, vn: c.villageName || undefined, pc: c.pastCodes?.length ? c.pastCodes : undefined,
       ca: c.conqueredAt, jn: c.joined ? 1 : undefined,
+      // Its horses, how many (riding.js): the herd is built from the seed, and these are taken from it again.
+      hs: horsesOf(c).length || undefined, ht: c.everTamed ? 1 : undefined,
       // Who it deals with, and how tightly (society.js, tradeTies).
       ti: c.ties && Object.keys(c.ties).length ? Object.fromEntries(Object.entries(c.ties).map(([k, t]) => [k, r2(t)])) : undefined,
       // From band to city (society.js): the rung, since when, and how long the next has held.
@@ -256,6 +259,8 @@ export function applySavedLife(st) {
     camps[i].pastCodes = Array.isArray(c.pc) ? c.pc : [];
     camps[i].conqueredAt = Number.isFinite(c.ca) ? c.ca : undefined;
     camps[i].joined = c.jn === 1;
+    camps[i].everTamed = c.ht === 1;
+    restoreHorses(camps[i], c.hs | 0);
     camps[i].ties = c.ti && typeof c.ti === 'object'
       ? Object.fromEntries(Object.entries(c.ti).filter(([, t]) => Number.isFinite(t)).map(([k, t]) => [Number(k), Number(t)])) : {};
     camps[i].stage = c.sg | 0;

@@ -1392,21 +1392,21 @@ check('and nothing else clones the scratch matrix before filling it', (() => {
 })() === true);
 
 check('an errand either takes you out or it does not',
-  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
+  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
 /* Standing at the stones happens outdoors, and it is the one job that has
    nowhere indoors to be mistaken for. */
 check('and going to the stones or the rocks takes you out too',
-  /'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
+  /'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
 /* The one job whose name says where it happens. It was on the indoor side, so
    somebody "at the fire" was hidden inside a tent — the caption said one thing
    and the camp showed another — and with a full store it is better than a third
    of a band, which is most of the people who were never drawn. */
 check('and sitting at the fire is not one of them',
-  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
+  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
 /* Nor is somebody you are walking about by hand, or they wink out the moment
    you lead them into their own camp. */
 check('and neither is somebody you are leading',
-  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore'\]\);/.test(html));
+  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
 /* Between the stones and the tents: the huts stand 6.5m out and are about two
    metres across, so their inner edge is near 4.1m, and the fire ring is 1.15m. */
 check('somebody at the fire sits between the stones and the tents', (() => {
@@ -1544,7 +1544,8 @@ check('the crowd is every animal on the map, not one herd',
   && /herdStride\(onMap\)/.test(html));
 /* A tiger covers thirty metres in a grouped step and would walk through the
    moment it was near enough to catch anything. */
-check('a predator is never grouped', /spec\.predator \? 1 : herdStride\(onMap\)/.test(html));
+check('a predator is never grouped, nor anything somebody rides', /spec\.predator \|\| spec\.mount \? 1 : herdStride\(onMap\)/.test(html)
+  && /key: 'horse', label: 'Horses', mount: true,/.test(html));
 /* Which way a deer is facing during a decade nobody watched is not a question
    worth answering 172,800 times. */
 check('and a herd thinks much less often than people do',
@@ -3395,7 +3396,7 @@ check('and they pick up their own life again',
    which of your instructions took. */
 check('nothing else steers them while they are led', (() => {
   const want = [
-    ["the tiger they'd run from", /if \(!p\.led && !p\.asleep && p\.panic <= 0 && nearestPredator/],
+    ["the tiger they'd run from", /if \(!p\.led && !p\.asleep && p\.panic <= 0 && !inCamp\(p\.x, p\.z, safeGround\(p\.camp\)\) && nearestPredator/],
     ['dusk sending them home', /if \(!p\.led && day < 0\.25 && p\.job !== 'sleep'/],
     ['the errand timer', /if \(p\.timer <= 0 && \(!p\.led \|\| p\.acting\)\) \{/],
     ['waking them for the day', /if \(day >= 0\.25 && p\.job === 'sleep' && !p\.led\)/],
@@ -4795,11 +4796,11 @@ check('and the save carries the mastery, not the announcement', (() => {
    the simulation already had, because a skill that only shows on a readout is a
    readout.
    ------------------------------------------------------------------------- */
-check('there are twenty-one of them', Object.keys(
+check('there are twenty-two of them', Object.keys(
   (() => { const m = html.match(/SKILLS = \{([\s\S]*?)\n\};/); return m ? m[1] : ''; })()
     .split('\n').filter((l) => /^\s{2}\w+: \{ label:/.test(l))
     .reduce((o, l) => (o[l.trim().split(':')[0]] = 1, o), {})
-).length === 21);
+).length === 22);
 check('and every one of them does something', (() => {
   const want = [
     ['spears', /SKILL\.spearChance \* p\.camp\.skill\.spears/],
@@ -8442,6 +8443,53 @@ group('roads');
   check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
 }
 
+group('horses');
+/* Horses grazing by a camp brought a tiger close, and a camp's people panicked
+   on the spot, over and over, behind a fire no tiger comes to: nineteen died
+   of it in twelve days on the island this was measured on. */
+check('nobody already behind the fire runs from a tiger',
+  /p\.panic <= 0 && !inCamp\(p\.x, p\.z, safeGround\(p\.camp\)\) && nearestPredator\(p\.x, p\.z, notice\)/.test(html));
+check('and a tiger does not hunt a band\'s own horses', /if \(a\.dead \|\| a\.tamed\) continue;/.test(html));
+check('a rider sits: the horse is what runs',
+  /const effort = \(p\.mounted \? Math\.min\(p\.speed, PERSON\.walk\) : p\.speed\) \/ PERSON\.jog;/.test(html));
+{
+  const rd = moduleSource('riding.js'), mv = moduleSource('move.js'), wl = moduleSource('wildlife.js');
+  check('there are wild horses, counted like every other herd',
+    /key: 'horse', label: 'Horses'/.test(wl) && /: spec\.key === 'horse' \? 'horses'/.test(wl)
+    && /HORSES: \{ path: 'counts\.horses'/.test(readFileSync(join(ROOT, 'config.ts'), 'utf8'))
+    && ['low', 'medium', 'high'].every((q) => new RegExp(q + ': \\{[\\s\\S]*?horses: \\d+').test(html)));
+  check('riding is a skill: taming first, riding past a fair hand',
+    /riding: \{ label: 'riding', of: 'horse riding' \}/.test(html) && /from: 0\.5,/.test(rd)
+    && /if \(\(p\.camp\?\.skill\?\.riding \|\| 0\) < RIDE\.from/.test(rd));
+  check('taming is an errand out to a herd, learned by going, and now and then a horse comes home',
+    /\['tame', tameWeight\(p, hunger, rested\)\]/.test(mv) && /if \(p\.job === 'tame'\) \{ if \(pickHerd\(p\)\) return true;/.test(mv)
+    && /if \(p\.job === 'tame'\) tameDone\(p\);/.test(mv)
+    && /practise\(camp, 'riding', RIDE\.perTame\);/.test(rd) && /tame\(best, camp\);/.test(rd));
+  check('a band keeps more the better it rides, and never takes a herd down to nothing',
+    /horsesOf\(camp\)\.length >= keeps\(camp\)/.test(rd) && /wildIn\(h, pack\) >= RIDE\.wild/.test(rd));
+  check('a tamed horse keeps to its paddock, comes when wanted and waits while they work',
+    /\} else if \(d\.tamed\) \{\s*tendHorse\(d, spec, slice\);/.test(wl)
+    && /d\.state = dd > RIDE\.near \? 'flee' : 'walk'; d\.timer = 5; d\.targetX = p\.x; d\.targetZ = p\.z;/.test(rd)
+    && /if \(dd < RIDE\.mount\) mount\(p, d\);/.test(rd)
+    && /d\.waitFor = r; d\.waitUntil = worldClock \+ RIDE\.wait;/.test(rd));
+  check('ridden, it goes where the rider goes, its legs keeping time, and nothing else moves it',
+    /d\.x = r\.x; d\.z = r\.z; d\.yaw = r\.yaw; d\.speed = r\.speed;/.test(rd)
+    && /if \(step > 0 && !d\.rider\)/.test(wl) && /if \(!d\.rider\) d\.speed \+=/.test(wl));
+  check('riding is quicker, much, and never quicker than a horse',
+    /return Math\.min\(RIDE\.most, want \* \(RIDE\.pace\[0\] \+ \(RIDE\.pace\[1\] - RIDE\.pace\[0\]\) \* v\)\);/.test(rd)
+    && Number((rd.match(/pace: \[([\d.]+),/) || [])[1]) >= 2
+    && Number((rd.match(/most: ([\d.]+),/) || [])[1]) <= Number((wl.match(/key: 'horse'[\s\S]*?fleeSpeed: ([\d.]+)/) || [])[1]) + 0.5);
+  check('nobody rides inside a wall: out through the gate on foot, and down before it coming home',
+    /insideWall\(p\.x, p\.z, 2\)\) return want;/.test(rd) && /into\.r \+ RIDE\.gate/.test(rd));
+  check('sat on its back, legs folded, at the height of the horse',
+    /else if \(p\.onRaft \|\| p\.mounted\) \{ wantCrouch = 0\.6; wantBend = 0\.2; \}/.test(mv)
+    && /p\.lift = back - PERSON\.legLen \* p\.scale \* \(1 - 0\.44 \* \(p\.crouch \|\| 0\)\);/.test(rd)
+    && /const drop = S\.legLen \* p\.scale \* 0\.44 \* p\.crouch;/.test(mv));
+  check('a band\'s horses come back after a save', /hs: horsesOf\(c\)\.length \|\| undefined/.test(html)
+    && /restoreHorses\(camps\[i\], c\.hs \| 0\);/.test(html));
+  check('and the card counts them', /case 'riding':/.test(moduleSource('made.js')));
+}
+
 group('stores by rung');
 {
   const st = moduleSource('settlement.js'), vi = moduleSource('village.js');
@@ -8459,7 +8507,7 @@ group('going by the path');
   const pa = moduleSource('paths.js'), mv = moduleSource('move.js');
   check('off the path is slower, a trail full pace, a road quicker',
     /if \(w >= 0\.94\) return TREAD\.road;/.test(pa) && /return TREAD\.rough \+ \(1 - TREAD\.rough\) \* Math\.min\(1, w \/ PATH\.bare\);/.test(pa)
-    && /if \(!p\.onRaft\) want \*= groundPace\(p\.x, p\.z\);/.test(mv));
+    && /if \(!p\.onRaft\) want = riding\(p, want \* groundPace\(p\.x, p\.z\)\);/.test(mv));
   check('a walker takes the heading that gets them there soonest: the ground ahead, paid for by the angle',
     /return footing \* Math\.cos\(off\);/.test(pa) && /let diff = aim \+ \(p\.swerve \|\| 0\) - p\.yaw;/.test(mv));
   check('and holds a heading unless another is clearly better, looking only now and then',

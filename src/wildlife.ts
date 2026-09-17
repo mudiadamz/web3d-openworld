@@ -11,6 +11,7 @@ import { killPerson, logEvent, simDay, who } from './life.js';
 import { nearestFruit, pickFruit } from './orchard.js';
 import { rebuildFauna } from './move.js';
 import { updateHud } from './main.js';
+import { tendHorse } from './riding.js';
 
 /* -------------------------------------------------------------------------
    Wildlife
@@ -72,6 +73,8 @@ export const MODELS = {
   quadruped: {
     deer: { url: MODEL_SOURCE + 'Horse.glb', fit: 1.9 },
     bison: { url: MODEL_SOURCE + 'Horse.glb', fit: 2.9 },
+    // And a horse, at last, as a horse.
+    horse: { url: MODEL_SOURCE + 'Horse.glb', fit: 2.3 },
   },
 };
 
@@ -356,6 +359,24 @@ export const SPECIES = [
          anything with four legs. A tiger that hunts well never gets there. */
       desperate: 0.22,
     },
+  },
+  /* Horses. A herd grazes like the deer and runs like nothing else on the
+     island, and a band that learns to (riding.js) takes one home, keeps it in a
+     paddock and rides it. `mount` marks the one kind somebody sits on: never
+     dealt into a group, because a horse two metres behind its rider is worse
+     than no horse. The ears are the horn slot, as the rabbit's are. */
+  {
+    key: 'horse', label: 'Horses', mount: true,
+    legLen: 0.95, legW: 0.10, legD: 0.12, hipX: 0.20, hipZ: 0.58,
+    body: [0.50, 0.60, 1.50], bodyY: 0.20,
+    neck: { w: 0.22, d: 0.34, len: 0.74, y: 0.30, z: 0.64, rest: 0.62, graze: 1.90 },
+    head: [0.20, 0.25, 0.56],
+    horns: { size: [0.04, 0.13, 0.03], x: 0.06, y: 0.12, z: -0.14, tilt: 0.2, color: 0x4a3a2e },
+    tail: [0.10, 0.62, 0.10], tailPos: [0, 0.42, -0.78],
+    gait: 'walk', stride: 1.7, walkSpeed: 1.4, fleeSpeed: 7.2, turn: 2.2, fleeRadius: 20,
+    scale: [0.92, 1.08], youngChance: 0.14, youngScale: [0.60, 0.72],
+    coat: [0x5a3e2a, 0xb89a74], legShade: 0.55,
+    herdOf: 6, roam: 20, graze: [14, 32], swing: 0.12, bob: 0.030,
   },
 ];
 
@@ -401,6 +422,7 @@ export function countKey(spec) {
   return spec.key === 'rabbit' ? 'rabbits'
     : spec.key === 'tiger' ? 'tigers'
     : spec.key === 'boar' ? 'boars'
+    : spec.key === 'horse' ? 'horses'
     : spec.key;
 }
 
@@ -779,7 +801,10 @@ export function nearestQuarry(d, spec) {
   for (const pack of packs) {
     if (pack.spec.predator) continue;           // it does not hunt its own kind
     for (const a of pack.list) {
-      if (a.dead) continue;
+      /* Nor a band's own horses (riding.js). They stand in a paddock by the camp and
+         do not run, and a tiger that learned to hunt there stayed there, and the
+         camp spent the day running from it until people died of it. */
+      if (a.dead || a.tamed) continue;
       const dist = Math.hypot(a.x - d.x, a.z - d.z);
       if (dist > h.sees) continue;
       // Nearer is better, and four legs are better than two by a wide margin.
@@ -989,7 +1014,7 @@ export function updateQuadrupeds(dt) {
        grouped step and would walk through the moment it was near enough to
        catch anything. There are one or two of them and grouping them saves
        nothing. */
-    const stride = spec.predator ? 1 : herdStride(onMap);
+    const stride = spec.predator || spec.mount ? 1 : herdStride(onMap);
     /* The time this one waited for its turn. Everything inside the loop is
        measured in this rather than in dt. */
     const slice = dt * stride;
@@ -1029,6 +1054,8 @@ export function updateQuadrupeds(dt) {
          also means a tiger tires out of a sprint like everything else does. */
       if (spec.predator) {
         updatePredator(d, spec, slice);
+      } else if (d.tamed) {
+        tendHorse(d, spec, slice);           // the band's own: a paddock, a rider, no running (riding.js)
       } else {
         /* Something big walked up: break off and run. Small animals spook from
            much further out than large ones, which is most of what makes a
@@ -1072,7 +1099,7 @@ export function updateQuadrupeds(dt) {
          it comes back, so a herd harried all morning is a herd worth hunting. */
       let want = d.state === 'flee' ? spec.fleeSpeed : d.state === 'walk' ? spec.walkSpeed : 0;
       if (d.state === 'flee') want *= FLEE_SPENT + (1 - FLEE_SPENT) * d.energy;
-      d.speed += (want - d.speed) * Math.min(1, slice * 2.5);
+      if (!d.rider) d.speed += (want - d.speed) * Math.min(1, slice * 2.5);
 
       /* A stomach empties on the calendar, not on the frame clock, so a tiger
          is as hungry after a fast-forwarded night as it would have been after a
@@ -1098,7 +1125,7 @@ export function updateQuadrupeds(dt) {
         if (spec.predator) { d.prey = null; d.rest = spec.hunt.feeds * 0.4; }
       }
 
-      if (distT > 0.01 && d.state !== 'graze') {
+      if (distT > 0.01 && d.state !== 'graze' && !d.rider) {
         let diff = Math.atan2(tdx, tdz) - d.yaw;
         diff = Math.atan2(Math.sin(diff), Math.cos(diff));   // shortest way round
         d.yaw += clamp(diff, -spec.turn * slice, spec.turn * slice);
@@ -1106,7 +1133,7 @@ export function updateQuadrupeds(dt) {
 
       const fx = Math.sin(d.yaw), fz = Math.cos(d.yaw);
       const step = d.speed * slice;
-      if (step > 0) {
+      if (step > 0 && !d.rider) {
         const nx = d.x + fx * step, nz = d.z + fz * step;
         // Nothing walks into the sea, off a cliff, or out of the world.
         if (sampleHeight(nx, nz) > SEA + 0.9 && flatnessAt(nx, nz) > 0.68

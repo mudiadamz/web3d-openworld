@@ -24,7 +24,7 @@
    instead of a setting. */
 export interface Counts {
   grass: number; trees: number; rocks: number;
-  bison: number; deer: number; rabbits: number; boars: number; tigers: number;
+  bison: number; deer: number; rabbits: number; boars: number; tigers: number; horses: number;
   birds: number; butterflies: number;
   camps: number; people: number;
   flowers: number; fruit: number; streams: number;
@@ -155,7 +155,7 @@ export const P = {
   // much life in the world as the machine will carry.
   counts: {
     grass: 2000, trees: 1000, rocks: 260,
-    bison: 9, deer: 22, rabbits: 44, boars: 16, tigers: 2, birds: 44, butterflies: 70,
+    bison: 9, deer: 22, rabbits: 44, boars: 16, tigers: 2, horses: 18, birds: 44, butterflies: 70,
     camps: 2, people: 16,
     flowers: 150, fruit: 5, streams: 5,
   },
@@ -167,15 +167,15 @@ export const P = {
 export const QUALITY = {
   low: {
     seg: 176, grid: 5, shadowMap: 0, pixelRatio: 1.0, round: 0,
-    counts: { grass: 700, trees: 300, rocks: 90, bison: 4, deer: 8, rabbits: 14, boars: 5, tigers: 1, birds: 16, butterflies: 24, camps: 1, people: 8, flowers: 60, fruit: 3, streams: 3 },
+    counts: { grass: 700, trees: 300, rocks: 90, bison: 4, deer: 8, rabbits: 14, boars: 5, tigers: 1, horses: 6, birds: 16, butterflies: 24, camps: 1, people: 8, flowers: 60, fruit: 3, streams: 3 },
   },
   medium: {
     seg: 288, grid: 7, shadowMap: 1024, pixelRatio: 1.5, round: 1,
-    counts: { grass: 1300, trees: 600, rocks: 170, bison: 6, deer: 14, rabbits: 26, boars: 9, tigers: 1, birds: 28, butterflies: 44, camps: 2, people: 12, flowers: 100, fruit: 4, streams: 4 },
+    counts: { grass: 1300, trees: 600, rocks: 170, bison: 6, deer: 14, rabbits: 26, boars: 9, tigers: 1, horses: 12, birds: 28, butterflies: 44, camps: 2, people: 12, flowers: 100, fruit: 4, streams: 4 },
   },
   high: {
     seg: 448, grid: 9, shadowMap: 2048, pixelRatio: 2.0, round: 2,
-    counts: { grass: 2000, trees: 1000, rocks: 260, bison: 9, deer: 22, rabbits: 44, boars: 16, tigers: 2, birds: 44, butterflies: 70, camps: 2, people: 16, flowers: 150, fruit: 5, streams: 5 },
+    counts: { grass: 2000, trees: 1000, rocks: 260, bison: 9, deer: 22, rabbits: 44, boars: 16, tigers: 2, horses: 18, birds: 44, butterflies: 70, camps: 2, people: 16, flowers: 150, fruit: 5, streams: 5 },
   },
 } satisfies Record<QualityName, QualityPreset>;
 

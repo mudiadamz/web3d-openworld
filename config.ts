@@ -77,6 +77,7 @@ export const SCHEMA = {
   RABBITS: { path: 'counts.rabbits', type: 'int', min: 0, max: 200 },
   BOARS: { path: 'counts.boars', type: 'int', min: 0, max: 120 },
   TIGERS: { path: 'counts.tigers', type: 'int', min: 0, max: 40 },
+  HORSES: { path: 'counts.horses', type: 'int', min: 0, max: 90 },
   BIRDS: { path: 'counts.birds', type: 'int', min: 0, max: 200 },
   BUTTERFLIES: { path: 'counts.butterflies', type: 'int', min: 0, max: 400 },
   FLOWERS: { path: 'counts.flowers', type: 'int', min: 0, max: 600 },

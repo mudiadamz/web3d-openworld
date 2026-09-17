@@ -6,6 +6,7 @@ import { FARM } from './farming.js';
 import { CONQUEST } from './life.js';
 import { SKILL, SKILL_HOW, SKILL_NEEDS, nextRung } from './skills.js';
 import { TIES } from './society.js';
+import { RIDE, horsesOf, keeps } from './riding.js';
 
 /* -------------------------------------------------------------------------
    What a skill has made, counted
@@ -94,6 +95,10 @@ export function skillMade(camp, k) {
       return { n: Math.min(FARM.stockMax, Math.round(camp.stock || 0)), of: FARM.stockMax, what: 'animals penned' };
     case 'mining':
       return { n: Math.floor(camp.stone || 0), of: SKILL.stoneMax, what: 'stone' };
+    /* The horses in the paddock, out of as many as the band will keep: tamed
+       until it rides, ridden after. */
+    case 'riding':
+      return { n: horsesOf(camp).length, of: Math.max(RIDE.kept[1], keeps(camp)), what: v >= RIDE.from ? 'horses ridden' : 'horses tamed' };
     case 'conquest': {
       const held = camps.filter((c) => !c.gone && c.code === camp.code);
       return { n: held.filter((c) => c.villageName).length, of: held.length, what: 'villages brought in' };
@@ -121,6 +126,7 @@ function perGo(k, camp): [number, string, string] {
     case 'war': return [SKILL.perRaid, 'raid', 'raids'];
     /* A band tied to a neighbour learns it a little every day (tradeTies,
        society.js); one that is not learns it from winning. */
+    case 'riding': return [RIDE.perTame, 'afternoon at the herd', 'afternoons at the herd'];
     case 'conquest': return Object.keys(camp?.ties || {}).length
       ? [TIES.perDay - SKILL.fade, 'day of dealing', 'days of dealing'] : [CONQUEST.perWin, 'won raid', 'won raids'];
   }

@@ -159,6 +159,11 @@ export const SKILLS = {
      band dressed for the winter catches less of what goes round in it
      (SKILL.clothWarm). */
   clothing: { label: 'clothing', of: 'sewing' },
+  /* Twenty-second: horses. Taming first - an afternoon at a wild herd, and now
+     and then one that follows them home - and past a fair hand, riding what
+     has been tamed. What it moves is how fast anybody gets anywhere far: see
+     RIDE, in riding.js. */
+  riding: { label: 'riding', of: 'horse riding' },
 };
 
 /* Every skill at nothing. Built from SKILLS rather than written out, because it
@@ -372,6 +377,8 @@ export const FORGET_WORDS = {
   ruling: 'hold a village it did not build',
   /* The needles are still there. Nobody can make a sleeve that stays on. */
   sewing: 'sew a hide into anything that fits',
+  /* The horses are still in the paddock. Nobody can get on one. */
+  'horse riding': 'sit a horse',
 };
 
 /* How each is learned, for the band card: where the practice happens and what
@@ -402,6 +409,7 @@ export const SKILL_HOW = {
   stonework: 'at the graveyard, with quarried stone in the pile',
   conquest: 'winning raids once the band has a fair hand at fighting, or dealing with a neighbour once it has a fair hand at trading, and bringing villages in',
   clothing: 'at the fire, most in the autumn',
+  riding: 'taming wild horses out at a herd, then, past a fair hand, riding them',
 };
 
 /* How hard each is to come by, easy to very hard, for the band card — decided
@@ -418,7 +426,7 @@ export const SKILL_DIFFICULTY = {
   spears: 1, baskets: 1, tracking: 1, drying: 1, fire: 1, wares: 1, building: 1, clothing: 1,
   herbs: 2, rites: 2, irrigation: 2, woodcraft: 2, mining: 2, trade: 2,
   tools: 3, art: 3, farming: 3, fishing: 3, war: 3,
-  stonework: 4, conquest: 4,
+  stonework: 4, conquest: 4, riding: 3,
 };
 /* And what each one waits on: the skills it needs first, and the things. Read
    off the gates in the code — craftChoice, the job list in move.js, farmWeight,
@@ -437,6 +445,7 @@ export const SKILL_NEEDS = {
   war: 'a band hungry enough to raid, and a neighbour worth it',
   stonework: 'somebody buried, and quarrying: stone in the pile',
   conquest: 'a fair hand at fighting, or at trading, and a neighbour',
+  riding: 'a herd of wild horses within reach',
 };
 
 /* Which rung a mastery is standing on, given the rung it was last said to be

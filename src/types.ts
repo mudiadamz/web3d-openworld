@@ -367,6 +367,9 @@ export interface Camp {
   conqueredAt?: number;
   /** Joined the tribe without a fight, rather than taken (society.ts, tradeTies). */
   joined?: boolean;
+  /** Where its tamed horses graze, and whether it has ever had one (riding.ts). */
+  paddock?: { x: number; z: number };
+  everTamed?: boolean;
   /** How tightly tied to each other band it deals with, by that band's index. */
   ties?: Record<number, number>;
   /** When each of those ties last grew, by index and kind ('3call', '3deal'):
@@ -436,6 +439,11 @@ export interface Person {
   // The tree they are up, while they are up it.
   climbed?: { x: number; z: number } | null;
   lift?: number;
+  /** On a horse, and which one: under them, coming, or waiting (riding.ts). */
+  mounted?: boolean;
+  horse?: any;
+  rodeStep?: number;
+  callStep?: number;
   throwPose?: number;
   acting?: boolean;
   /* What they are in the middle of doing, if anything: the kind of act, and
