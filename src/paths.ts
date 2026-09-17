@@ -340,11 +340,14 @@ export function paveDisc(x, z, radius) {
 }
 
 /** Takes up every road, before they are laid again: the ground under one goes
-    back to a bare trail, which grows over like any trail nobody walks. Without
-    it a road laid where a gate used to be stayed there for good. */
+    back to a trail, and one too faint to draw on the map — a road that has just
+    moved left a line beside the new one until the grass took it, and two roads
+    where there is one is worse than none. It grows over like any other trail.
+    Without this a road laid where a gate used to be stayed there for good. */
 export function liftRoads() {
   if (!wear) return;
-  for (const k of roads) wear[k] = TRAIL_MAX;
+  const was = Math.max(0, Math.round(PATH.onMap * 255) - 2);
+  for (const k of roads) wear[k] = was;
   roads.clear();
   dirty = true;
   pathVersion++;

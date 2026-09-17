@@ -685,6 +685,14 @@ export function dressCivic() {
 export const ROADS = {
   branch: 1000,        // metres: the longest branch laid to a village, a field or a quarry
   clear: 12,           // and the nearest to a gate a branch may join the road out of it
+  /* Two roads the same way a few paces apart are not two roads, they are one
+     road drawn twice, and nothing about a country looks less like one. A road
+     that would run beside one already laid for more than `share` of its length,
+     within `apart` of it, gives way to the next shortest way of getting there —
+     which is a junction off the road it was about to run beside. */
+  apart: 30,
+  share: 0.5,
+  tries: 40,           // how many of the ways in are looked at before the shortest wins anyway
 };
 let roadsFor = '';
 type Pt = { x: number; z: number };
@@ -764,15 +772,30 @@ export function layRoads() {
     usedGates.add(k);
     for (let i = ends.length - 1; i >= 0; i--) if (gateKey(ends[i].x, ends[i].z) === k) ends.splice(i, 1);
   };
+  /** Whether a road would run beside one already laid rather than branch off it. */
+  const beside = ([ax, az, bx, bz]) => {
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < ROADS.apart) return false;
+    const steps = Math.max(2, Math.min(24, Math.ceil(len / 15)));
+    let near = 0;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+      for (const s of segs) {
+        const [px, pz] = nearestOnSeg(x, z, s[0], s[1], s[2], s[3]);
+        if (Math.hypot(px - x, pz - z) < ROADS.apart) { near++; break; }
+      }
+    }
+    return near / (steps + 1) > ROADS.share;
+  };
   /* Joins these to the roads, nearest first, while the next is no further than
      `most`. */
   const connect = (list, most) => {
     const left = list.slice();
     while (left.length) {
-      let best = null, least = Infinity;
+      const cands: { n: any; road: [number, number, number, number]; d: number }[] = [];
       const consider = (n, sx, sz, tx, tz) => {
         const d = Math.hypot(tx - sx, tz - sz) + (throughWall(sx, sz, tx, tz) ? 1e7 : 0);
-        if (d < least) { least = d; best = { n, road: [sx, sz, tx, tz] }; }
+        cands.push({ n, road: [sx, sz, tx, tz], d });
       };
       for (const n of left) {
         for (const e of ends) {
@@ -790,7 +813,10 @@ export function layRoads() {
           }
         }
       }
-      if (!best || least > most) return;
+      cands.sort((a, b) => a.d - b.d);
+      // The shortest way in that does not run beside a road already laid.
+      const best = cands.slice(0, ROADS.tries).find((c) => !beside(c.road)) || cands[0];
+      if (!best || best.d > most) return;
       paveRoad(best.road[0], best.road[1], best.road[2], best.road[3], 3.5);
       segs.push(best.road);
       take(best.road[0], best.road[1]);

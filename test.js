@@ -8378,7 +8378,7 @@ group('roads');
     && !/paveRoad\(\.\.\.edge\(c, v\)/.test(st));
   check('the trunk joins the cities, then branches reach the tribe\'s villages, its fields and its quarries',
     /connect\(trunk\.slice\(1\), Infinity\);/.test(st) && /connect\(\[\.\.\.towns, \.\.\.places\], ROADS\.branch\);/.test(st)
-    && /if \(!best \|\| least > most\) return;/.test(st)
+    && /if \(!best \|\| best\.d > most\) return;/.test(st)
     && /places\.push\(\{ x: c\.field\.x, z: c\.field\.z, r: fieldReach\(c\) \}\);/.test(st)
     && /const d = mainDeposit\(c\);/.test(st));
   /* Two gates, and one road out of each: anything else in that direction
@@ -8753,6 +8753,16 @@ group('room to grow');
   check('and it is kept across a reload', /\[\.\.\.sites, \.\.\.dryland\(camp\)\]\.find/.test(fa) && /sites\.includes\(was\) \|\| was\.dry/.test(fa));
   check('a big camp can have more than one child a step',
     /for \(let n = Math\.floor\(chance\) \+ \(luck\(\) < chance % 1 \? 1 : 0\); n > 0; n--\) \{/.test(moduleSource('life.js')));
+}
+
+group('no road beside a road');
+{
+  const st = moduleSource('settlement.js'), pa = moduleSource('paths.js');
+  check('a road that would run beside one already laid gives way to a junction',
+    /return near \/ \(steps \+ 1\) > ROADS\.share;/.test(st)
+    && /const best = cands\.slice\(0, ROADS\.tries\)\.find\(\(c\) => !beside\(c\.road\)\) \|\| cands\[0\];/.test(st));
+  check('and a road taken up leaves no line beside the new one',
+    /const was = Math\.max\(0, Math\.round\(PATH\.onMap \* 255\) - 2\);/.test(pa) && /for \(const k of roads\) wear\[k\] = was;/.test(pa));
 }
 
 /* ---- report ---- */
