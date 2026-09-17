@@ -1,7 +1,7 @@
 import { P } from './params.js';
 import { luck } from './clock.js';
 import { camps, dressCamp, dressStores, homeward, paintPeople, people } from './people.js';
-import { campReach } from './settlement.js';
+import { CITY, campReach } from './settlement.js';
 import { CONQUEST, VISIT, conquer, logEvent, personAge, simDay } from './life.js';
 import { recordMove } from './wildlife.js';
 import { SKILL, SKILLS, practise } from './skills.js';
@@ -435,4 +435,16 @@ export function guarded(camp) {
   let riders = 0;
   for (const p of people) if (p.camp === camp && p.role === 'patrol' && !p.sick) riders++;
   return 1 + POLICE.guard * Math.min(1, riders / POLICE.full);
+}
+
+/* A place's name, the way a list or a card says it. A tribe of several places
+   gave every one of them the tribe's name, and a list of six rows all reading
+   "Neimosh" said nothing about which was which. So a place that joined the
+   tribe or was taken keeps its own name in front of the tribe's - "Talo,
+   Neimosh" - and the place the tribe grew from says that it is the centre of
+   it: "Neimosh, city center". A place on its own is only its name. */
+export function placeName(c) {
+  if (c.villageName) return `${c.villageName}, ${c.name}`;
+  if (!camps.some((o) => o !== c && !o.gone && o.code === c.code)) return c.name;
+  return `${c.name}, ${(c.stage || 0) >= CITY.at ? 'city center' : 'center'}`;
 }

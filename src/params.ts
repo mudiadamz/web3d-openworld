@@ -60,6 +60,7 @@ export interface Params {
   followDist: number;
   fov: number;
   sound: boolean;
+  bubbles: boolean;
   volume: number;
   seed: number;
   counts: Counts;
@@ -152,6 +153,8 @@ export const P = {
   followDist: 4.5,
   fov: 58,
   sound: true,
+  /* What people are doing, in a bubble over their heads (bubbles.js). */
+  bubbles: true,
   volume: 0.55,
   seed: 20260906,
   // Populations. A quality preset loads its numbers in here, and after that the

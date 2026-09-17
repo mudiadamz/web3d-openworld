@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import { P } from './params.js';
 import { sampleHeight, smoothstep } from './noise.js';
 import { camera, renderer, scene } from './scene.js';
 import { PERSON } from './clock.js';
@@ -287,6 +288,10 @@ function put(n, x, y, z, k, d2) {
 
 /** Every frame the world is drawn. */
 export function updateBubbles() {
+  /* Off (BUBBLES=false): none drawn, and none built - an island that never shows
+     them never makes them. */
+  if (!P.bubbles) { if (points) points.visible = false; return; }
+  if (points) points.visible = true;
   if (!points) {
     if (!people.length) return;
     buildBubbles();

@@ -29,7 +29,7 @@ import { PATCHES_MARKED, stepMapSize } from './map.js';
 import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, togglePanel, tribeChips } from './ui.js';
 import { stopAhead } from './main.js';
 import { skillHow, skillMade, skillNeeds } from './made.js';
-import { nextStage, stageName, stageProgress } from './society.js';
+import { nextStage, placeName, stageName, stageProgress } from './society.js';
 
 /* -------------------------------------------------------------------------
    The whole chronicle
@@ -227,7 +227,7 @@ export function renderTribeCard() {
   const toll = tollOf(camp);
 
   $('tribeName').innerHTML = `<b class="wcode" style="background:${camp.color}">${camp.code}</b>`
-    + ` ${camp.name}`;
+    + ` ${placeName(camp)}`;
   /* Which band the pin will take you to, written on the pin itself.
 
      It used to read `tribeShown` at click time, through a live binding in

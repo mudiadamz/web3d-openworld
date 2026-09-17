@@ -8445,6 +8445,29 @@ group('roads');
   check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
 }
 
+group('which place is which');
+{
+  const src = moduleSource('society.js');
+  const at = src.indexOf('function placeName');
+  const placeName = new Function('camps', 'CITY', src.slice(at, src.indexOf('\n}', at) + 2) + '\nreturn placeName;');
+  const camps = [
+    { code: 'NE', name: 'Neimosh', stage: 4 },
+    { code: 'NE', name: 'Neimosh', villageName: 'Talo', stage: 4 },
+    { code: 'NE', name: 'Neimosh', villageName: 'Rava', stage: 3 },
+    { code: 'KO', name: 'Kolla', stage: 2 },
+  ];
+  const say = placeName(camps, { at: 4 });
+  check('a place that joined a tribe or was taken keeps its own name, then the tribe\'s',
+    say(camps[1]) === 'Talo, Neimosh' && say(camps[2]) === 'Rava, Neimosh', say(camps[1]));
+  check('the place the tribe grew from is its city center', say(camps[0]) === 'Neimosh, city center', say(camps[0]));
+  check('and a place on its own is only its name', say(camps[3]) === 'Kolla', say(camps[3]));
+  check('the list and the card both say it',
+    html.includes('<b>${placeName(c)}</b>') && html.includes('+ ` ${placeName(camp)}`;'));
+  check('BUBBLES turns the bubbles over people off, and never builds them then',
+    moduleSource('bubbles.js').includes('if (!P.bubbles) { if (points) points.visible = false; return; }')
+    && readFileSync(join(ROOT, 'config.ts'), 'utf8').includes("BUBBLES: { path: 'bubbles', type: 'bool' }"));
+}
+
 group('mounted patrols');
 {
   const rd = moduleSource('riding.js'), mv = moduleSource('move.js');

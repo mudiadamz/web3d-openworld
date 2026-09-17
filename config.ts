@@ -67,6 +67,7 @@ export const SCHEMA = {
   TERRAIN_SHADOW: { path: 'terrainShadow', type: 'bool' },
   WATER: { path: 'water', type: 'bool' },
   SOUND: { path: 'sound', type: 'bool' },
+  BUBBLES: { path: 'bubbles', type: 'bool' },
   VOLUME: { path: 'volume', type: 'float', min: 0, max: 1 },
 
   // populations

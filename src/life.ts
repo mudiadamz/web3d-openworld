@@ -29,7 +29,7 @@ import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
 import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
-import { STAGES, calledOn, dealtWith, developmentOf, guarded, mergeNeighbour, tradeEdge } from './society.js';
+import { STAGES, calledOn, dealtWith, developmentOf, guarded, mergeNeighbour, placeName, tradeEdge } from './society.js';
 
 /* -------------------------------------------------------------------------
    Food, and hunts that actually catch something
@@ -205,7 +205,7 @@ export function renderTribes(now = 0) {
     let pop = 0;
     for (const p of people) if (p.camp === c) pop++;
     return `<div data-camp="${i}"><b class="wcode" style="background:${c.color}">${c.code}</b>`
-      + `<b>${c.name}</b>${c.stage ? ` <em>${STAGES[c.stage].name}</em>` : ''} <span>${pop || 'empty'}</span>`
+      + `<b>${placeName(c)}</b>${c.stage ? ` <em>${STAGES[c.stage].name}</em>` : ''} <span>${pop || 'empty'}</span>`
       + `<span class="dev" title="development: what they know, and how far from band to city">${dev}/100</span></div>`;
   }).join('') || '<div><span>' + (camps.length ? 'every band has died out' : 'no camps') + '</span></div>';
 
