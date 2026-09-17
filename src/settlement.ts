@@ -7,6 +7,7 @@ import { FIELD, fieldReach } from './farming.js';
 import { CITYHALL_TOP, civicGeometries, houseGeometry, storeGeometry, tentMaterial, tentStyle } from './village.js';
 import { TREAD, liftRoads, pathEpoch, paveDisc, paveRoad } from './paths.js';
 import { setRoadNet, setWalls } from './walls.js';
+import { roadRoute } from './route.js';
 import { deposits, depositRadius, mainDeposit } from './quarries.js';
 import { DWELLING, dwellingsNear, footprint, pitch } from './footprint.js';
 import {
@@ -690,8 +691,8 @@ export const ROADS = {
      that would run beside one already laid for more than `share` of its length,
      within `apart` of it, gives way to the next shortest way of getting there —
      which is a junction off the road it was about to run beside. */
-  apart: 30,
-  share: 0.5,
+  apart: 60,
+  share: 0.35,
   tries: 40,           // how many of the ways in are looked at before the shortest wins anyway
 };
 let roadsFor = '';
@@ -817,8 +818,15 @@ export function layRoads() {
       // The shortest way in that does not run beside a road already laid.
       const best = cands.slice(0, ROADS.tries).find((c) => !beside(c.road)) || cands[0];
       if (!best || best.d > most) return;
-      paveRoad(best.road[0], best.road[1], best.road[2], best.road[3], 3.5);
-      segs.push(best.road);
+      /* Along the ground rather than through it: the way a road takes over the
+         land between the two ends (route.js), paved stretch by stretch, and
+         every stretch a road the walkers and the junctions know about. */
+      const way = roadRoute(best.road[0], best.road[1], best.road[2], best.road[3]);
+      for (let i = 1; i < way.length; i++) {
+        const road: [number, number, number, number] = [way[i - 1][0], way[i - 1][1], way[i][0], way[i][1]];
+        paveRoad(road[0], road[1], road[2], road[3], 3.5);
+        segs.push(road);
+      }
       take(best.road[0], best.road[1]);
       take(best.road[2], best.road[3]);
       join(best.n, { x: best.road[0], z: best.road[1] });

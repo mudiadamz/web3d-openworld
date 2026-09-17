@@ -8380,7 +8380,7 @@ group('roads');
     /paveDisc\(c\.x, c\.z, CITY\.plaza - 1\);/.test(st) && /const street = h\.v \+ h\.side \* 4\.0;/.test(st)
     && /!== CITY\.block\) continue;\s*paveRoad/.test(st));
   check('one network, not a road from a city to every village: each place joins the nearest road, at a junction',
-    /const \[px, pz\] = nearestOnSeg\(s0\.x, s0\.z, ax, az, bx, bz\);/.test(st) && /segs\.push\(best\.road\);/.test(st)
+    /const \[px, pz\] = nearestOnSeg\(s0\.x, s0\.z, ax, az, bx, bz\);/.test(st) && /segs\.push\(road\);/.test(st)
     && !/paveRoad\(\.\.\.edge\(c, v\)/.test(st));
   check('the trunk joins the cities, then branches reach the tribe\'s villages, its fields and its quarries',
     /connect\(trunk\.slice\(1\), Infinity\);/.test(st) && /connect\(\[\.\.\.towns, \.\.\.places\], ROADS\.branch\);/.test(st)
@@ -8782,6 +8782,23 @@ group('a fast-forwarded day');
     && /paintPeople\(\);/.test(bodyOf('refreshViews') || ''));
   check('and the ground under a walker is stamped coarsely while nothing is drawn',
     /cell \* \(drawingWorld \? 0\.5 : 3\)/.test(moduleSource('paths.js')));
+}
+
+group('a road over the land');
+{
+  const rt = moduleSource('route.js'), st = moduleSource('settlement.js');
+  check('a road takes the cheapest way over the ground, not the straight one',
+    /const way = roadRoute\(best\.road\[0\], best\.road\[1\], best\.road\[2\], best\.road\[3\]\);/.test(st)
+    && /const step = d \* \(1 \+ ROUTE\.climb \* slope\) \* \(w \|\| 1\);/.test(rt));
+  check('climbing costs more than going round, and a cliff is not taken at all',
+    Number((rt.match(/climb: (\d+),/) || [, 0])[1]) >= 8 && /if \(slope > ROUTE\.steep && nk !== goal\) continue;/.test(rt));
+  check('and a second road the same way runs along the first rather than beside it',
+    /if \(wearAt\(x, z\) >= 0\.99\) return ROUTE\.along;/.test(rt) && Number((rt.match(/along: ([\d.]+),/) || [, 1])[1]) < 1);
+  check('and it keeps out of the sea, the town walls and, where it can, the creeks',
+    /if \(h < SEA \+ 0\.3\) return 0;/.test(rt) && /if \(Math\.hypot\(x - w\.x, z - w\.z\) < w\.r - 1\) return 0;/.test(rt)
+    && /return inCreek\(x, z\) \? ROUTE\.ford : 1;/.test(rt));
+  check('the way it bends is kept and the staircase between is not',
+    /if \(Math\.abs\(Math\.atan2\(Math\.sin\(b - a\), Math\.cos\(b - a\)\)\) > ROUTE\.turn\) out\.push\(back\[i\]\);/.test(rt));
 }
 
 /* ---- report ---- */
