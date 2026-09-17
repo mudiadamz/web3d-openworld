@@ -8443,6 +8443,33 @@ group('roads');
   check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
 }
 
+group('a tab in the background');
+{
+  const bg = moduleSource('background.js'), mn = moduleSource('main.js');
+  /* A hidden tab gets no animation frames, so the island stopped when you
+     looked away. It runs on, undrawn, on ticks from a worker - a hidden page's
+     own timers are held back and a worker's are not. */
+  check('hidden, it runs on; shown again, it stops and says how long went by',
+    /if \(document\.hidden && P\.background\) start\(\);\s*else stop\(\);/.test(bg)
+    && /went by while you were away/.test(bg) && /refreshViews\(\);/.test(bg));
+  check('on ticks from a worker, not the page\'s own timers',
+    /new Worker\(URL\.createObjectURL\(new Blob\(\[src\], \{ type: 'text\/javascript' \}\)\)\)/.test(bg)
+    && /worker\.onmessage = runSlice;/.test(bg) && /worker\?\.terminate\(\);/.test(bg));
+  check('each tick a share of one core, not all of it', (() => {
+    const every = Number((bg.match(/every: (\d+),/) || [])[1]), budget = Number((bg.match(/budget: (\d+),/) || [])[1]);
+    return every > 0 && budget > 0 && budget / every <= 0.5 && /while \(Date\.now\(\) < until\) stepWorld\(step\);/.test(bg)
+      ? true : `${budget} ms of every ${every}`;
+  })() === true);
+  check('saved as it goes, so a tab closed while hidden keeps what it lived through',
+    /if \(Date\.now\(\) - savedAt > BACKGROUND\.save\) \{\s*savedAt = Date\.now\(\);\s*persistState\(\);/.test(bg));
+  check('a run of years carries on, and a watched island is not this page\'s to run',
+    /if \(ahead\) \{ runAhead\(\); return; \}/.test(bg) && /runInBackground\(Boolean\(watchAt\)\);/.test(mn)
+    && /if \(watching \|\| typeof document === 'undefined' \|\| typeof Worker === 'undefined'\) return;/.test(bg));
+  check('and the frames do not run it a second time',
+    /requestAnimationFrame\(tick\);\s*\/\/[^\n]*\n\s*if \(backgroundRunning\(\)\) return;/.test(mn));
+  check('BACKGROUND turns it off', /BACKGROUND: \{ path: 'background', type: 'bool' \}/.test(readFileSync(join(ROOT, 'config.ts'), 'utf8'))
+    && /background: true,/.test(moduleSource('params.js')));
+}
 group('horses');
 /* Horses grazing by a camp brought a tiger close, and a camp's people panicked
    on the spot, over and over, behind a fire no tiger comes to: nineteen died

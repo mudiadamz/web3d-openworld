@@ -48,6 +48,7 @@ export interface Params {
   nightSkip: boolean;
   nightSkipRate: number;
   maxFps: number;
+  background: boolean;
   nightFrom: number;
   nightDeep: number;
   shadows: boolean;
@@ -119,6 +120,9 @@ export const P = {
      night — which is a long time to watch nothing at 1×. */
   nightSkip: true,
   nightSkipRate: 6,
+  /* The island runs on while its tab is in the background, as fast as a share
+     of one core allows (background.js). */
+  background: true,
   /* How many frames a second are drawn, at most. A screen refreshes at sixty or
      a hundred and twenty and the page drew every one: the whole island, every
      frame, which is what a laptop's battery went on. Thirty is smooth for a

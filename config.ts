@@ -57,6 +57,7 @@ export const SCHEMA = {
   NIGHT_SKIP: { path: 'nightSkip', type: 'bool' },
   NIGHT_SKIP_RATE: { path: 'nightSkipRate', type: 'float', min: 1, max: 60 },
   MAX_FPS: { path: 'maxFps', type: 'float', min: 0, max: 240 },
+  BACKGROUND: { path: 'background', type: 'bool' },
   /* Sun height, not hours: everything that asks whether it is night asks the
      sun, so the window is set in the same units it is measured in. 0 is the
      horizon; more negative is further into the night. */

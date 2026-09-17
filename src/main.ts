@@ -41,6 +41,7 @@ import {
 import { updateLivestock } from './farming.js';
 import { borderTension, cityDraw, tradeTies, updateSociety } from './society.js';
 import { drawCrowd } from './crowd.js';
+import { backgroundRunning, runInBackground } from './background.js';
 
 /* -------------------------------------------------------------------------
    Loop
@@ -339,6 +340,14 @@ export function runAhead() {
    the grass alone is a quarter of a second at high quality — which is why the
    overlay is already down by the time this runs. */
 export function rebuildAfterAhead(y) {
+  refreshViews();
+  toast(`${y} years on · day ${Math.floor(simDay)}`, 3);
+  logEvent('ahead', `${y} years passed unwatched`, 0, 0);
+}
+
+/* Every view of the world, brought up to date with it at once: after a run of
+   years, and after a spell in a background tab (background.js). */
+export function refreshViews() {
   updateTimeOfDay();
   updateTiles(true);
   recountBlades();
@@ -357,8 +366,6 @@ export function rebuildAfterAhead(y) {
   $('almanac').title = `day ${Math.floor(simDay)}`;
   drawMap(0);
   persistState();
-  toast(`${y} years on · day ${Math.floor(simDay)}`, 3);
-  logEvent('ahead', `${y} years passed unwatched`, 0, 0);
 }
 
 /* ---- watching an island somebody else is running ----
@@ -381,6 +388,8 @@ const watchAt = typeof location === 'undefined' ? null
   : new URLSearchParams(location.search || '').get('watch');
 let watchFrame: any = null;
 let watchById: Map<number, any> | null = null;
+// A hidden tab runs on, unless the island is somebody else's (background.js).
+runInBackground(Boolean(watchAt));
 if (watchAt && typeof EventSource !== 'undefined') {
   const es = new EventSource(watchAt);
   es.addEventListener('hello', (ev: any) => {
@@ -427,6 +436,8 @@ export function frameCap() {
 
 export function tick() {
   requestAnimationFrame(tick);
+  // Hidden and running on its own ticks (background.js): nothing to draw, and not twice.
+  if (backgroundRunning()) return;
   const cap = ahead ? 0 : frameCap();
   if (cap > 0) {
     const now = performance.now();
