@@ -42,6 +42,7 @@ import { updateLivestock } from './farming.js';
 import { borderTension, cityDraw, tradeTies, updateSociety } from './society.js';
 import { drawCrowd } from './crowd.js';
 import { backgroundRunning, runInBackground } from './background.js';
+import { updateRoleplay, watchHero, wireRoleplay } from './roleplay.js';
 
 /* -------------------------------------------------------------------------
    Loop
@@ -148,6 +149,8 @@ export function stepWorld(dt) {
     cityDraw(owed);
   }
   updatePeople(paced, smoothstep(-0.10, 0.14, sunDir.y));
+  // Whatever the character did in that step counts (roleplay.js).
+  watchHero();
   setDrawingWorld(true);
 }
 
@@ -390,6 +393,7 @@ let watchFrame: any = null;
 let watchById: Map<number, any> | null = null;
 // A hidden tab runs on, unless the island is somebody else's (background.js).
 runInBackground(Boolean(watchAt));
+wireRoleplay();
 if (watchAt && typeof EventSource !== 'undefined') {
   const es = new EventSource(watchAt);
   es.addEventListener('hello', (ev: any) => {
@@ -576,6 +580,8 @@ export function tick() {
   updatePeople(watchAt ? 0 : paced, daylight);
   // After the people have moved, so a bubble is over where somebody is now.
   updateBubbles();
+  // ROLEPLAY: the character's sheet, and the camera kept on them (roleplay.js).
+  updateRoleplay(elapsed);
   // The berries on the thickets follow the ground they grow on.
   updateThickets(elapsed);
   // A tiger in sight of whoever you are behind.

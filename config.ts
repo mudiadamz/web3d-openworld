@@ -68,6 +68,7 @@ export const SCHEMA = {
   WATER: { path: 'water', type: 'bool' },
   SOUND: { path: 'sound', type: 'bool' },
   BUBBLES: { path: 'bubbles', type: 'bool' },
+  ROLEPLAY: { path: 'roleplay', type: 'bool' },
   VOLUME: { path: 'volume', type: 'float', min: 0, max: 1 },
 
   // populations

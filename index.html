@@ -268,6 +268,39 @@
   /* Without this it is on screen from the moment the page loads: an id selector
      setting a display outranks the browser's own [hidden] rule. */
   #tribe[hidden] { display: none; }
+  /* Role play: the setup, and the character's sheet (roleplay.js). Laid out the
+     way the band card is, because it is the same kind of thing about one person. */
+  #rp {
+    position: fixed; inset: 0; z-index: 34; display: grid; place-items: center;
+    background: rgba(4, 6, 10, 0.55); backdrop-filter: blur(3px);
+  }
+  #rp[hidden], #rpSetup[hidden], #rpLobby[hidden] { display: none; }
+  #rpCard {
+    width: min(520px, 92vw); max-height: 84vh; overflow: auto; padding: 16px 18px; border-radius: 10px;
+    background: var(--panel); border: 1px solid rgba(255,255,255,0.10); font-size: 10px; line-height: 1.7;
+  }
+  #rpCard header { display: flex; align-items: center; justify-content: space-between; }
+  #rpCard h2 { margin: 0; font-size: 12px; }
+  #rpCard h3 { margin: 12px 0 4px; font-size: 10px; color: var(--accent); font-weight: 600; }
+  #rpCard span, #rpCard em { color: var(--muted); }
+  #rpClose { background: none; border: 0; color: var(--muted); font-size: 14px; cursor: pointer; }
+  #rpSetup p { margin: 8px 0; color: var(--muted); }
+  #rpDeath:empty { display: none; }
+  #rpName {
+    width: 100%; box-sizing: border-box; margin: 6px 0 10px; padding: 7px 9px; border-radius: 6px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 12px;
+  }
+  .rpLevel { display: flex; align-items: center; gap: 8px; }
+  .rpLevel i { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
+  .rpLevel i b { display: block; height: 100%; background: var(--accent); }
+  .rpRoles { display: flex; flex-wrap: wrap; gap: 5px; }
+  .rpRole {
+    padding: 3px 8px; border-radius: 5px; border: 1px solid var(--line); background: rgba(255,255,255,0.04);
+    color: var(--text); font: inherit; cursor: pointer;
+  }
+  .rpRole.on { border-color: var(--accent); color: var(--accent); }
+  .rpRole:disabled { opacity: 0.45; cursor: default; }
+  .rpGoal b, .rpMark b { font-weight: 500; }
   #tribeCard {
     width: min(560px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
     padding: 16px 18px; border-radius: 10px;
@@ -801,6 +834,13 @@
         <path d="M2.6 7.4h14.8M2.6 12.6h14.8" stroke="currentColor" stroke-width="1.2" fill="none"/>
       </svg>
     </button>
+    <!-- The character's sheet, in role play only (roleplay.js). -->
+    <button id="rpOpen" title="Character (I)" aria-label="Character" hidden>
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+        <circle cx="10" cy="6.6" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M3.8 17c.6-3.4 3.1-5.4 6.2-5.4s5.6 2 6.2 5.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
     <button id="keysOpen" title="Keys (/)" aria-label="Keys">
       <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
         <circle cx="10" cy="10" r="7.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
@@ -870,6 +910,22 @@
 <div id="hud"><span id="clock">07:30</span><span id="skip" hidden>▶▶</span><div id="almanac" title="day 0">year 1 · spring</div><div id="vitals"><b id="hudPop">–</b> people · <b id="hudFps">–</b> fps</div><div id="following" hidden></div></div>
 
 <div id="toast" hidden></div>
+
+<div id="rp" hidden>
+  <div id="rpCard" role="dialog" aria-label="Character">
+    <div id="rpSetup" hidden>
+      <header><h2>Who are you?</h2></header>
+      <p id="rpDeath"></p>
+      <p>Somebody new is walking into one of the bands on this island. Everything about them but their name is what the island gives them.</p>
+      <input id="rpName" maxlength="24" placeholder="a name" autocomplete="off">
+      <button id="rpBegin" class="btn">Begin</button>
+    </div>
+    <div id="rpLobby" hidden>
+      <header><h2 id="rpTitle">Character</h2><button id="rpClose" aria-label="Close">×</button></header>
+      <div id="rpBody"></div>
+    </div>
+  </div>
+</div>
 
 <div id="tribe" hidden>
   <div id="tribeCard" role="dialog" aria-label="Tribe">
@@ -1131,6 +1187,7 @@
 <link rel="modulepreload" href="dist/people.js">
 <link rel="modulepreload" href="dist/quarries.js">
 <link rel="modulepreload" href="dist/riding.js">
+<link rel="modulepreload" href="dist/roleplay.js">
 <link rel="modulepreload" href="dist/rafts.js">
 <link rel="modulepreload" href="dist/reach.js">
 <link rel="modulepreload" href="dist/save.js">

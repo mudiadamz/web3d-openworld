@@ -848,6 +848,7 @@ function drawYou(cone) {
 /* Click to travel. Fly keeps whatever height you were at, walk lands on the
    ground, orbit reassembles its rig around the new spot. */
 export function travelTo(x, z) {
+  if (P.roleplay) return;                   // the character walks there or does not go (roleplay.js)
   /* Follow is not a place you can travel from: the camera is rebuilt behind
      somebody every frame, so putting it on a hillside lasts exactly one frame
      and the click reads as doing nothing. Clicking the map is asking to be

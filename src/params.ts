@@ -61,6 +61,7 @@ export interface Params {
   fov: number;
   sound: boolean;
   bubbles: boolean;
+  roleplay: boolean;
   volume: number;
   seed: number;
   counts: Counts;
@@ -155,6 +156,8 @@ export const P = {
   sound: true,
   /* What people are doing, in a bubble over their heads (bubbles.js). */
   bubbles: true,
+  /* You are one person, and only ever behind them (roleplay.js). */
+  roleplay: false,
   volume: 0.55,
   seed: 20260906,
   // Populations. A quality preset loads its numbers in here, and after that the

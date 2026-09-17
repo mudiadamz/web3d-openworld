@@ -251,6 +251,7 @@ function unseat(p, d) {
     one under them, and whistling one up if they could use it. Returns the pace
     they actually go at. Called from the step (move.js) for anybody walking. */
 export function riding(p, want) {
+  want *= p.paceMul || 1;                   // a character's level (roleplay.js)
   let d = p.horse;
   if (d && (d.dead || d.tamed !== p.camp)) { unseat(p, d); p.horse = d = null; }
   const far = Math.hypot(p.targetX - p.x, p.targetZ - p.z);

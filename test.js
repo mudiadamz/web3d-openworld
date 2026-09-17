@@ -6926,7 +6926,7 @@ check('and nobody is made a quarrier who has never seen a rock',
 check('how many of each is a share of the band',
   /const want = patrols \|\| Math\.max\(1, Math\.round\(adults\.length \* role\.share\)\)/.test(roleSrc));
 check('and nobody holds two', /taken\.add\(able\[i\]\.id\)/.test(roleSrc)
-  && /\.filter\(\(p\) => !taken\.has\(p\.id\)\)/.test(roleSrc));
+  && /\.filter\(\(p\) => !taken\.has\(p\.id\) && mayHold\(p, name\)\)/.test(roleSrc));
 
 /* Worked out for the band at once, because the shares are a fact about the
    band: you cannot ask "am I the healer" without knowing who else wanted to
@@ -6952,10 +6952,11 @@ check('but says nothing of the ones who are just the band',
    ReferenceError three lines later and no hint as to why. */
 /* How many patrol riders a camp gets is riding.js's business (patrolsFor); here
    a camp says so itself, and the chronicle line it writes goes nowhere. */
-const roleApi = new Function('clamp', 'patrolsFor', 'logEvent',
+const roleApi = new Function('clamp', 'patrolsFor', 'logEvent', 'chosenRole', 'mayHold',
   roleSrc.slice(roleSrc.indexOf('const ROLE_AT'))
   + '\nreturn { ROLES, ROLE_AT, LEAN, roleWeight, assignRoles };')(
-  (v, a, b) => Math.max(a, Math.min(b, v)), (camp) => camp.patrols || 0, () => {});
+  (v, a, b) => Math.max(a, Math.min(b, v)), (camp) => camp.patrols || 0, () => {},
+  (p) => p.chosen || null, (p, role) => !p.lockedBelow || p.lockedBelow !== role);
 
 /** A band of `n` adults, each best at one thing, with `days` of food. */
 function bandOf(n, days, best = {}) {
@@ -8445,6 +8446,40 @@ group('roads');
   check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
 }
 
+group('role play');
+{
+  const rp = moduleSource('roleplay.js'), ch = moduleSource('chronicle.js'), sk = moduleSource('skills.js');
+  check('ROLEPLAY turns it on, and it is off unless asked for',
+    readFileSync(join(ROOT, 'config.ts'), 'utf8').includes("ROLEPLAY: { path: 'roleplay', type: 'bool' }")
+    && moduleSource('params.js').includes('roleplay: false,'));
+  check('the camera stays behind the character: no other view, nobody else to follow, no travelling by the map',
+    ch.includes("if (P.roleplay) mode = 'follow';") && ch.includes('if (heroView()) return;')
+    && ch.includes('if (roleplayRefuses(ev.code)) return;') && moduleSource('map.js').includes('if (P.roleplay) return;')
+    && rp.includes("if (['KeyC', 'KeyF', 'KeyR'].includes(code))"));
+  check('a name, and a newcomer rolled like anybody born here walks into a living band',
+    rp.includes('const p = newPerson(camp, rng, 18 + rng() * 8);') && rp.includes('p.name = name;')
+    && html.includes('id="rpName"') && html.includes('id="rpBegin"'));
+  check('the sheet says their band, where they are, their level, their goals and what they have achieved',
+    ['band</span>', 'where</span>', 'rpLevel', '<h3>Goals</h3>', '<h3>Achievements</h3>', '<h3>Roles</h3>'].every((s) => rp.includes(s)));
+  check('experience comes from what they do: errands finished, food home, kills', rp.includes("if (was === 'work' && p.state !== 'work') {")
+    && rp.includes('XP_FOOD') && rp.includes('XP_KILL'));
+  {
+    const xpFor = new Function(rp.slice(rp.indexOf('const xpFor'), rp.indexOf(';', rp.indexOf('const xpFor')) + 1) + '\nreturn xpFor;')();
+    check('each level asks for more than the last', xpFor(1) === 0 && xpFor(2) === 50 && xpFor(3) === 150 && xpFor(5) === 500,
+      [1, 2, 3, 5].map(xpFor).join(','));
+  }
+  check('a level makes a better body: longer breath, a heavier load, a quicker walk',
+    moduleSource('move.js').includes('/ PERSON.jog / (p.stamina || 1);') && moduleSource('bag.js').includes('* (p.carryMul || 1)')
+    && moduleSource('riding.js').includes('want *= p.paceMul || 1;'));
+  check('and opens roles, which the player asks for and the band gives once it has opened',
+    sk.includes('const mine = adults.find((p) => !taken.has(p.id) && chosenRole(p));') && sk.includes('mayHold(p, name)')
+    && /ROLE_LEVEL = \{ hunter: \d/.test(rp));
+  check('goals come from what the band is short of, three at a time', rp.includes('goals: 3,') && rp.includes('daysOfFood(c) < 25')
+    && rp.includes('topUpGoals(p);'));
+  check('a death is a death: a new character, and what was achieved stays on the record',
+    rp.includes('write(STORE, null);') && rp.includes('showSetup();') && rp.includes("MARKS = 'openworld.heroMarks'"));
+}
+
 group('which place is which');
 {
   const src = moduleSource('society.js');
@@ -8536,7 +8571,7 @@ check('nobody already behind the fire runs from a tiger',
   /p\.panic <= 0 && !inCamp\(p\.x, p\.z, safeGround\(p\.camp\)\) && nearestPredator\(p\.x, p\.z, notice\)/.test(html));
 check('and a tiger does not hunt a band\'s own horses', /if \(a\.dead \|\| a\.tamed\) continue;/.test(html));
 check('a rider sits: the horse is what runs',
-  /const effort = \(p\.mounted \? Math\.min\(p\.speed, PERSON\.walk\) : p\.speed\) \/ PERSON\.jog;/.test(html));
+  /const effort = \(p\.mounted \? Math\.min\(p\.speed, PERSON\.walk\) : p\.speed\) \/ PERSON\.jog \/ \(p\.stamina \|\| 1\);/.test(html));
 {
   const rd = moduleSource('riding.js'), mv = moduleSource('move.js'), wl = moduleSource('wildlife.js');
   check('there are wild horses, counted like every other herd',

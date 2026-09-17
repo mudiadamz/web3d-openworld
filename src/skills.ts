@@ -4,6 +4,7 @@ import { luck } from './clock.js';
 import { MONUMENT_MAX, PYRAMID_COURSES, camps, dressCamp, drawGraves, people } from './people.js';
 import { FISH, logEvent } from './life.js';
 import { patrolsFor } from './riding.js';
+import { chosenRole, mayHold } from './roleplay.js';
 
 /* -------------------------------------------------------------------------
    Skills: what a band knows, and what knowing it is worth
@@ -645,13 +646,16 @@ export function assignRoles(camp, folk) {
   const taken = new Set();
   const chief = camp.chief ? adults.find((p) => p.id === camp.chief) : null;
   if (chief) { chief.role = 'chief'; taken.add(chief.id); }
+  // ROLEPLAY: the role the player asked for, once their level has opened it (roleplay.js).
+  const mine = adults.find((p) => !taken.has(p.id) && chosenRole(p));
+  if (mine) { mine.role = chosenRole(mine); taken.add(mine.id); }
 
   for (const [name, role] of Object.entries(ROLES)) {
     const patrols = name === 'patrol' ? patrolsFor(camp, adults.length) : 0;
     if (!role.by || (role.share <= 0 && patrols <= 0)) continue;
     const want = patrols || Math.max(1, Math.round(adults.length * role.share));
     const able = adults
-      .filter((p) => !taken.has(p.id))
+      .filter((p) => !taken.has(p.id) && mayHold(p, name))
       .sort((a, b) => (b.knows?.[role.by] || 0) - (a.knows?.[role.by] || 0));
     for (let i = 0; i < want && i < able.length; i++) {
       /* Somebody has to be better at it than nothing. A band with no memory of

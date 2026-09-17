@@ -117,7 +117,7 @@ export function loadOf(p) {
 
 /** What they can carry: a basketful, more with better baskets, half for a child. */
 export function carryCap(p, basketHaul, baskets) {
-  return LOAD.basket * (1 + basketHaul * baskets) * (p.child ? 0.5 : 1);
+  return LOAD.basket * (1 + basketHaul * baskets) * (p.child ? 0.5 : 1) * (p.carryMul || 1);
 }
 
 /** Their pace under it: all of it empty, less the fuller, none at or past full. */

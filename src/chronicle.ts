@@ -30,6 +30,7 @@ import { VIEW_NAMES, codeChip, setRate, sexMarks, toast, togglePanel, tribeChips
 import { stopAhead } from './main.js';
 import { skillHow, skillMade, skillNeeds } from './made.js';
 import { nextStage, placeName, stageName, stageProgress } from './society.js';
+import { heroView, roleplayRefuses } from './roleplay.js';
 
 /* -------------------------------------------------------------------------
    The whole chronicle
@@ -472,6 +473,7 @@ export const _want = new THREE.Vector3();
 
 export function pickFollow(announce = true) {
   if (!people.length) { followIdx = -1; return; }
+  if (heroView()) return;
   /* Somebody you can actually see.
 
      This asked for `!asleep`, which is a narrower thing than being visible and
@@ -1592,6 +1594,7 @@ export const endDrag = (ev) => {
 export function wireInput() {
   addEventListener('keydown', (ev) => {
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
+    if (roleplayRefuses(ev.code)) return;   // ROLEPLAY: I for the sheet, and no looking at anybody else
     // Minimised to its icon rather than gone — see togglePanel.
     if (ev.code === 'KeyH') togglePanel();
     /* M used to be a single toggle, so a map you wanted smaller rather than
@@ -1792,6 +1795,7 @@ export function syncLookFromCamera() {
 }
 
 export function setViewMode(mode) {
+  if (P.roleplay) mode = 'follow';          // behind the character and nowhere else (roleplay.js)
   /* Leaving Follow lets go of anybody being led. Any road out counts — the map,
      C, R — because a person still walking to a point you cannot see any more is
      a person with nothing steering them and no way to stop them. */

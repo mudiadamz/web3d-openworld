@@ -1310,7 +1310,7 @@ export function updatePeople(dt, day) {
        with nothing in the store pays back slowly — which is the loop closing:
        hunger makes people tired, tired people hunt worse, and hunting worse is
        what made them hungry. */
-    const effort = (p.mounted ? Math.min(p.speed, PERSON.walk) : p.speed) / PERSON.jog;   // a rider sits: the horse runs (riding.js)
+    const effort = (p.mounted ? Math.min(p.speed, PERSON.walk) : p.speed) / PERSON.jog / (p.stamina || 1);   // a rider sits; a level breathes deeper
     const fed = 1 - 0.55 * p.camp.hunger;
     const rate = energyRate(effort, PERSON_STAMINA, p.asleep ? SLEEP_SECONDS : RECOVERY_SECONDS);
     /* Rest does a sick person much less good than it does a well one — and

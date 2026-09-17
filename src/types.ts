@@ -445,6 +445,10 @@ export interface Person {
   horse?: any;
   rodeStep?: number;
   callStep?: number;
+  /** What a role play character's level has made of their body (roleplay.ts). */
+  stamina?: number;
+  carryMul?: number;
+  paceMul?: number;
   /** Which point of the beat a patrol rider last rode to. */
   beat?: number;
   stops?: number;
