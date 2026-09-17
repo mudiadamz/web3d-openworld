@@ -8,6 +8,9 @@ new bands, bury their dead, and are still at it a century later.
 Nobody scripts any of that. It is a simulation, and the history is whatever
 happens.
 
+The technical reference - every feature, its constants and what the tests
+promise about it - is in [docs/technical](docs/technical/README.md).
+
 **One build step, no assets, one dependency.** `index.html` and a folder of
 TypeScript modules, compiled to the ES modules the page loads, are the whole
 program; `node:http` and `node:fs` are the whole server.
