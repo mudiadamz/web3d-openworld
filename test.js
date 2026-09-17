@@ -8372,11 +8372,65 @@ group('roads');
   check('one network, not a road from a city to every village: each place joins the nearest road, at a junction',
     /const \[px, pz\] = nearestOnSeg\(s0\.x, s0\.z, ax, az, bx, bz\);/.test(st) && /segs\.push\(best\.road\);/.test(st)
     && !/paveRoad\(\.\.\.edge\(c, v\)/.test(st));
-  check('the trunk joins the cities, and only a village close to it gets a road',
-    /connect\(trunk\.slice\(1\), Infinity\);/.test(st) && /connect\(towns, ROADS\.spur\);/.test(st)
-    && /if \(!best \|\| least > most\) return;/.test(st));
+  check('the trunk joins the cities, then branches reach the tribe\'s villages, its fields and its quarries',
+    /connect\(trunk\.slice\(1\), Infinity\);/.test(st) && /connect\(\[\.\.\.towns, \.\.\.places\], ROADS\.branch\);/.test(st)
+    && /if \(!best \|\| least > most\) return;/.test(st)
+    && /places\.push\(\{ x: c\.field\.x, z: c\.field\.z, r: fieldReach\(c\) \}\);/.test(st)
+    && /const d = mainDeposit\(c\);/.test(st));
+  /* Two gates, and one road out of each: anything else in that direction
+     branches off it, so the roads out of a town are a tree and not a fan. */
+  check('a walled city has two gates, at the ends of its main street',
+    /return \[\[1, 0\], \[-1, 0\]\]\.map\(\(\[su, sv\]\) => \{/.test(st));
+  check('one road leaves by each gate, and nothing joins it at the gate itself',
+    /const exits = \(c, x, z\): Pt\[\] => \(walled\.has\(c\) \? freeGates\(c\) : \[edgeOf\(c, x, z\)\]\);/.test(st)
+    && /take\(best\.road\[0\], best\.road\[1\]\);\s*take\(best\.road\[2\], best\.road\[3\]\);/.test(st)
+    && /if \(atGate\(px, pz\)\) continue;/.test(st));
+  check('and every road to a place meets at the one point its own road came in at',
+    /join\(best\.n, \{ x: best\.road\[0\], z: best\.road\[1\] \}\);/.test(st)
+    && /else if \(at\) ends\.push\(at\);/.test(st));
+  check('the roads are handed to the walkers as one network, split at every junction, dry stretches only',
+    /shareRoads\(segs, cities\);/.test(st) && /setRoadNet\(\{ xs, zs, segs: edges, dist, next, n, slow: TREAD\.rough \/ TREAD\.road, gateOut: GATE_OUT \}\);/.test(st)
+    && /if \(a !== b && dry\(xs\[a\], zs\[a\], xs\[b\], zs\[b\]\)\) edges\.push\(a, b\);/.test(st)
+    && /if \(k === roadNetKey\) return;/.test(st));
+
+  /* Walked, not read: a made-up town with two gates and a road that branches,
+     and the walking code as built. */
+  check('out of the gate along the road to the branch nearest, back along it to a gate, and a forager nowhere near it just walks', (() => {
+    const src = built('walls.js');
+    const W = new Function(src + '\nreturn { setWalls, setRoadNet, wayTo, roadNet };')();
+    W.setWalls([{ x: 0, z: 0, r: 50, gates: [0, Math.PI], half: 0.07 }]);
+    // Gate ends at (54, 0) and (-54, 0); a road east to (154, 0), which branches north and south.
+    const xs = [54, -54, 154, 154, 154], zs = [0, 0, 0, 120, -120];
+    const edges = [0, 1, 0, 2, 2, 3, 2, 4];
+    const n = xs.length, dist = new Float64Array(n * n).fill(Infinity), next = new Int32Array(n * n).fill(-1);
+    for (let i = 0; i < n; i++) { dist[i * n + i] = 0; next[i * n + i] = i; }
+    for (let e = 0; e < edges.length; e += 2) {
+      const a = edges[e], b = edges[e + 1], d = Math.hypot(xs[a] - xs[b], zs[a] - zs[b]);
+      dist[a * n + b] = dist[b * n + a] = d; next[a * n + b] = b; next[b * n + a] = a;
+    }
+    for (let m = 0; m < n; m++) for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      if (dist[i * n + m] + dist[m * n + j] < dist[i * n + j]) { dist[i * n + j] = dist[i * n + m] + dist[m * n + j]; next[i * n + j] = next[i * n + m]; }
+    }
+    W.setRoadNet({ xs, zs, segs: edges, dist, next, n, slow: 0.73, gateOut: 4 });
+    const out = { x: 58, z: 2 };                                   // just out of the east gate
+    W.wayTo(out, 170, 140, true);
+    const outPts = out.way?.pts || [];
+    const outByRoad = outPts.length >= 6 && outPts.some((v, i) => i % 2 === 0 && v === 154 && outPts[i + 1] === 0);
+    const home = { x: 175, z: 130 };                               // at the north branch, going in
+    W.wayTo(home, 0, 0, true);
+    const homePts = home.way?.pts || [];
+    const inByRoad = homePts.length >= 4 && Math.abs(homePts[homePts.length - 2] - 54) < 0.5 && Math.abs(homePts[homePts.length - 1]) < 0.5;
+    const forager = { x: -40, z: 260 };                            // far off, walking further off
+    W.wayTo(forager, -120, 320, true);
+    const inside = { x: 10, z: 10 };                               // inside: the gate first
+    const [gx] = W.wayTo(inside, 170, 140, true);
+    const led = { x: 58, z: 2 };                                   // led: goes where pointed
+    W.wayTo(led, 170, 140, false);
+    return outByRoad && inByRoad && forager.way && forager.way.pts === null && gx > 40 && led.way === null
+      ? true : JSON.stringify({ outPts, homePts, forager: forager.way?.pts, gx, led: led.way });
+  })() === true);
   check('a road leaves and enters a city only by a gate, and never goes through a wall',
-    /walled\.has\(c\) \? cityGates\(c\)\.map\(\(g\) => \(\{ x: g\.ox, z: g\.oz \}\)\)/.test(st)
+    /const freeGates = \(c\) => cityGates\(c\)\.map\(\(g\) => \(\{ x: g\.ox, z: g\.oz \}\)\)/.test(st) && /walled\.has\(c\) \? freeGates\(c\)/.test(st)
     && /\(throughWall\(sx, sz, tx, tz\) \? 1e7 : 0\)/.test(st) && /const gates = cityGates\(camp\)\.map\(\(g\) => g\.a\);/.test(st));
   check('and a gate opens onto a street, with an avenue in from it to the plaza',
     /const u = su \? su \* Math\.sqrt\(R \* R - street \* street\) : cross;/.test(st)
@@ -8491,7 +8545,8 @@ group('walls and neighbours');
     /if \(!canStand\(nx, nz, flat\) \|\| wallBlocks\(p\.x, p\.z, nx, nz\)\) return false;/.test(mv)
     && /if \(in0 !== in1 && !inGate\(w, \(x0 \+ x1\) \/ 2, \(z0 \+ z1\) \/ 2\)\) return true;/.test(wl));
   check('and whoever has to cross one heads for the gate on the way, and round the wall to it',
-    /const \[wx, wz\] = viaGate\(p\.x, p\.z, p\.targetX, p\.targetZ\), aim = Math\.atan2\(wx - p\.x, wz - p\.z\);/.test(mv)
+    /const \[wx, wz\] = wayTo\(p, p\.targetX, p\.targetZ, !\(p\.onRaft \|\| p\.led \|\| p\.panic > 0 \|\| p\.prey \|\| p\.hiding\)\), aim = Math\.atan2\(wx - p\.x, wz - p\.z\);/.test(mv)
+    && /return viaGate\(x, z, tx, tz\);\s*\}\s*$/.test(moduleSource('walls.js'))
     && /round the wall, a stretch at a time/.test(wl));
   check('the walls walked against are the walls built', /standing\.push\(\{ x: camp\.x, z: camp\.z, r: R, gates, half \}\)/.test(moduleSource('settlement.js'))
     && /setWalls\(standing\);/.test(moduleSource('settlement.js')));

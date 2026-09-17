@@ -132,6 +132,17 @@ function worth(d, camp, stoneFull) {
   return ore.want / (1 + dist / 120);
 }
 
+/** The outcrop a band gets most from: the one worth most to it, pile or no
+    pile. Where a town's road to its quarry goes (layRoads, settlement.js). */
+export function mainDeposit(camp) {
+  let best = null, most = 0;
+  for (const d of deposits) {
+    const v = worth(d, camp, false);
+    if (v > most) { most = v; best = d; }
+  }
+  return best;
+}
+
 /** Whether there is anywhere worth digging for this band at all. */
 export function quarryInReach(camp, stoneFull) {
   for (const d of deposits) if (worth(d, camp, stoneFull) > 0) return true;

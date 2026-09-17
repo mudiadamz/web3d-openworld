@@ -5,8 +5,9 @@ import { flatnessAt, mulberry32, sampleHeight, inWater } from './noise.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, treeSpots } from './world.js';
 import { FIELD, fieldReach } from './farming.js';
 import { CITYHALL_TOP, civicGeometries, houseGeometry, storeGeometry, tentMaterial, tentStyle } from './village.js';
-import { liftRoads, pathEpoch, paveDisc, paveRoad } from './paths.js';
-import { setWalls } from './walls.js';
+import { TREAD, liftRoads, pathEpoch, paveDisc, paveRoad } from './paths.js';
+import { setRoadNet, setWalls } from './walls.js';
+import { deposits, depositRadius, mainDeposit } from './quarries.js';
 import { DWELLING, dwellingsNear, footprint, pitch } from './footprint.js';
 import {
   CAMP_CLEARING, CAMP_PIECES, campCapacity, campParts, camps, GRAVE_SPACING, HEARTHS, PALE, people, STORE_FLAT, STORE_SCALE, STORE_SPOTS, STORE_STAND, STORE_THATCH, STORE_WALL, STORES, TENT_REACH, tribeGroup
@@ -566,19 +567,21 @@ function place(x, z, turn, lift = 0) {
   return _m4.compose(_v, _q, _s).clone();
 }
 
-/* Where a city's four gates are: in the wall, at each end of the street that
-   runs past the middle one way and of the first cross street the other, so the
-   road through a gate goes straight on down a street and never through a house.
-   Each as its angle round the middle (for the wall), the point just outside
-   (where a road out of the city starts), and the point on the plaza that street
-   runs to (where the avenue in from the gate ends). */
+/* Where a city's two gates are: in the wall, at the two ends of the street that
+   runs past the middle, so the road through the town goes straight in at one
+   gate, down that street, and out at the other, and never through a house.
+   Two and not four: a wall is there to be come through in few places, and
+   everybody who comes and goes comes and goes by these (walls.js). Each as its
+   angle round the middle (for the wall), the point just outside (where a road
+   out of the city starts), and the point on the plaza that street runs to
+   (where the avenue in from the gate ends). */
 export const GATE_OUT = 4;             // metres outside the wall a road starts
 export function cityGates(camp) {
   const R = campReach(camp) + CIVIC.wallOut, th = camp.hearthTurn || 0;
   const ux = Math.cos(th), uz = Math.sin(th), vx = -uz, vz = ux;
   const street = CITY.pair / 2, cross = -CITY.along;   // the street past the middle, and the cross street
   const at = (u, v) => ({ x: camp.x + ux * u + vx * v, z: camp.z + uz * u + vz * v });
-  return [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([su, sv]) => {
+  return [[1, 0], [-1, 0]].map(([su, sv]) => {
     const u = su ? su * Math.sqrt(R * R - street * street) : cross;
     const v = su ? street : sv * Math.sqrt(R * R - cross * cross);
     const out = at(u + su * GATE_OUT, v + sv * GATE_OUT), inner = at(su ? 0 : u, su ? v : 0);
@@ -661,14 +664,16 @@ export function dressCivic() {
    A city paves its plaza, a street in front of every house, the cross streets
    through them, and an avenue from the plaza out through each of its gates.
 
-   Between places, few roads. The trunk joins the cities: starting at the
-   biggest, whichever city is nearest the roads already laid joins them next,
-   at the nearest point on any road (a junction) or at a gate — so every city
-   is still reachable from every other, by the fewest and shortest roads. A
-   village of a city's tribe gets a road only if it is close to that trunk, at
-   most ROADS.spur: the rest keep to their paths, and a map is not a fan of
-   spokes. A road leaves and enters a city only by a gate, and a road that
-   would cross any city's wall is only taken if there is no other way.
+   Between places, one network that branches. The trunk joins the cities:
+   starting at the biggest, whichever city is nearest the roads already laid
+   joins them next, at the nearest point on any road (a junction) or at a gate
+   — so every city is still reachable from every other, by the fewest and
+   shortest roads. Then the branches, the same way: every village of a city's
+   tribe, and each city's field and its quarry, nearest first, each off the
+   nearest road already laid. So the road out of a gate splits and splits again
+   toward everything the town goes out to, instead of a fan of spokes from the
+   gate. A road leaves and enters a city only by a gate, and a road that would
+   cross any city's wall is only taken if there is no other way.
 
    Laid into the ground the footpaths are worn into (paths.js), but as road: it
    never grows back, grass never comes up through it, and it has a colour of
@@ -677,7 +682,10 @@ export function dressCivic() {
    made or lost, a village changes hands — and the roads laid before are taken
    up first, so a gate that moved does not leave its old road behind.
    ------------------------------------------------------------------------- */
-export const ROADS = { spur: 120 };   // metres: the longest road a village gets to the trunk
+export const ROADS = {
+  branch: 1000,        // metres: the longest branch laid to a village, a field or a quarry
+  clear: 12,           // and the nearest to a gate a branch may join the road out of it
+};
 let roadsFor = '';
 type Pt = { x: number; z: number };
 function nearestOnSeg(px, pz, ax, az, bx, bz): [number, number] {
@@ -690,8 +698,16 @@ export function layRoads() {
   const cities = camps.filter((c) => !c.gone && (c.stage || 0) >= CITY.at && c.city && peopled.has(c));
   const codes = new Set(cities.map((c) => c.code));
   const towns = camps.filter((v) => !v.gone && !cities.includes(v) && codes.has(v.code) && peopled.has(v));
+  /* What each city goes out to, besides its villages: its field, and the outcrop
+     it quarries. Each as somewhere with an edge a road stops at. */
+  const places = [];
+  for (const c of cities) {
+    if (c.field) places.push({ x: c.field.x, z: c.field.z, r: fieldReach(c) });
+    const d = mainDeposit(c);
+    if (d) places.push({ x: d.x, z: d.z, r: depositRadius(d) + 2 });
+  }
   const key = pathEpoch + '#' + cities.map((c) => `${c.index}:${c.cityShown || 0}:${Math.round(campReach(c))}`).join('|')
-    + '#' + towns.map((v) => v.index).join('.');
+    + '#' + towns.map((v) => v.index).join('.') + '#' + places.map((q) => `${Math.round(q.x)},${Math.round(q.z)},${Math.round(q.r / 10)}`).join('|');
   if (key === roadsFor) return;
   roadsFor = key;
   liftRoads();
@@ -715,22 +731,39 @@ export function layRoads() {
   }
 
   const trunk = cities.slice().sort((a, b) => (b.pop || 0) - (a.pop || 0));
-  if (!trunk.length) return;
+  if (!trunk.length) { setRoadNet(null); roadNetKey = ''; return; }
   const walled = new Set(cities);
-  // The edge of a place without a wall, toward somewhere.
+  // The edge of a place without a wall, toward somewhere: a village's houses, a field's rows, an outcrop.
   const edgeOf = (c, x, z): Pt => {
-    const dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) || 1, r = Math.min(campReach(c), d / 2) / d;
+    const dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) || 1, r = Math.min(c.r ?? campReach(c), d / 2) / d;
     return { x: c.x + dx * r, z: c.z + dz * r };
   };
-  // Where a road out of this place toward (x, z) may start: a gate, or the edge facing it.
-  const exits = (c, x, z): Pt[] => (walled.has(c) ? cityGates(c).map((g) => ({ x: g.ox, z: g.oz })) : [edgeOf(c, x, z)]);
+  /* One road out of each gate. The first road to leave by a gate takes it, and
+     anything else in that direction branches off that road rather than
+     running a second road beside it out of the same gate. */
+  const gateKey = (x, z) => `${Math.round(x * 10)},${Math.round(z * 10)}`;
+  const usedGates = new Set();
+  const atGate = (x, z) => cities.some((c) => cityGates(c).some((g) => Math.hypot(g.ox - x, g.oz - z) < ROADS.clear));
+  const freeGates = (c) => cityGates(c).map((g) => ({ x: g.ox, z: g.oz })).filter((g) => !usedGates.has(gateKey(g.x, g.z)));
+  // Where a road out of this place toward (x, z) may start: a gate still free, or the edge facing it.
+  const exits = (c, x, z): Pt[] => (walled.has(c) ? freeGates(c) : [edgeOf(c, x, z)]);
   const throughWall = (ax, az, bx, bz) => cities.some((w) => {
     const [px, pz] = nearestOnSeg(w.x, w.z, ax, az, bx, bz);
     return Math.hypot(px - w.x, pz - w.z) < campReach(w) + CIVIC.wallOut - 0.5;
   });
-  const ends: ({ camp: any } | Pt)[] = [];
+  /* The places a road can end at. A town's free gates; and for a place without
+     a wall, the one point on its edge its own road came in at, so every road
+     to it meets there and the roads are one network rather than several that
+     stop at different sides of the same village. */
+  const ends: Pt[] = [];
   const segs: [number, number, number, number][] = [];
-  const join = (c) => { if (walled.has(c)) for (const g of cityGates(c)) ends.push({ x: g.ox, z: g.oz }); else ends.push({ camp: c }); };
+  const join = (c, at?: Pt) => { if (walled.has(c)) ends.push(...freeGates(c)); else if (at) ends.push(at); };
+  const take = (x, z) => {
+    const k = gateKey(x, z);
+    if (!cities.some((c) => cityGates(c).some((g) => gateKey(g.ox, g.oz) === k))) return;
+    usedGates.add(k);
+    for (let i = ends.length - 1; i >= 0; i--) if (gateKey(ends[i].x, ends[i].z) === k) ends.splice(i, 1);
+  };
   /* Joins these to the roads, nearest first, while the next is no further than
      `most`. */
   const connect = (list, most) => {
@@ -743,16 +776,15 @@ export function layRoads() {
       };
       for (const n of left) {
         for (const e of ends) {
-          const to = 'camp' in e ? e.camp : e;
-          for (const s of exits(n, to.x, to.z)) {
-            const t = 'camp' in e ? edgeOf(e.camp, s.x, s.z) : e;
-            consider(n, s.x, s.z, t.x, t.z);
-          }
+          for (const s of exits(n, e.x, e.z)) consider(n, s.x, s.z, e.x, e.z);
         }
         // A junction: the nearest point on a road already laid.
         for (const [ax, az, bx, bz] of segs) {
           for (const s0 of exits(n, (ax + bx) / 2, (az + bz) / 2)) {
             const [px, pz] = nearestOnSeg(s0.x, s0.z, ax, az, bx, bz);
+            /* Not at a gate: a branch that joins the road where it leaves the
+               gate is a second road out of the gate by another name. */
+            if (atGate(px, pz)) continue;
             const s = walled.has(n) ? s0 : edgeOf(n, px, pz);
             consider(n, s.x, s.z, px, pz);
           }
@@ -761,12 +793,78 @@ export function layRoads() {
       if (!best || least > most) return;
       paveRoad(best.road[0], best.road[1], best.road[2], best.road[3], 3.5);
       segs.push(best.road);
-      join(best.n);
+      take(best.road[0], best.road[1]);
+      take(best.road[2], best.road[3]);
+      join(best.n, { x: best.road[0], z: best.road[1] });
       left.splice(left.indexOf(best.n), 1);
     }
   };
   join(trunk[0]);
   connect(trunk.slice(1), Infinity);
-  // Only the villages close to the trunk, and they join it rather than a city.
-  if (segs.length || trunk.length === 1) connect(towns, ROADS.spur);
+  // And the branches: the tribe's villages, the fields and the quarries, each off the nearest road.
+  if (segs.length || trunk.length === 1) connect([...towns, ...places], ROADS.branch);
+  shareRoads(segs, cities);
+}
+
+/* The roads as somewhere to walk (wayTo, walls.js): every stretch between two
+   junctions, the street through each town from one gate to the other, and the
+   shortest way along them between any two. A stretch that crosses water is
+   left out: it is not paved there, and nobody can walk it. Worked out again
+   only when the roads themselves moved - a town adding a house re-lays its
+   streets, and changes nothing out here. */
+let roadNetKey = '';
+function shareRoads(segs, cities) {
+  const gates = cities.map((c) => cityGates(c));
+  const k = segs.map((s) => s.map((v) => Math.round(v)).join(',')).join('|') + '#'
+    + gates.map((g) => g.map((q) => `${Math.round(q.ox)},${Math.round(q.oz)}`).join(';')).join('|');
+  if (k === roadNetKey) return;
+  roadNetKey = k;
+  const xs = [], zs = [], index = new Map();
+  const node = (x, z) => {
+    const id = `${Math.round(x * 20)},${Math.round(z * 20)}`;
+    if (!index.has(id)) { index.set(id, xs.length); xs.push(x); zs.push(z); }
+    return index.get(id);
+  };
+  for (const [ax, az, bx, bz] of segs) { node(ax, az); node(bx, bz); }
+  const through = gates.map((g) => g.map((q) => node(q.ox, q.oz)));
+  const dry = (ax, az, bx, bz) => {
+    const steps = Math.ceil(Math.hypot(bx - ax, bz - az) / 3);
+    for (let s = 0; s <= steps; s++) {
+      const t = steps ? s / steps : 0;
+      if (sampleHeight(ax + (bx - ax) * t, az + (bz - az) * t) < SEA + 0.3) return false;
+    }
+    return true;
+  };
+  const edges = [];
+  for (const [ax, az, bx, bz] of segs) {
+    // Split wherever another road joined this one.
+    const dx = bx - ax, dz = bz - az, len2 = dx * dx + dz * dz, along = [];
+    for (let i = 0; i < xs.length; i++) {
+      const t = len2 > 0 ? ((xs[i] - ax) * dx + (zs[i] - az) * dz) / len2 : 0;
+      if (t >= -1e-6 && t <= 1 + 1e-6 && Math.hypot(ax + dx * t - xs[i], az + dz * t - zs[i]) < 0.05) along.push([t, i]);
+    }
+    along.sort((p, q) => p[0] - q[0]);
+    for (let m = 1; m < along.length; m++) {
+      const a = along[m - 1][1], b = along[m][1];
+      if (a !== b && dry(xs[a], zs[a], xs[b], zs[b])) edges.push(a, b);
+    }
+  }
+  for (const [a, b] of through) if (a !== b) edges.push(a, b);
+  const n = xs.length, dist = new Float64Array(n * n).fill(Infinity), next = new Int32Array(n * n).fill(-1);
+  for (let i = 0; i < n; i++) { dist[i * n + i] = 0; next[i * n + i] = i; }
+  for (let e = 0; e < edges.length; e += 2) {
+    const a = edges[e], b = edges[e + 1], d = Math.hypot(xs[a] - xs[b], zs[a] - zs[b]);
+    if (d < dist[a * n + b]) { dist[a * n + b] = dist[b * n + a] = d; next[a * n + b] = b; next[b * n + a] = a; }
+  }
+  for (let m = 0; m < n; m++) {
+    for (let i = 0; i < n; i++) {
+      const im = dist[i * n + m];
+      if (im === Infinity) continue;
+      for (let j = 0; j < n; j++) {
+        const d = im + dist[m * n + j];
+        if (d < dist[i * n + j]) { dist[i * n + j] = d; next[i * n + j] = next[i * n + m]; }
+      }
+    }
+  }
+  setRoadNet({ xs, zs, segs: edges, dist, next, n, slow: TREAD.rough / TREAD.road, gateOut: GATE_OUT });
 }
