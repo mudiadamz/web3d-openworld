@@ -1249,7 +1249,8 @@ export function updatePeople(dt, day) {
 
     const tdx = p.targetX - p.x, tdz = p.targetZ - p.z;
     const dist = Math.hypot(tdx, tdz);
-    const arrived = dist < 1.1;
+    // Far enough to be there, and wider the further one stride carries them.
+    const arrived = dist < Math.max(1.1, p.speed * slice * 0.6);
 
     let want = 0;
     if (p.state === 'goto' || p.state === 'return') {

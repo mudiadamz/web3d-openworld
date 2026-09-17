@@ -1,4 +1,5 @@
 import { clamp } from './noise.js';
+import { peopleOf } from './ill.js';
 import { seasonName } from './scene.js';
 import { luck } from './clock.js';
 import { MONUMENT_MAX, PYRAMID_COURSES, camps, dressCamp, drawGraves, people } from './people.js';
@@ -299,8 +300,8 @@ export const SKILL = {
 /** The best any living adult of this camp actually remembers. */
 export function bestKnown(camp, key) {
   let best = 0;
-  for (const p of people) {
-    if (p.camp !== camp || p.child) continue;
+  for (const p of peopleOf(camp)) {            // the band, not the island (ill.js)
+    if (p.child) continue;
     const k = p.knows?.[key] || 0;
     if (k > best) best = k;
   }

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
+import { peopleOf } from './ill.js';
 
 import { CAMP_CEILING, MAP_SCALE, P, PEOPLE_ROOM, QUALITY, SEA, SNOW } from './params.js';
 import { clamp, flatnessAt, mulberry32, sampleHeight, clearOfCreeks, inWater } from './noise.js';
 import { faunaMaterial, rockMaterial } from './scene.js';
 import { HIDDEN, _c, _e, _m4, _q, _s, _v, refillTilesNear, stats, treeSpots, world } from './world.js';
 import { recordPerson, setLineage, tribeVoice, uniqueName, usedCodes, usedNames } from './wildlife.js';
-import { PERSON, PERSON_PARTS, partsPer } from './clock.js';
+import { drawingWorld, PERSON, PERSON_PARTS, partsPer } from './clock.js';
 import { HUMAN_PARTS } from 'humans-threejs/human-parts.js';
 import { buildLooks, clearLooks, growLooks, undressAll } from './looks.js';
 import {
@@ -244,9 +245,11 @@ export function campFromRecord(index, x, z, name, founded) {
 export const CAMP_CLEARING = 26;
 
 export function inCamp(x, z, extra = 0) {
+  // Squared: this is asked for every blade of grass scattered and every step taken.
   for (let i = 0; i < camps.length; i++) {
     const c = camps[i];
-    if (Math.hypot(c.x - x, c.z - z) < campReach(c) + extra) return true;
+    const dx = c.x - x, dz = c.z - z, r = campReach(c) + extra;
+    if (dx * dx + dz * dz < r * r) return true;
   }
   return false;
 }
@@ -733,7 +736,7 @@ export const RACK_KNOWN = 0.35;      // drying skill at which the rack goes up
    ------------------------------------------------------------------------- */
 
 export function familiesOf(camp) {
-  const here = people.filter((p) => p.camp === camp);
+  const here = peopleOf(camp);          // the band's own, sorted once a step (ill.js)
   const women = here.filter((p) => !p.child && p.sex === 'f').sort((a, b) => personAge(b) - personAge(a));
   const men = here.filter((p) => !p.child && p.sex === 'm').sort((a, b) => personAge(b) - personAge(a));
   const families = [];
@@ -1617,8 +1620,17 @@ export function growCamps(need) {
 }
 
 /** The whole band, after anything that could have moved somebody's slot. */
+/* Painting is for the screen, and while the world is being run ahead there is
+   no screen: a birth, a death or somebody moving band repainted all nine
+   thousand people, and three of those a day was most of a fast-forwarded day's
+   work. Owed instead, and paid once the world is looked at again (refreshViews,
+   main.js, and after a night run through). */
+let paintOwed = false;
+export function repaintOwed() { if (paintOwed) paintPeople(); }
 export function paintPeople() {
   if (!personParts) return;
+  if (!drawingWorld) { paintOwed = true; return; }
+  paintOwed = false;
   /* Settle who leads before painting them. `camp.chief` is only re-resolved
      when something asks, and the only thing that used to ask was the band card
      — so a chief who died stayed in ochre until somebody opened a panel. This

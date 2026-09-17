@@ -1479,11 +1479,12 @@ check('a small world still runs everybody every step',
    a kilometre off and a few pixels tall — and with it switched off, a big world
    spent longer on one drawn frame than on a year of running unwatched. */
 check('and a watched one is grouped gently rather than not at all',
-  /const cap = drawingWorld \? LOD\.watchedMost : LOD\.most;/.test(html));
+  /const cap = drawingWorld \? LOD\.watchedMost : LOD\.aheadMost;/.test(html));
 check('gently meaning a few, not sixty', (() => {
   const watched = Number((html.match(/watchedMost: (\d+),/) || [, 0])[1]);
   const most = Number((html.match(/most: (\d+),/) || [, 0])[1]);
-  return watched >= 2 && watched <= 8 && watched < most;
+  const ahead = Number((html.match(/aheadMost: (\d+),/) || [, 0])[1]);
+  return watched >= 2 && watched <= 8 && watched < most && ahead >= most;
 })());
 check('whoever goes is decided by the step, not the clock',
   /export let worldStep = 0;/.test(html.replace(/^export /gm, 'export '))
@@ -2234,9 +2235,12 @@ const paintAll = html.slice(html.indexOf('function paintPeople()'),
 check('paintPeople walks the whole band',
   /for \(let i = 0; i < people\.length && i < peopleCapacity; i\+\+\) paintPerson\(i, people\[i\]\);/
     .test(paintAll));
-check('and returns early only when there is nothing to paint into',
-  (paintAll.match(/return;/g) || []).length === 1
-  && /if \(!personParts\) return;/.test(paintAll));
+/* Two ways out: nothing to paint into, and nothing drawn to paint for — the
+   second owes the paint and pays it when the world is looked at again. */
+check('and returns early only when there is nothing to paint into, or nothing drawn',
+  (paintAll.match(/return;/g) || []).length === 2
+  && /if \(!personParts\) return;/.test(paintAll)
+  && /if \(!drawingWorld\) \{ paintOwed = true; return; \}/.test(paintAll));
 
 check('the colour buffer is told it changed',
   /instanceColor\.needsUpdate = true;/.test(html));
@@ -5603,7 +5607,9 @@ check('nor one that would strand either camp without men',
    ------------------------------------------------------------------------- */
 
 const PATH_WORLD = 1600;
-const makePaths = new Function('THREE', 'WORLD', 'TILE',
+// `drawingWorld` comes from clock.js, which the stripped imports leave out:
+// true here, which is the fine stamping somebody watching gets.
+const makePaths = new Function('THREE', 'WORLD', 'TILE', 'drawingWorld',
   // Run, not quoted: the build, where `new Set<number>()` is a plain Set again.
   built('paths.js')
     .replace(/^import .*$/gm, '')
@@ -5618,7 +5624,7 @@ const THREE_STUB = {
   RedFormat: 1, LinearFilter: 2, ClampToEdgeWrapping: 3,
 };
 
-const paths = makePaths(THREE_STUB, PATH_WORLD, 24);
+const paths = makePaths(THREE_STUB, PATH_WORLD, 24, true);
 const { PATH: PATHS, buildPaths, tread, wearAt, fadePaths, pathStats, takeWornTiles } = paths;
 
 /** Walks somebody from one end of a line to the other, in strides. */
@@ -8250,7 +8256,7 @@ check('kept off the water, the dead, the field and the next village',
 check('an outskirts fire is one of the camp\'s own, after its five',
   /camp\.fireAt\[HEARTHS \+ o\.hearths\.length - 1\] = fire;/.test(html));
 check('the village\'s ground reaches as far as it does, for everything that asks',
-  /if \(Math\.hypot\(c\.x - x, c\.z - z\) < campReach\(c\) \+ extra\) return true;/.test(html)
+  /const dx = c\.x - x, dz = c\.z - z, r = campReach\(c\) \+ extra;\s*if \(dx \* dx \+ dz \* dz < r \* r\) return true;/.test(html)
   && /< campReach\(p\.camp\);/.test(moduleSource('vitals.js')));
 check('and the grass goes out to it', /refillTilesNear\(camp\.x, camp\.z, reach\);/.test(html)
   && /function refillTilesNear\(x, z, r\)/.test(html));
@@ -8763,6 +8769,19 @@ group('no road beside a road');
     && /const best = cands\.slice\(0, ROADS\.tries\)\.find\(\(c\) => !beside\(c\.road\)\) \|\| cands\[0\];/.test(st));
   check('and a road taken up leaves no line beside the new one',
     /const was = Math\.max\(0, Math\.round\(PATH\.onMap \* 255\) - 2\);/.test(pa) && /for \(const k of roads\) wear\[k\] = was;/.test(pa));
+}
+
+group('a fast-forwarded day');
+{
+  const pe = moduleSource('people.js');
+  check('a band is sorted out of the island once a step, not once a question',
+    /const here = peopleOf\(camp\);/.test(pe) && /for \(const p of peopleOf\(camp\)\)/.test(moduleSource('skills.js')));
+  check('and nobody is painted while nothing is drawn: it is owed, and paid when it is looked at',
+    /if \(!drawingWorld\) \{ paintOwed = true; return; \}/.test(pe) && /function repaintOwed\(\) \{ if \(paintOwed\) paintPeople\(\); \}/.test(pe)
+    && /if \(ranNight\) repaintOwed\(\);/.test(moduleSource('main.js'))
+    && /paintPeople\(\);/.test(bodyOf('refreshViews') || ''));
+  check('and the ground under a walker is stamped coarsely while nothing is drawn',
+    /cell \* \(drawingWorld \? 0\.5 : 3\)/.test(moduleSource('paths.js')));
 }
 
 /* ---- report ---- */

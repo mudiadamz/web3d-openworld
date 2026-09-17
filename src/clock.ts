@@ -122,7 +122,11 @@ export let simRng = mulberry32(1);
 export const luck = () => simRng();
 export function seedSim(seed) { simRng = mulberry32((seed | 0) ^ 0x9e37); }
 
-export const FF_STEP = 0.5;
+/* Half a second of world time a step was 2,880 steps a simulated day. A second
+   is half that, and the arrival test widens with the stride so nobody walks
+   past what they were walking to (updatePeople). Two seconds was tried, and
+   cost the probes' behaviour the same way `aheadMost` did. */
+export const FF_STEP = 1;
 
 /** Seconds of world time per unwatched step, for whatever length the day is. */
 export function ffStep() {
@@ -166,6 +170,15 @@ export const LOD = {
      or it stops being a ceiling on the work and becomes a floor under it. At 64
      a thousand people cost what fifteen did. */
   most: 64,
+  /* How coarse it may get while the world is run ahead with nothing drawn.
+     Tried at 192, where somebody thinks every 192 steps and walks the whole of
+     it in one stride: a third off the cost of a run-ahead day, and the boot
+     check's probes caught what it cost — people covered a third less ground and
+     a decade made two thirds of the events it used to. A walk is a straight line
+     between two thoughts, and at that grain the thoughts are too far apart. So
+     the unwatched cap for now; raising it trades what happens in a fast
+     decade for how long the decade takes. */
+  aheadMost: 64,
   /* Animals are worth less thought than people are and there are ten times as
      many of them. Unwatched, a herd is a supply of meat standing in a field: it
      has to be somewhere and it has to still be there, but which way a particular
@@ -202,7 +215,7 @@ export function tickWorldStep() { worldStep++; }
 /** How many take turns, for a population of this size. */
 export function lodStride(n) {
   if (n <= LOD.from) return 1;
-  const cap = drawingWorld ? LOD.watchedMost : LOD.most;
+  const cap = drawingWorld ? LOD.watchedMost : LOD.aheadMost;   // nothing drawn: think rarely, walk far
   return Math.max(1, Math.min(cap, Math.ceil(n / LOD.from)));
 }
 

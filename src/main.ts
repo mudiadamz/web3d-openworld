@@ -12,7 +12,7 @@ import {
 import { flushPaths } from './paths.js';
 import { loadModels, recountAnimals, updateAnimals } from './wildlife.js';
 import { FF_STEP, NIGHT_SKIP_BASE, PACE_MAX_STEP, clockRate, ffStep, nightIdle, pace, rateIndex, setDrawingWorld, setWorldClock, skipping, tickWorldStep, worldClock } from './clock.js';
-import { camps, paintPeople, people } from './people.js';
+import { repaintOwed, camps, paintPeople, people } from './people.js';
 import {
   bornCount, chronicle, diedCount, drawTribeChart, isMilestone, loadChronicle, logEvent, onNewDay, personAge, recoverForage, renderChronicle, renderTribes, repopulate, setSimDay, simDay, startRun, updateEconomy, updateGround, updateLives
 } from './life.js';
@@ -490,6 +490,7 @@ export function tick() {
     const until = Date.now() + NIGHT_BUDGET * (P.nightSkipRate / NIGHT_SKIP_BASE);
     const step = ffStep();
     while (nightIdle() && Date.now() < until) { stepWorld(step); ranNight = true; }
+    if (ranNight) repaintOwed();        // whatever the night changed, painted once (people.js)
   }
 
   /* The frame's own share of world time — none of it if the loop above already

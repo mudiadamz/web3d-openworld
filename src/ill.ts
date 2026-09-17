@@ -21,6 +21,27 @@ function countIll() {
   for (const p of people) if (p.sick && p.camp) p.camp.ill = (p.camp.ill || 0) + 1;
 }
 export function forgetIll() { illCountedAt = -1; }
+
+/* And who is in each band at all. Everything that asks a question about one
+   band used to walk the island to answer it — the best anybody remembers of a
+   skill (bestKnown) is asked on every errand anybody finishes, and at nine
+   thousand people that is nine thousand tests for a band of a hundred and
+   fifty. Sorted once a step into a list a band, and thrown away with the step,
+   so nothing here can go stale for longer than that. */
+let sortedAt = -1;
+const byCamp = new Map();
+export function peopleOf(camp) {
+  if (sortedAt !== worldStep) {
+    sortedAt = worldStep;
+    byCamp.clear();
+    for (const p of people) {
+      let list = byCamp.get(p.camp);
+      if (!list) byCamp.set(p.camp, list = []);
+      list.push(p);
+    }
+  }
+  return byCamp.get(camp) || [];
+}
 /** How many in this band are lying ill. */
 export function illIn(camp) {
   countIll();

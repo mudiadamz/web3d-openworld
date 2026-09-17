@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { drawingWorld } from './clock.js';
 
 import { SEA, TILE, WORLD } from './params.js';
 import { sampleHeight, inCreek } from './noise.js';
@@ -192,7 +193,10 @@ export function tread(x0, z0, x1, z1, weight = 1) {
   const dx = x1 - x0, dz = z1 - z0;
   const dist = Math.hypot(dx, dz);
   if (dist <= 0) return;
-  const steps = Math.max(1, Math.ceil(dist / (cell * 0.5)));
+  /* Half a cell apart while somebody is watching, three cells apart while
+     nothing is drawn: the same wear laid down in fewer stamps, which is a tenth
+     of a step at nine thousand people and a path nobody is looking at. */
+  const steps = Math.max(1, Math.ceil(dist / (cell * (drawingWorld ? 0.5 : 3))));
   /* Every sample is stamped, including the several that land in the same cell.
      That is the point: what a cell collects is the distance walked across it,
      so crossing a cell corner to corner wears it more than clipping an edge,
