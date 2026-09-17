@@ -370,6 +370,7 @@ export interface Camp {
   /** Where its tamed horses graze, and whether it has ever had one (riding.ts). */
   paddock?: { x: number; z: number };
   everTamed?: boolean;
+  everPatrolled?: boolean;
   /** How tightly tied to each other band it deals with, by that band's index. */
   ties?: Record<number, number>;
   /** When each of those ties last grew, by index and kind ('3call', '3deal'):
@@ -444,6 +445,9 @@ export interface Person {
   horse?: any;
   rodeStep?: number;
   callStep?: number;
+  /** Which point of the beat a patrol rider last rode to. */
+  beat?: number;
+  stops?: number;
   throwPose?: number;
   acting?: boolean;
   /* What they are in the middle of doing, if anything: the kind of act, and

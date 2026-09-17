@@ -5,6 +5,7 @@ import { campReach } from './settlement.js';
 import { CONQUEST, VISIT, conquer, logEvent, personAge, simDay } from './life.js';
 import { recordMove } from './wildlife.js';
 import { SKILL, SKILLS, practise } from './skills.js';
+import { POLICE } from './riding.js';
 
 /* -------------------------------------------------------------------------
    From band to city
@@ -426,4 +427,12 @@ export function mergeNeighbour(home, host) {
   dressCamp(home);                        // and are housed with them
   paintPeople();
   return true;
+}
+
+/** How much more a city's defence counts for its patrol riders being out: seen
+    coming, and met (POLICE, riding.js). One for anywhere with none. */
+export function guarded(camp) {
+  let riders = 0;
+  for (const p of people) if (p.camp === camp && p.role === 'patrol' && !p.sick) riders++;
+  return 1 + POLICE.guard * Math.min(1, riders / POLICE.full);
 }

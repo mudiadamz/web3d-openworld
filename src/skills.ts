@@ -3,6 +3,7 @@ import { seasonName } from './scene.js';
 import { luck } from './clock.js';
 import { MONUMENT_MAX, PYRAMID_COURSES, camps, dressCamp, drawGraves, people } from './people.js';
 import { FISH, logEvent } from './life.js';
+import { patrolsFor } from './riding.js';
 
 /* -------------------------------------------------------------------------
    Skills: what a band knows, and what knowing it is worth
@@ -606,6 +607,10 @@ export const ROLES = {
      home when somebody comes for it. */
   warrior: { job: 'tend',   refuses: [],                           by: 'war',     share: 0.12 },
   fisher:  { job: 'fish',   refuses: ['hunt'],                     by: 'fishing', share: 0.14 },
+  /* A city's mounted patrol: its best riders, riding the bounds on its horses
+     (POLICE, riding.js). Not a share of the band - as many as the city is big,
+     and no more than it has horses for. */
+  patrol:  { job: 'patrol', refuses: ['gather', 'hunt', 'quarry', 'farm', 'wood', 'fish'], by: 'riding', share: 0 },
   /* And everybody else, which is most of a band and always will be. Named
      rather than left blank: "forager" is what the others are specialising away
      from, and a card that says so reads better than one that says nothing. */
@@ -642,8 +647,9 @@ export function assignRoles(camp, folk) {
   if (chief) { chief.role = 'chief'; taken.add(chief.id); }
 
   for (const [name, role] of Object.entries(ROLES)) {
-    if (!role.by || role.share <= 0) continue;
-    const want = Math.max(1, Math.round(adults.length * role.share));
+    const patrols = name === 'patrol' ? patrolsFor(camp, adults.length) : 0;
+    if (!role.by || (role.share <= 0 && patrols <= 0)) continue;
+    const want = patrols || Math.max(1, Math.round(adults.length * role.share));
     const able = adults
       .filter((p) => !taken.has(p.id))
       .sort((a, b) => (b.knows?.[role.by] || 0) - (a.knows?.[role.by] || 0));
@@ -654,6 +660,10 @@ export function assignRoles(camp, folk) {
       if ((able[i].knows?.[role.by] || 0) <= 0.02) break;
       able[i].role = name;
       taken.add(able[i].id);
+      if (name === 'patrol' && !camp.everPatrolled) {
+        camp.everPatrolled = true;
+        logEvent('learned', `[${camp.code}] ${camp.name} has riders out on its bounds`, camp.x, camp.z);
+      }
     }
   }
 }

@@ -1233,7 +1233,7 @@ export function updateLeadMark() {
    nothing. */
 export const ROLE_WORDS = {
   chief: 'chief', hunter: 'hunter', knapper: 'toolmaker', healer: 'healer', warrior: 'warrior', fisher: 'fisher',
-  keeper: 'fire-keeper', quarrier: 'quarrier', trader: 'trader',
+  keeper: 'fire-keeper', quarrier: 'quarrier', trader: 'trader', patrol: 'patrol rider',
 };
 
 export const JOB_WORDS = {
@@ -1246,7 +1246,7 @@ export const JOB_WORDS = {
   fish: 'fishing',
   wood: 'cutting wood',
   explore: 'exploring',
-  farm: 'working the fields', tame: 'taming a horse',
+  farm: 'working the fields', tame: 'taming a horse', patrol: 'riding the bounds',
   market: 'trading at the market',
   visit: 'walking to the next band',
   led: 'going where you point',

@@ -1392,21 +1392,21 @@ check('and nothing else clones the scratch matrix before filling it', (() => {
 })() === true);
 
 check('an errand either takes you out or it does not',
-  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
+  /const OUTDOOR_JOBS = new Set\(\['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame', 'patrol'\]\);/.test(html));
 /* Standing at the stones happens outdoors, and it is the one job that has
    nowhere indoors to be mistaken for. */
 check('and going to the stones or the rocks takes you out too',
-  /'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
+  /'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame', 'patrol'\]\);/.test(html));
 /* The one job whose name says where it happens. It was on the indoor side, so
    somebody "at the fire" was hidden inside a tent — the caption said one thing
    and the camp showed another — and with a full store it is better than a third
    of a band, which is most of the people who were never drawn. */
 check('and sitting at the fire is not one of them',
-  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
+  /'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame', 'patrol'\]\);/.test(html));
 /* Nor is somebody you are walking about by hand, or they wink out the moment
    you lead them into their own camp. */
 check('and neither is somebody you are leading',
-  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame'\]\);/.test(html));
+  /'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame', 'patrol'\]\);/.test(html));
 /* Between the stones and the tents: the huts stand 6.5m out and are about two
    metres across, so their inner edge is near 4.1m, and the fire ring is 1.15m. */
 check('somebody at the fire sits between the stones and the tents', (() => {
@@ -6924,7 +6924,7 @@ check('and nobody is made a quarrier who has never seen a rock',
   /if \(\(able\[i\]\.knows\?\.\[role\.by\] \|\| 0\) <= 0\.02\) break;/.test(roleSrc));
 /* Shares, so a village of forty has four hunters and a camp of ten has one. */
 check('how many of each is a share of the band',
-  /const want = Math\.max\(1, Math\.round\(adults\.length \* role\.share\)\)/.test(roleSrc));
+  /const want = patrols \|\| Math\.max\(1, Math\.round\(adults\.length \* role\.share\)\)/.test(roleSrc));
 check('and nobody holds two', /taken\.add\(able\[i\]\.id\)/.test(roleSrc)
   && /\.filter\(\(p\) => !taken\.has\(p\.id\)\)/.test(roleSrc));
 
@@ -6950,10 +6950,12 @@ check('but says nothing of the ones who are just the band',
 /* `moduleSource` has already stripped `export` off the declarations — searching
    for it here found nothing and sliced from the end of the file, which is a
    ReferenceError three lines later and no hint as to why. */
-const roleApi = new Function('clamp',
+/* How many patrol riders a camp gets is riding.js's business (patrolsFor); here
+   a camp says so itself, and the chronicle line it writes goes nowhere. */
+const roleApi = new Function('clamp', 'patrolsFor', 'logEvent',
   roleSrc.slice(roleSrc.indexOf('const ROLE_AT'))
   + '\nreturn { ROLES, ROLE_AT, LEAN, roleWeight, assignRoles };')(
-  (v, a, b) => Math.max(a, Math.min(b, v)));
+  (v, a, b) => Math.max(a, Math.min(b, v)), (camp) => camp.patrols || 0, () => {});
 
 /** A band of `n` adults, each best at one thing, with `days` of food. */
 function bandOf(n, days, best = {}) {
@@ -7203,7 +7205,7 @@ const folkOf = (camp, n, over = {}) => Array.from({ length: n }, () => ({
 check('both sides get better at it',
   /practise\(home, 'war', SKILL\.perRaid\);\s*practise\(host, 'war', SKILL\.perRaid\);/.test(html));
 check('and defending your own camp is worth something',
-  /const theirs = strengthOf\(host, people\) \* RAID\.home;/.test(html)
+  /const theirs = strengthOf\(host, people\) \* RAID\.home \* guarded\(host\);/.test(html)
   && Number((html.match(/home: ([\d.]+),/) || [, 0])[1]) > 1);
 /* What changes hands is what was already there. */
 check('a raid moves food and stone, and invents neither',
@@ -8443,6 +8445,39 @@ group('roads');
   check('laid again only when what they depend on changes', /if \(key === roadsFor\) return;/.test(st) && /pathEpoch \+ '#'/.test(st));
 }
 
+group('mounted patrols');
+{
+  const rd = moduleSource('riding.js'), mv = moduleSource('move.js');
+  // Run: a city with three horses' worth of patrols, and its best riders take them.
+  const best = { 7: { riding: 0.9 }, 8: { riding: 0.8 }, 9: { riding: 0.7 }, 10: { riding: 0.6 } };
+  const { camp, folk } = bandOf(40, 40, best);
+  camp.patrols = 3;
+  roleApi.assignRoles(camp, folk);
+  const riders = folk.filter((p) => p.role === 'patrol').map((p) => p.id);
+  check('a city\'s best riders are its patrol, as many as it has horses for',
+    riders.length === 3 && [8, 9, 10].every((id) => riders.includes(id)), JSON.stringify(riders));
+  camp.patrols = 0;
+  roleApi.assignRoles(camp, folk);
+  check('and a place with none to spare has no patrol at all', !folk.some((p) => p.role === 'patrol'));
+  check('only a city has them: one to every thirty grown people, never more than its horses',
+    /if \(\(camp\.stage \|\| 0\) < CITY\.at\) return 0;\s*return Math\.min\(horsesOf\(camp\)\.length, Math\.ceil\(adults \/ POLICE\.per\)\);/.test(rd));
+  check('they ride a beat round the bounds, out past the wall, and learn to fight on it',
+    /\['patrol', patrolWeight\(p, rested\)\]/.test(mv) && /const r = \(wall \? wall\.r : campReach\(camp\)\) \+ POLICE\.out;/.test(rd)
+    && /practise\(p\.camp, 'war', POLICE\.perStop\);/.test(rd)
+    && /if \(p\.stops >= POLICE\.round \|\| !pickBeat\(p\)\) \{ p\.stops = 0; return false; \}/.test(rd));
+  check('and while they are out the city is harder to raid',
+    /const theirs = strengthOf\(host, people\) \* RAID\.home \* guarded\(host\);/.test(html)
+    && /return 1 \+ POLICE\.guard \* Math\.min\(1, riders \/ POLICE\.full\);/.test(moduleSource('society.js')));
+  check('horses are for the chief and the patrol: everybody else walks',
+    /export const mayRide = \(p\) => p\.role === 'patrol' \|\| p\.role === 'chief';/.test(rawSource('riding.ts'))
+    && /if \(!mayRide\(p\) \|\| p\.child/.test(rd) && /\|\| !mayRide\(p\)\)\) \{ unseat\(p, d\);/.test(rd));
+  check('and they are rare: few afternoons at the herd bring one home, and a band keeps few', (() => {
+    const odds = (rd.match(/odds: \[([\d.]+), ([\d.]+)\]/) || []).slice(1).map(Number);
+    const kept = (rd.match(/kept: \[(\d+), (\d+)\]/) || []).slice(1).map(Number);
+    return odds[1] <= 0.3 && kept[1] <= 8 ? true : JSON.stringify({ odds, kept });
+  })() === true);
+}
+
 group('a tab in the background');
 {
   const bg = moduleSource('background.js'), mn = moduleSource('main.js');
@@ -8489,8 +8524,8 @@ check('a rider sits: the horse is what runs',
     /riding: \{ label: 'riding', of: 'horse riding' \}/.test(html) && /from: 0\.5,/.test(rd)
     && /if \(\(p\.camp\?\.skill\?\.riding \|\| 0\) < RIDE\.from/.test(rd));
   check('taming is an errand out to a herd, learned by going, and now and then a horse comes home',
-    /\['tame', tameWeight\(p, hunger, rested\)\]/.test(mv) && /if \(p\.job === 'tame'\) \{ if \(pickHerd\(p\)\) return true;/.test(mv)
-    && /if \(p\.job === 'tame'\) tameDone\(p\);/.test(mv)
+    /\['tame', tameWeight\(p, hunger, rested\)\]/.test(mv) && /if \(p\.job === 'tame' \|\| p\.job === 'patrol'\) \{ if \(pickOut\(p\)\) return true;/.test(mv)
+    && /if \(\(p\.job === 'tame' \|\| p\.job === 'patrol'\) && outDone\(p\)\) break;/.test(mv) && /if \(p\.job === 'tame'\) \{ tameDone\(p\); return false; \}/.test(rd)
     && /practise\(camp, 'riding', RIDE\.perTame\);/.test(rd) && /tame\(best, camp\);/.test(rd));
   check('a band keeps more the better it rides, and never takes a herd down to nothing',
     /horsesOf\(camp\)\.length >= keeps\(camp\)/.test(rd) && /wildIn\(h, pack\) >= RIDE\.wild/.test(rd));

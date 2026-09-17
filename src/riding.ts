@@ -7,6 +7,7 @@ import { logEvent } from './life.js';
 import { practise } from './skills.js';
 import { campReach } from './settlement.js';
 import { walls } from './walls.js';
+import { CITY } from './settlement.js';
 
 /* -------------------------------------------------------------------------
    Horses, and riding them
@@ -19,8 +20,11 @@ import { walls } from './walls.js';
      until it will follow them home. Most afternoons it will not. One that does
      is the band's: it grazes in a paddock just outside the camp and does not
      run from anybody. How many a band keeps grows with the skill.
-   - Riding. Past a fair hand, the band rides what it has tamed. Somebody
-     setting off anywhere worth the saddle whistles up a free horse, which
+   - Riding. Past a fair hand, the band rides what it has tamed - or rather,
+     its chief does, and in a city its mounted patrols do (POLICE, below). A
+     horse is rare and it is dear: a band keeps a handful at most, and nobody
+     else gets on one. One of those setting off anywhere worth the saddle
+     whistles up a free horse, which
      comes at a gallop, and they ride - two and a bit times a walking pace at a
      fair hand, over three and a half at mastery, and never faster than a horse
      can be ridden. At the other end the horse waits near them while they work,
@@ -38,10 +42,10 @@ export const RIDE = {
   from: 0.5,           // riding a band needs before it rides what it has tamed: until then it only tames
   reach: 450,          // metres from the camp a band will walk to a wild herd
   chance: 0.12,        // weight of an afternoon at the herd, fed and rested
-  odds: [0.15, 0.55],  // chance an afternoon brings a horse home, at nothing and at mastery
+  odds: [0.05, 0.25],  // chance an afternoon brings a horse home, at nothing and at mastery: seldom
   perTame: 0.03,       // riding learned by an afternoon at the herd
   perRide: 0.012,      // and by a ride
-  kept: [2, 12],       // horses a band will keep, at nothing and at mastery
+  kept: [1, 8],        // horses a band will keep, at nothing and at mastery: few, however good it is
   wild: 3,             // a herd with fewer wild horses than this is left alone
   worth: 70,           // metres: nearer than this nobody saddles up
   pace: [2.2, 3.6],    // times the pace they would have walked at, at a fair hand and at mastery
@@ -54,6 +58,84 @@ export const RIDE = {
   near: 12,            // metres from its rider at which a horse coming for them slows to a walk
   mount: 3.5,          // and at which they get on
 };
+
+/* -------------------------------------------------------------------------
+   Mounted patrols
+
+   A city has a territory to keep, and a few of its people spend their days
+   riding the bounds of it on the city's horses: a beat of eight points out past
+   the wall, round and round. They are drawn from its best riders, one to every
+   thirty grown people, and never more than it has horses for. While they are
+   out the city is watched - raiders are seen coming and met - so its defence
+   counts for more (guarded, society.js), and riding the bounds is where they
+   learn to fight.
+   ------------------------------------------------------------------------- */
+export const POLICE = {
+  per: 30,             // grown people in a city to each patrol rider, as far as its horses go
+  out: 45,             // metres past the wall the beat runs
+  stops: 8,            // points round the beat
+  round: 8,            // points ridden one after another before going home: once round
+  chance: 1.2,         // weight of riding the beat, for a patrol rider, before the role leans on it
+  perStop: 0.004,      // fighting learned at each point of the beat
+  guard: 0.8,          // how much more a city's defence counts with its patrols all out
+  full: 4,             // patrol riders at which that is all of it
+};
+
+/** Who may take a horse at all: the chief, and a city's patrol riders. */
+export const mayRide = (p) => p.role === 'patrol' || p.role === 'chief';
+
+/** How many patrol riders a city keeps: none below a city, one to every
+    POLICE.per grown people, and no more than it has horses. */
+export function patrolsFor(camp, adults) {
+  if ((camp.stage || 0) < CITY.at) return 0;
+  return Math.min(horsesOf(camp).length, Math.ceil(adults / POLICE.per));
+}
+
+/** Where the beat runs: out past the wall (or the edge of a place without one). */
+function beatPoint(camp, k) {
+  const wall = walls.find((w) => Math.hypot(w.x - camp.x, w.z - camp.z) < 1);
+  const r = (wall ? wall.r : campReach(camp)) + POLICE.out;
+  const a = (camp.hearthTurn || 0) + (k / POLICE.stops) * Math.PI * 2;
+  return { x: camp.x + Math.cos(a) * r, z: camp.z + Math.sin(a) * r };
+}
+
+/** The next point on the beat, round from the last one: dry ground, or the one after. */
+function pickBeat(p) {
+  const camp = p.camp;
+  for (let t = 0; t < POLICE.stops; t++) {
+    const k = ((p.beat ?? Math.floor(luck() * POLICE.stops)) + 1 + t) % POLICE.stops;
+    const q = beatPoint(camp, k);
+    if (sampleHeight(q.x, q.z) > SEA + 1 && !inWater(q.x, q.z)) {
+      p.beat = k;
+      p.targetX = q.x;
+      p.targetZ = q.z;
+      return true;
+    }
+  }
+  return false;
+}
+
+/** How much a patrol rider wants to ride the beat. */
+export const patrolWeight = (p, rested) => (p.role === 'patrol' ? POLICE.chance * rested : 0);
+
+/** Out: to the herd, or round the beat. */
+export function pickOut(p) {
+  return p.job === 'patrol' ? pickBeat(p) : pickHerd(p);
+}
+
+/** Done out there. For a patrol rider, a point of the beat: on to the next one
+    until they have been once round, and true while they are going on - then,
+    like everybody, home. */
+export function outDone(p) {
+  if (p.job === 'tame') { tameDone(p); return false; }
+  practise(p.camp, 'war', POLICE.perStop);
+  p.knows.war = Math.max(p.knows.war || 0, p.camp.skill.war);
+  p.stops = (p.stops || 0) + 1;
+  if (p.stops >= POLICE.round || !pickBeat(p)) { p.stops = 0; return false; }
+  p.state = 'goto';
+  p.timer = 40 + Math.hypot(p.targetX - p.x, p.targetZ - p.z) / 1.2;
+  return true;
+}
 
 export const horses = () => packs.find((k) => k.spec.key === 'horse') || null;
 
@@ -172,8 +254,8 @@ export function riding(p, want) {
   let d = p.horse;
   if (d && (d.dead || d.tamed !== p.camp)) { unseat(p, d); p.horse = d = null; }
   const far = Math.hypot(p.targetX - p.x, p.targetZ - p.z);
-  // A band that has forgotten how gets down.
-  if (d && d.rider === p && p.mounted && (p.camp.skill?.riding || 0) < RIDE.from) { unseat(p, d); p.horse = d = null; }
+  // A band that has forgotten how gets down, and so does anybody no longer allowed a horse.
+  if (d && d.rider === p && p.mounted && ((p.camp.skill?.riding || 0) < RIDE.from || !mayRide(p))) { unseat(p, d); p.horse = d = null; }
   if (d && d.rider === p && p.mounted) {
     // Getting down before a town's gate, going in: horses stay outside the wall.
     const into = insideWall(p.targetX, p.targetZ);
@@ -192,7 +274,7 @@ export function riding(p, want) {
     const v = Math.min(1, Math.max(0, ((p.camp.skill?.riding || 0) - RIDE.from) / (1 - RIDE.from)));
     return Math.min(RIDE.most, want * (RIDE.pace[0] + (RIDE.pace[1] - RIDE.pace[0]) * v));
   }
-  if (p.child || p.sick || p.led || p.panic > 0 || p.onRaft || p.climbed || p.hiding || p.prey) return want;
+  if (!mayRide(p) || p.child || p.sick || p.led || p.panic > 0 || p.onRaft || p.climbed || p.hiding || p.prey) return want;
   if ((p.camp?.skill?.riding || 0) < RIDE.from || far < RIDE.worth || insideWall(p.x, p.z, 2)) return want;
   if (insideWall(p.targetX, p.targetZ) && far < RIDE.worth * 2) return want;
   if (d && d.waitFor === p) {

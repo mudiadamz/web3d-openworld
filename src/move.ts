@@ -53,7 +53,7 @@ import { arm } from './ui.js';
 import { updateHud } from './main.js';
 import { traceStreams, carveStreams, buildStreamWater } from './creeks.js';
 import { farmDone, farmSite, farmWeight } from './farming.js';
-import { pickHerd, riding, tameDone, tameWeight } from './riding.js';
+import { outDone, patrolWeight, pickOut, riding, tameWeight } from './riding.js';
 import { jobMix } from './society.js';
 
 /* -------------------------------------------------------------------------
@@ -558,7 +558,7 @@ export function pickWork(p) {
   }
   // Far out into the emptiest country they can see (explore.js).
   if (p.job === 'explore') { if (pickFar(p, camp, luck)) return true; p.job = 'gather'; }
-  if (p.job === 'tame') { if (pickHerd(p)) return true; p.job = 'gather'; }
+  if (p.job === 'tame' || p.job === 'patrol') { if (pickOut(p)) return true; p.job = p.job === 'patrol' ? 'tend' : 'gather'; }
   // A tree, for wood (wood.js): to the foot of it.
   if (p.job === 'wood') {
     const t = pickTree(camp, luck);
@@ -730,6 +730,7 @@ export function chooseJob(p, day) {
          leans on once it pays. */
       ['farm', farmWeight(p, hunger, rested)],
       ['tame', tameWeight(p, hunger, rested)],             // an afternoon at a wild herd (riding.js)
+      ['patrol', patrolWeight(p, rested)],                 // a city's riders, round its bounds (riding.js)
       /* Going to take it. Only past the hunger at which a band would rather
          walk over and ask, only if there is somebody near enough holding
          enough, and only if this band has not just tried — see RAID. A warrior
@@ -874,7 +875,7 @@ export const MOURN = { chance: 0.10 };
    anybody will go for a stone. */
 export const QUARRY_TRIP = { chance: 0.12, reach: 220 };
 
-const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame']);
+const OUTDOOR_JOBS = new Set(['gather', 'hunt', 'visit', 'market', 'play', 'tend', 'led', 'mourn', 'quarry', 'raid', 'fish', 'wood', 'explore', 'tame', 'patrol']);
 
 /* Where somebody at the fire actually sits: inside the ring of tents and
    outside the ring of stones. The huts stand 6.5-9.1m out and are a couple of
@@ -1155,7 +1156,7 @@ export function updatePeople(dt, day) {
           // Logs off a tree, onto the shoulder (wood.js).
           if (p.job === 'wood') chopDone(p);
           if (p.job === 'explore') surveyDone(p);
-          if (p.job === 'tame') tameDone(p);
+          if ((p.job === 'tame' || p.job === 'patrol') && outDone(p)) break;     // a patrol rides on round the beat (riding.js)
           // A field: ditches until the band can water it, then a crop (farming.js).
           if (p.job === 'farm') farmDone(p);
           // A morning at the market: the band a little better at dealing.

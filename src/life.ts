@@ -29,7 +29,7 @@ import { followIdx, renderTribeCard, setFollowIdx } from './chronicle.js';
 import { $, r2, ui } from './save.js';
 import { codeChip, codeColor, hhmm, nameForSeed, sexMarks, takeTribeCode, tribeChips, worlds } from './ui.js';
 import { updateHud } from './main.js';
-import { STAGES, calledOn, dealtWith, developmentOf, mergeNeighbour, tradeEdge } from './society.js';
+import { STAGES, calledOn, dealtWith, developmentOf, guarded, mergeNeighbour, tradeEdge } from './society.js';
 
 /* -------------------------------------------------------------------------
    Food, and hunts that actually catch something
@@ -503,7 +503,7 @@ export function resolveRaid(party, host) {
   const home = party[0]?.camp;
   if (!home || !host || host.gone) return false;
   const mine = strengthOf(home, party) ;
-  const theirs = strengthOf(host, people) * RAID.home;
+  const theirs = strengthOf(host, people) * RAID.home * guarded(host);     // a city's patrols see them coming (riding.js)
   const won = mine > theirs * (0.7 + luck() * 0.6);
 
   /* Both sides get better at it, which is the uncomfortable part and the true
