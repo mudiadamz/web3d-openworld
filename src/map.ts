@@ -560,7 +560,7 @@ function gatherMarks(now) {
       const flock = c.stock >= 1 ? `, ${Math.floor(c.stock)} head penned` : '';
       const label = s.rows > 0
         ? `${c.name}'s field: ${s.rows} rows, ${Math.round(s.grown * 100)}% grown${flock}`
-        : `${c.name}'s field: digging the ditch, ${Math.min(Math.round(c.ditchDug || 0), Math.round(d?.length || 0))} of ${Math.round(d?.length || 0)} m`;
+        : `${c.name}'s field: digging the ${c.field.dry ? 'well' : 'ditch'}, ${Math.min(Math.round(c.ditchDug || 0), Math.round(d?.length || 0))} of ${Math.round(d?.length || 0)} m`;
       put('farms', c.field.x, c.field.z, label, undefined, clamp(3.6 + Math.sqrt(s.rows * s.len) / 12, 3.6, 7.6));
     }
     /* And the raft itself, wherever it is: tied up at the dock, or out on the

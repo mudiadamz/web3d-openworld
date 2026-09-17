@@ -3932,7 +3932,7 @@ check('and again after coming back to a saved world', (() => {
 group('breeding flat out');
 
 check('births run at the full rate or not at all',
-  /const plenty = daysOfFood\(camp\) > FOOD\.breedsUntil \? 1 : 0;/.test(html));
+  /const plenty = daysOfFood\(camp\) > FOOD\.breedsUntil \? 1 : 0[;,]/.test(html));
 /* If it were still proportional there would be a division by `comfortable` in
    the birth rate, which is what made the line flat. */
 check('and nothing tapers them off as the store falls',
@@ -5144,7 +5144,7 @@ group('the line');
 check('everyone who has ever lived is kept', /let lineage = \[\]/.test(html)
   && /function recordPerson\(p\)/.test(html));
 check('a founder goes into it', /const person = newPerson\(camp, rng, age\);\n    recordPerson\(person\)/.test(html));
-check('and so does a child', /recordPerson\(child\);\n    people\.push\(child\)/.test(html));
+check('and so does a child', /recordPerson\(child\);\n\s+people\.push\(child\)/.test(html));
 /* The point of the whole thing: a death is an entry in the record, not an
    erasure from it. */
 check('a death is written down, not erased',
@@ -7844,7 +7844,7 @@ check('a band walks past poor ground at home to good ground off, but not across 
 check('and comes back to the farmland it took after a reload',
   /fl: c\.field \? \[r2\(c\.field\.x\), r2\(c\.field\.z\)\] : undefined/.test(html)
   && /camps\[i\]\.fieldPin = Array\.isArray\(c\.fl\)/.test(html)
-  && /pick = sites\.find\(\(s\) => Math\.abs\(s\.x - pin\.x\) < 1 && Math\.abs\(s\.z - pin\.z\) < 1\) \|\| null;/.test(farmSrc));
+  && /pick = (?:sites|\[\.\.\.sites, \.\.\.dryland\(camp\)\])\.find\(\(s\) => Math\.abs\(s\.x - pin\.x\) < 1 && Math\.abs\(s\.z - pin\.z\) < 1\) \|\| null;/.test(farmSrc));
 
 /* -------------------------------------------------------------------------
    What a band remembers
@@ -7947,7 +7947,7 @@ check('a saved memory comes back as it was, and an old save remembers nothing', 
     && back.places.length === 1 && back.places[0].x === 10 && back.places[0].z === -4
     && none.places.length === 0 && !none.famine ? true : JSON.stringify({ back, none });
 })() === true);
-check('a crop follows the season, and the island\'s ABUNDANCE', /\* forageSeason \* P\.abundance(?: \* cityEdge\(camp, 'crop'\))?;/.test(farmSrc));
+check('a crop follows the season, and the island\'s ABUNDANCE', /\* forageSeason \* P\.abundance(?: \* cityEdge\(camp, 'crop'\))?(?: \* \(f\.dry \? DRY\.yield : 1\))?;/.test(farmSrc));
 check('the job is chosen, sent, worked and told like the others',
   /\['farm', farmWeight\(p, hunger, rested\)\]/.test(html)
   && /if \(p\.job === 'farm'\) return farmSite\(p\);/.test(html)
@@ -8474,7 +8474,7 @@ group('what a city has going for it');
     /practise\(home, 'trade', SKILL\.perDeal \* cityEdge\(home, 'trade'\)\);/.test(so)
     && /TIES\[kind\] \* tradeEdge\(home, host\)/.test(so)
     && /\) \* tradeEdge\(home, host\);/.test(moduleSource('life.js')));
-  check('and its field yields more', /P\.abundance \* cityEdge\(camp, 'crop'\);/.test(moduleSource('farming.js'))
+  check('and its field yields more', /P\.abundance \* cityEdge\(camp, 'crop'\)(?: \* \(f\.dry \? DRY\.yield : 1\))?;/.test(moduleSource('farming.js'))
     && Number((so.match(/crop: ([\d.]+),/) || [, 1])[1]) > 1);
   check('and the young come to it from all over the island, walking there',
     /function cityDraw\(days\)/.test(so) && /p\.camp = to;/.test(so) && /p\.goingHome = true;/.test(so)
@@ -8498,6 +8498,19 @@ group('walls and neighbours');
   check('a neighbour joined or taken moves in: one town, one wall',
     /if \(!mergeNeighbour\(home, host\)\) dressCamp\(host\);/.test(moduleSource('life.js'))
     && /p\.camp = home;/.test(so) && /host\.gone = true;/.test(so) && /if \(gap > MERGE\.near\) return false;/.test(so));
+}
+
+group('room to grow');
+{
+  const fa = moduleSource('farming.js');
+  check('a band with no creek in reach farms dry ground round its camp, with a well',
+    /pick = chooseSite\(camp, sites, taken\) \|\| chooseSite\(camp, dryland\(camp\), taken\);/.test(fa)
+    && /length: DRY\.well, soil, worth: soil \* DRY\.yield/.test(fa));
+  check('and a dry field yields less than a watered one', /\* \(f\.dry \? DRY\.yield : 1\);/.test(fa)
+    && Number((fa.match(/yield: ([\d.]+) \};/) || [, 1])[1]) < 1);
+  check('and it is kept across a reload', /\[\.\.\.sites, \.\.\.dryland\(camp\)\]\.find/.test(fa) && /sites\.includes\(was\) \|\| was\.dry/.test(fa));
+  check('a big camp can have more than one child a step',
+    /for \(let n = Math\.floor\(chance\) \+ \(luck\(\) < chance % 1 \? 1 : 0\); n > 0; n--\) \{/.test(moduleSource('life.js')));
 }
 
 /* ---- report ---- */

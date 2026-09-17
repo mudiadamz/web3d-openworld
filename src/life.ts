@@ -1891,44 +1891,44 @@ export function updateLives(days) {
        children because next month looks thin, and no animal does that. They
        breed at their rate; the store empties; then they starve. The crash is
        the regulator, not restraint. */
-    const plenty = daysOfFood(camp) > FOOD.breedsUntil ? 1 : 0;
-    const chance = mothers * 2 * LIFE.birthPerYear * plenty * P.fertility * perYear;
-    if (luck() > chance) continue;
-    const child = newPerson(camp, luck, 0);
-    /* Somebody's child, not the camp's. Two named people, which is what turns a
-       population into a family tree you can follow — and the names are kept
-       alongside the ids because a parent dies long before the child does and
-       "daughter of" has to still mean something afterwards. */
-    const mother = pickParent(camp, 'f');
-    const father = pickParent(camp, 'm');
-    if (mother) {
-      child.mother = mother.id;
-      child.motherName = mother.name;
-      mother.lastBirth = simDay;          // and she nurses this one before the next
+    const plenty = daysOfFood(camp) > FOOD.breedsUntil ? 1 : 0, chance = mothers * 2 * LIFE.birthPerYear * plenty * P.fertility * perYear;
+    for (let n = Math.floor(chance) + (luck() < chance % 1 ? 1 : 0); n > 0; n--) {   // a big camp, several a step
+      const child = newPerson(camp, luck, 0);
+      /* Somebody's child, not the camp's. Two named people, which is what turns a
+         population into a family tree you can follow — and the names are kept
+         alongside the ids because a parent dies long before the child does and
+         "daughter of" has to still mean something afterwards. */
+      const mother = pickParent(camp, 'f');
+      const father = pickParent(camp, 'm');
+      if (mother) {
+        child.mother = mother.id;
+        child.motherName = mother.name;
+        mother.lastBirth = simDay;          // and she nurses this one before the next
+      }
+      if (father) {
+        child.father = father.id;
+        child.fatherName = father.name;
+        /* Descent through the father, in one step. The line is whatever founder
+           his line ends at, and the generation is one deeper than his — so
+           walking a hundred fathers back costs nothing, because nobody ever
+           walks it. */
+        child.line = father.line || father.name;
+        child.gen = (father.gen || 1) + 1;
+      }
+      /* Half from them, half their own. Which is enough for a bold line to run
+         through three generations of a band and enough for it not to be a rule. */
+      child.traits = traitsFor(luck, mother, father);
+      inheritLooks(child, mother, father);
+      // Nothing refuses a birth for want of room: the room is made.
+      if (people.length >= peopleCapacity) growPeople(people.length + 1);
+      recordPerson(child);
+      people.push(child);
+      bornCount++;
+      camp.born++;
+      logEvent('birth', mother
+        ? `${who(child)} was born to ${mother.name}`
+        : `${who(child)} was born`, camp.x, camp.z);
     }
-    if (father) {
-      child.father = father.id;
-      child.fatherName = father.name;
-      /* Descent through the father, in one step. The line is whatever founder
-         his line ends at, and the generation is one deeper than his — so
-         walking a hundred fathers back costs nothing, because nobody ever
-         walks it. */
-      child.line = father.line || father.name;
-      child.gen = (father.gen || 1) + 1;
-    }
-    /* Half from them, half their own. Which is enough for a bold line to run
-       through three generations of a band and enough for it not to be a rule. */
-    child.traits = traitsFor(luck, mother, father);
-    inheritLooks(child, mother, father);
-    // Nothing refuses a birth for want of room: the room is made.
-    if (people.length >= peopleCapacity) growPeople(people.length + 1);
-    recordPerson(child);
-    people.push(child);
-    bornCount++;
-    camp.born++;
-    logEvent('birth', mother
-      ? `${who(child)} was born to ${mother.name}`
-      : `${who(child)} was born`, camp.x, camp.z);
   }
 
   if (people.length !== before) {

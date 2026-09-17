@@ -33,6 +33,7 @@ export interface Bag {
     can be dug from, and what it is worth to a band (farming.ts). */
 export interface Field {
   x: number; z: number; y: number;
+  dry?: boolean;                // rain-fed, with a well rather than a ditch (farming.js)
   a: number;
   src: { x: number; z: number };
   length: number;

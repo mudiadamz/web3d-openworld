@@ -168,6 +168,38 @@ export function surveyFarmland() {
   return farmland;
 }
 
+/* -------------------------------------------------------------------------
+   Dry farming
+
+   Farmland with water to dig to lies along the creeks, and on an island of a
+   dozen bands most of them live nowhere near one: measured on a 4,800 m map,
+   two bands of twelve had any within reach. The rest could never farm, and a
+   band that only forages stops growing at about ninety people, which is what
+   its ground feeds. So a band with no irrigable ground in reach farms the flat,
+   dry, fertile ground round its own camp instead: rain-fed, with a well dug
+   beside it in place of a ditch, and yielding less than a watered field
+   (DRY.yield). A band with a creek in reach still takes the creek.
+   ------------------------------------------------------------------------- */
+export const DRY = { rings: [60, 90, 130, 180, 240], around: 16, well: 6, yield: 0.7 };
+
+/** Ground round a camp a band could farm without a creek, as farmland sites. */
+export function dryland(camp) {
+  const out = [];
+  for (const r of DRY.rings) {
+    for (let k = 0; k < DRY.around; k++) {
+      const a = (k / DRY.around) * Math.PI * 2 + r * 0.013;
+      const x = camp.x + Math.cos(a) * r, z = camp.z + Math.sin(a) * r, y = sampleHeight(x, z);
+      if (y < SEA + 1.5 || y > SNOW - 25) continue;
+      const flat = flatnessAt(x, z);
+      if (flat < 0.8 || inWater(x, z) || !clearOfCreeks(x, z, 12)) continue;
+      // The well, on the camp side of the field: all the water it has.
+      const src = { x: x - Math.cos(a) * DRY.well, z: z - Math.sin(a) * DRY.well }, soil = soilAt(x, z);
+      out.push({ x, z, y, a, src, length: DRY.well, soil, worth: soil * DRY.yield * (0.5 + 0.5 * flat), dry: true });
+    }
+  }
+  return out;
+}
+
 /** The best farmland for a band: worth more the better its soil and the
     shorter its ditch, and less the further it is to walk — so a band walks
     past poor ground at home to good ground further off, but not across the
@@ -196,10 +228,10 @@ export function fieldOf(camp) {
   if (camp.fieldPin) {
     const pin = camp.fieldPin;
     camp.fieldPin = null;
-    pick = sites.find((s) => Math.abs(s.x - pin.x) < 1 && Math.abs(s.z - pin.z) < 1) || null;
+    pick = [...sites, ...dryland(camp)].find((s) => Math.abs(s.x - pin.x) < 1 && Math.abs(s.z - pin.z) < 1) || null;
     if (!pick) camp.ditchDug = 0;                    // not this island's ground: start again
   }
-  if (!pick && was && sites.includes(was) && Math.hypot(was.x - camp.x, was.z - camp.z) <= FARM.siteReach) pick = was;
+  if (!pick && was && (sites.includes(was) || was.dry) && Math.hypot(was.x - camp.x, was.z - camp.z) <= FARM.siteReach) pick = was;
   if (!pick) {
     const taken = [{ x: camp.x, z: camp.z, r: CAMP_CLEARING + 8 }];
     for (const c of camps) {
@@ -207,7 +239,8 @@ export function fieldOf(camp) {
       taken.push({ x: c.x, z: c.z, r: CAMP_CLEARING + FARM.fallow });
       if (c.field) taken.push({ x: c.field.x, z: c.field.z, r: fieldReach(c) + FARM.fallow });
     }
-    pick = chooseSite(camp, sites, taken);
+    // Watered ground if there is any in reach, and dry ground round the camp if not.
+    pick = chooseSite(camp, sites, taken) || chooseSite(camp, dryland(camp), taken);
     if (was && pick !== was) camp.ditchDug = 0;      // a new field wants a new ditch
   }
   camp.ditch = null;
@@ -309,7 +342,7 @@ export function farmDone(p) {
   if (learning || !watered) return;
   practise(camp, 'farming', FARM.perField);
   p.knows.farming = Math.max(p.knows.farming || 0, camp.skill.farming);
-  const got = FARM.crop * (0.3 + 0.7 * camp.skill.farming) * forageSeason * P.abundance * cityEdge(camp, 'crop');
+  const got = FARM.crop * (0.3 + 0.7 * camp.skill.farming) * forageSeason * P.abundance * cityEdge(camp, 'crop') * (f.dry ? DRY.yield : 1);
   if (!(got > 0)) return;
   p.haul += got;
   p.carry = 1;

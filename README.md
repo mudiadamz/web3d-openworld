@@ -1663,6 +1663,12 @@ the cities, entering each by a gate, and only villages close to it get a road.
 A village next door that joins or is taken moves in, so the two become one town
 inside one wall; one further off keeps its own houses and flies the flag.
 
+Every band can farm. Farmland with water to dig to lies along the creeks, and
+most bands live nowhere near one; a band with no creek in reach farms the dry
+ground round its own camp, with a well, at a little less yield. A band that
+only forages stops growing at about ninety people, which is what its ground
+feeds, so this is what lets a camp grow very large.
+
 Bands split very rarely. A band holds together until it is a hundred and sixty strong
 (four hundred for a tribe, eight hundred for a village, 1,440 for a city), waits thirty years between one band leaving
 and the next, and the whole island gets a new band no more often than every
